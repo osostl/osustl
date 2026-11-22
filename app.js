@@ -39,6 +39,8 @@ const digits = s => String(s || "").trim().replace(/[٠-٩]/g, d => String("٠١
 const norm = s => String(s || "").trim().replace(/\s+/g, " ").replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").replace(/ـ/g, "").replace(/عبد ال/g, "عبدال");
 const letter = m => m >= 90 ? "ممتاز" : m >= 80 ? "جيد جداً" : m >= 70 ? "جيد" : m >= PASS ? "مقبول" : "راسب";
 const validLink = u => /^https:\/\/\S+$/i.test(String(u || "").trim());
+/* the cyber lab page (lab.html) is uploaded next to the portal, so it needs no link setting; a link typed in the camp settings still overrides it */
+const labLink = (c, admin) => (validLink((c || {}).labUrl) ? c.labUrl : new URL("lab.html", location.href).href.split("?")[0]) + (admin ? "?admin=1" : "");
 const isTeams = u => /teams\.(microsoft|live)\.com/i.test(String(u || ""));
 const meetLabel = u => isTeams(u) ? "على Teams" : "";
 const addMin = (hm, m) => { const [h, mm] = hm.split(":").map(Number); const t = Math.max(0, h * 60 + mm + m); return String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0"); };
@@ -1691,7 +1693,7 @@ function studentCamp(el){
       ${c.intro ? `<p style="color:#e6efe9;margin:12px 0 0;white-space:pre-wrap">${esc(c.intro)}</p>` : ""}
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
         ${validLink(c.guideUrl) ? `<a class="btn gold" style="display:inline-block;text-decoration:none" href="${esc(c.guideUrl)}" target="_blank" rel="noopener">📖 افتح دليل المعسكر الكامل</a>` : ""}
-        ${validLink(c.labUrl) ? `<a class="btn" style="display:inline-block;text-decoration:none;background:#b3303c;color:#fff;border:0" href="${esc(c.labUrl)}" target="_blank" rel="noopener">🧪 ادخل المختبر التفاعلي</a>` : ""}
+        <a class="btn" style="display:inline-block;text-decoration:none;background:#b3303c;color:#fff;border:0" href="${esc(labLink(c))}" target="_blank" rel="noopener">🧪 ادخل المختبر التفاعلي</a>
       </div>
     </div>
     ${ex ? `<div class="card" style="border:1px solid var(--gold)"><div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
@@ -1714,8 +1716,8 @@ function campTab(el){
   <div class="card"><h3 style="margin-top:0">مقدمة ورابط الدليل</h3>
     <label class="f" for="campIntro">نبذة تظهر للطلاب<textarea id="campIntro" style="min-height:70px">${esc(c.intro || "")}</textarea></label>
     <label class="f" for="campGuide">رابط دليل المعسكر (الصفحة التفاعلية)<input type="url" id="campGuide" dir="ltr" value="${esc(c.guideUrl || "")}" placeholder="https://..."></label>
-    <label class="f" for="campLab">رابط المختبر التفاعلي (lab.html على نفس نطاق البوابة)<input type="url" id="campLab" dir="ltr" value="${esc(c.labUrl || "")}" placeholder="https://osustl.com/lab.html"></label>
-    <p class="muted" style="margin:0 0 8px;font-size:12px">لوحة متابعة تقدّم الطلاب في المختبر: افتح نفس الرابط مع إضافة <span dir="ltr">?admin=1</span> وأنت مسجّل دخول كمشرف/مدرب.</p>
+    <div class="row" style="gap:6px;margin:4px 0 10px;flex-wrap:wrap"><a class="btn" style="text-decoration:none;background:#b3303c;color:#fff;border:0" href="${esc(labLink(c))}" target="_blank" rel="noopener">🧪 افتح المختبر</a><a class="btn gold" style="text-decoration:none" href="${esc(labLink(c, true))}" target="_blank" rel="noopener">📊 لوحة متابعة المختبر والسيناريو</a></div>
+    <label class="f" for="campLab">رابط المختبر (اختياري — اتركه فاضي ويشتغل تلقائياً)<input type="url" id="campLab" dir="ltr" value="${esc(c.labUrl || "")}" placeholder="تلقائي: lab.html بجانب البوابة"></label>
     <button class="btn pri" id="campSaveTop">حفظ</button></div>
   <div class="card"><h3 style="margin-top:0">${ed ? (ed.id ? "تعديل مقطع" : "إضافة مقطع / درس") : "إضافة مقطع / درس"}</h3>
     <div class="row"><label class="f" for="lesWk" style="width:120px">الأسبوع<select id="lesWk">${CAMP_WEEKS.map(([n, t]) => `<option value="${n}" ${ed && ed.week === n ? "selected" : ""}>${n} · ${esc(t.slice(0, 18))}</option>`).join("")}</select></label>
