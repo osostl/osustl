@@ -109,6 +109,28 @@ async function notifyNow(kind, id){
   const r = await fetch(url + "/notify", {method: "POST", keepalive: true, headers: {"content-type": "application/json", authorization: "Bearer " + t}, body: JSON.stringify({kind, id})});
   return r.ok ? r.json() : null;
 }
+/* ---------- الدفع الإلكتروني (Tap): الصفحة تطلب رابط الدفع من خدمة Cloudflare، والمفتاح السري ما يوصل للمتصفح أبداً ---------- */
+const finShown = () => (S.site || {}).finStudents !== false;   // the administration can hide «المالية والدفع» from students (e.g. while invoices are being revised)
+async function payApi(path, body){
+  const url = ((S.site || {}).pushUrl || "").replace(/\/+$/, ""); if (!url || !S.authUser) throw new Error("NOURL");
+  const r = await fetch(url + path, {method: "POST", headers: {"content-type": "application/json", authorization: "Bearer " + await S.authUser.getIdToken()}, body: JSON.stringify(body)});
+  const j = await r.json().catch(() => ({})); if (!r.ok) throw Object.assign(new Error(j.error || "failed"), {info: j, status: r.status}); return j;
+}
+async function startPay(body, btn){
+  if (btn) { btn.disabled = true; btn.textContent = "⏳ جاري فتح صفحة الدفع…"; }
+  try { const j = await payApi("/pay/create", {...body, back: location.origin + location.pathname}); location.href = j.url; }
+  catch (e) { if (btn) { btn.disabled = false; btn.textContent = "💳 ادفع إلكترونياً"; }
+    toast(e.status === 503 ? "الدفع الإلكتروني مو مفعّل للحين" : e.message === "amount" ? `المبلغ لازم يكون بين 1 و${(e.info || {}).remaining ?? ""} ر.س` : e.message === "closed" ? "الدفع الإلكتروني مقفول حالياً" : e.message === "already paid" ? "الطلب مدفوع من قبل" : "تعذّر فتح صفحة الدفع، جرّب بعد شوي"); }
+}
+async function checkPayReturn(){   // back from Tap's page: ?pay=pi…
+  const pi = new URLSearchParams(location.search).get("pay"); if (!pi || S._payChecked === pi || S.role !== "student" || !(S.site || {}).pushUrl) return;
+  S._payChecked = pi; history.replaceState(null, "", location.pathname + location.hash); toast("⏳ جاري التأكد من الدفع…");
+  for (let i = 0; i < 4; i++) { try { const j = await payApi("/pay/verify", {pi});
+      if (j.status === "CAPTURED") return toast(j.kind === "coffee" ? "✅ انقبل الدفع — طلبك مدفوع" : `✅ انقبلت دفعتك (${j.amount} ر.س) ونزل لك سند في «المالية»`);
+      if (/DECLINED|CANCELLED|FAILED|ABANDONED|VOID|RESTRICTED|TIMEDOUT/.test(j.status || "")) return toast("❌ ما تمت عملية الدفع — ما انخصم منك شيء");
+    } catch (e) {} await new Promise(r => setTimeout(r, 2500)); }
+  toast("الدفع قيد المعالجة — بيظهر خلال دقائق إذا انخصم المبلغ");
+}
 function notify(kind, id, delay = 0){
   if (!(S.site || {}).pushUrl || !S.authUser || !id) return;
   const k = kind + "/" + id; clearTimeout(NT[k]);
@@ -611,7 +633,7 @@ function startData(){
     S.subs.push(onSnapshot(query(collection(db, "idcards"), where("num", "==", S.myNum)), snap => { const t = snap.docs[0] ? snap.docs[0].id : null; if (t !== S.myIdTok) { S.myIdTok = t; if (S.sTab === "card" && !busyEditing()) render(); } }, () => {}));
     S.subs.push(onSnapshot(query(collection(db, "certs"), where("num", "==", S.myNum)), snap => { S.myCerts = snap.docs.map(d => d.data()).filter(c => !c.revoked); if (!busyEditing()) render(); }, () => {}));
     S.subs.push(onSnapshot(query(collection(db, "evals"), where("num", "==", S.myNum)), snap => { S.myEvals = snap.docs.map(d => d.data()); if (!busyEditing()) render(); }, () => {}));
-    watchCamp(); watchMsgs();
+    watchCamp(); watchMsgs(); setTimeout(checkPayReturn, 1500);
     S.subs.push(onSnapshot(query(collection(db, "exams"), where("memberNums", "array-contains", S.myNum)), snap => { S.myExams = snap.docs.map(d => ({id: d.id, ...d.data()})); if (!S.exTake && !busyEditing()) render(); }, e => console.error(e)));
     S.subs.push(onSnapshot(query(collection(db, "examSubs"), where("num", "==", S.myNum)), snap => {
       const old = S.mySubs || {}; S.mySubs = {}; snap.docs.forEach(d => { const x = d.data({serverTimestamps: "estimate"}); S.mySubs[x.eid] = x; });
@@ -1777,7 +1799,7 @@ const EXC_ST = {pending: "قيد المراجعة", accepted: "مقبول", reje
 const EXC_PILL = {pending: "l", accepted: "p", rejected: "a"};
 function studentTabs(){
   const open = Object.values(S.groups).filter(g => g.evalOpen && !(S.myEvals || []).some(e => e.groupId === g.id)).length;
-  const tabs = [["home", "الرئيسية"], ...(campOn() ? [["camp", "🛡️ معسكر الأمن السيبراني"]] : []), ["msgs", "📨 رسائلي" + (unreadMsgs().length ? ` (${unreadMsgs().length})` : "")], ...(S.cfMenu ? [["coffee", "☕ كوفي دوفي" + ((S.cfMine || []).some(r => r.status === "ready") ? " (جاهز)" : "")]] : []), ["card", "بطاقتي"], ["att", "حضوري"], ["exams", "الاختبارات" + ((S.myExams || []).some(e => exState(e, Date.now(), S.myNum) === "open" && !(S.mySubs || {})[e.id]) ? " (1)" : "")], ["exc", "الأعذار"], ["warn", "الإنذارات" + ((S.myWarn || []).length ? ` (${S.myWarn.length})` : "")], ["eval", "التقييم" + (open ? ` (${open})` : "")], ["areq", "طلبات الأكاديمية" + ((S.myAReq || []).some(r => r.status === "done" && r.reply && !r.seen) ? " (1)" : "")], ["freq", "طلبات المالية" + ((S.myFReq || []).some(r => r.type === "invoice" && r.status === "approved" && !r.seen) ? " (1)" : "")], ...(S.survey && S.survey.open ? [["survey", "الاستبيان" + (S.surveyDone === S.survey.id ? "" : " (1)")]] : [])];
+  const tabs = [["home", "الرئيسية"], ...(campOn() ? [["camp", "🛡️ معسكر الأمن السيبراني"]] : []), ["msgs", "📨 رسائلي" + (unreadMsgs().length ? ` (${unreadMsgs().length})` : "")], ...(S.cfMenu ? [["coffee", "☕ كوفي دوفي" + ((S.cfMine || []).some(r => r.status === "ready") ? " (جاهز)" : "")]] : []), ["card", "بطاقتي"], ["att", "حضوري"], ["exams", "الاختبارات" + ((S.myExams || []).some(e => exState(e, Date.now(), S.myNum) === "open" && !(S.mySubs || {})[e.id]) ? " (1)" : "")], ["exc", "الأعذار"], ["warn", "الإنذارات" + ((S.myWarn || []).length ? ` (${S.myWarn.length})` : "")], ["eval", "التقييم" + (open ? ` (${open})` : "")], ["areq", "طلبات الأكاديمية" + ((S.myAReq || []).some(r => r.status === "done" && r.reply && !r.seen) ? " (1)" : "")], ...(finShown() ? [["freq", "المالية والدفع" + ((S.myFReq || []).some(r => r.type === "invoice" && r.status === "approved" && !r.seen) ? " (1)" : "")]] : []), ...(S.survey && S.survey.open ? [["survey", "الاستبيان" + (S.surveyDone === S.survey.id ? "" : " (1)")]] : [])];
   return `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k, v]) => `<button class="tab ${(S.sTab || "home") === k ? "on" : ""}" data-stab="${k}">${v}</button>`).join("")}</div></div>`;
 }
 function bindStudentTabs(app){ app.querySelectorAll("[data-stab]").forEach(b => b.onclick = () => { S.sTab = b.dataset.stab; render(); window.scrollTo(0, 0); }); }
@@ -1795,6 +1817,7 @@ function renderStudent(app){
       const off = o && o.exists() ? o.data() : {}; S.cfOffers = off.items || [];
       if (d.exists() && (d.data().items || []).length && d.data().show !== false && !off.hidden) { S.cfMenu = d.data(); if (S.view === "student") render(); } }).catch(() => {}); }
   if (S.sTab === "coffee" && !S.cfMenu) S.sTab = "home";
+  if (S.sTab === "freq" && !finShown()) S.sTab = "home";
   if ((S.sTab || "home") !== "home") { app.innerHTML = studentTabs() + `<div id="sb"></div>`; bindStudentTabs(app); ({msgs: studentMsgs, coffee: studentCoffee, camp: studentCamp, card: studentCard, att: studentAtt, exams: studentExams, exc: studentExc, warn: studentWarn, eval: studentEval, fin: studentFinReq, areq: studentAcReq, freq: studentFinReq, survey: studentSurvey})[S.sTab]($("#sb")); return; }
   const gs = Object.values(S.groups).sort((a,b) => (a.course||"").localeCompare(b.course||"","ar"));
   const res = {}; S.myResults.forEach(r => res[r.groupId] = r);
@@ -3985,10 +4008,10 @@ function studentCoffee(el){
   const mine = (S.cfMine || []).slice().sort((x, y) => (y.at || "").localeCompare(x.at || "")), active = mine.find(r => ["new", "accepted", "ready"].includes(r.status));
   const unit = (it, sz, ops) => (sz ? sz.p : it.price) + ops.reduce((t, o) => t + (o.p || 0), 0), tot = B.reduce((t, b) => t + b.unit * b.qty, 0);
   el.innerHTML = `${offers.map(o => `<div class="card" style="border:2px solid #c8873a;background:#fff8ef"><h2 style="margin:0 0 4px">🎁 ${esc(o.title)}</h2>${o.text ? `<p style="margin:0">${esc(o.text)}</p>` : ""}${o.to ? `<p class="muted" style="margin:6px 0 0">العرض لين ${esc(o.to)}</p>` : ""}</div>`).join("")}
-    ${mine.length ? `<div class="card"><h2>طلباتي</h2><div class="list">${mine.slice(0, 5).map(r => `<div class="item" style="align-items:flex-start"><div class="grow"><b>${(r.items || []).map(x => `${x.qty}× ${esc(x.name)}${x.size ? " " + esc(x.size) : ""}`).join("، ")}</b><div class="muted">${r.at ? esc(new Date(r.at).toTimeString().slice(0, 5)) : ""} · ${esc(r.pickup || "")}</div>${r.reason ? `<div class="notice err" style="margin-top:6px">${esc(r.reason)}</div>` : ""}</div><span class="pill ${CF_ST[r.status] ? CF_ST[r.status][1] : ""}">${CF_ST[r.status] ? CF_ST[r.status][0] : esc(r.status)}</span>${r.status === "new" ? `<button class="btn sm" data-cfx="${r.id}">إلغاء</button>` : ""}</div>`).join("")}</div></div>` : ""}
+    ${mine.length ? `<div class="card"><h2>طلباتي</h2><div class="list">${mine.slice(0, 5).map(r => `<div class="item" style="align-items:flex-start"><div class="grow"><b>${(r.items || []).map(x => `${x.qty}× ${esc(x.name)}${x.size ? " " + esc(x.size) : ""}`).join("، ")}</b><div class="muted">${r.at ? esc(new Date(r.at).toTimeString().slice(0, 5)) : ""} · ${esc(r.pickup || "")}</div>${r.reason ? `<div class="notice err" style="margin-top:6px">${esc(r.reason)}</div>` : ""}</div><span class="pill ${CF_ST[r.status] ? CF_ST[r.status][1] : ""}">${CF_ST[r.status] ? CF_ST[r.status][0] : esc(r.status)}</span>${r.paid ? `<span class="pill p">💳 مدفوع ${esc(String(r.paidAmount || ""))}</span>` : M.pay && ["new", "accepted", "ready"].includes(r.status) ? `<button class="btn sm pri" data-cfpay="${r.id}">💳 ادفع الحين</button>` : ""}${r.status === "new" && !r.paid ? `<button class="btn sm" data-cfx="${r.id}">إلغاء</button>` : ""}</div>`).join("")}</div></div>` : ""}
     <div class="card"><h2>☕ ${esc(M.name || "كوفي دوفي")} — اطلب وأنت مكانك</h2>
     ${!M.open ? `<div class="notice">استقبال الطلبات من البوابة مقفول الحين — تقدر تطلب من الكاشير مباشرة.</div>` : active ? `<div class="notice">عندك طلب قيد التنفيذ — تقدر تطلب طلب ثاني بعد ما تستلمه.</div>` : `
-      <p class="muted" style="margin-top:0">اختار طلبك، ويوصلك إشعار لما يجهز. الدفع عند الاستلام${M.osos ? ` · <b>خصم متدربي أسس ${M.osos}٪</b>` : ""}.</p>
+      <p class="muted" style="margin-top:0">اختار طلبك، ويوصلك إشعار لما يجهز. ${M.pay ? "تقدر تدفع إلكترونياً بعد الإرسال أو عند الاستلام" : "الدفع عند الاستلام"}${M.osos ? ` · <b>خصم متدربي أسس ${M.osos}٪</b>` : ""}.</p>
       <div class="tabs" style="border:0;padding:0;margin-bottom:8px">${cats.map(c => `<button class="tab ${c.id === S.cfCat ? "on" : ""}" data-cfc="${c.id}">${esc(c.icon || "")} ${esc(c.name)}</button>`).join("")}</div>
       <div class="list">${(M.items || []).filter(i => i.cat === S.cfCat).map(i => `<div class="item" style="cursor:pointer" data-cfi="${i.id}"><span style="font-size:24px">${esc(i.icon || "☕")}</span><div class="grow"><b>${esc(i.name)}</b><div class="muted">${(i.sizes || []).length ? (i.sizes || []).map(s => `${esc(s.n)} ${m2(s.p)}`).join(" · ") : m2(i.price)} ر.س</div></div><span class="btn sm">إضافة</span></div><div id="cfo-${i.id}"></div>`).join("")}</div>
       ${B.length ? `<h3 style="margin-top:14px">سلتك</h3><div class="list">${B.map((b, k) => `<div class="item"><div class="grow"><b>${b.qty}× ${esc(b.name)}${b.size ? " · " + esc(b.size) : ""}</b>${b.opts.length ? `<div class="muted">${esc(b.opts.map(o => o.n).join("، "))}</div>` : ""}${b.note ? `<div class="muted">📝 ${esc(b.note)}</div>` : ""}</div><span>${m2(b.unit * b.qty)}</span><button class="btn sm" data-cfd="${k}">✕</button></div>`).join("")}</div>
@@ -4000,6 +4023,7 @@ function studentCoffee(el){
   if (S.cfOffers === undefined) { S.cfOffers = []; getDoc(ref("coffeePub/offers")).then(d => { S.cfOffers = d.exists() ? d.data().items || [] : []; if (S.sTab === "coffee") studentCoffee($("#sb")); }).catch(() => {}); }
   el.querySelectorAll("[data-cfc]").forEach(b => b.onclick = () => { S.cfCat = b.dataset.cfc; studentCoffee(el); });
   el.querySelectorAll("[data-cfd]").forEach(b => b.onclick = () => { B.splice(+b.dataset.cfd, 1); studentCoffee(el); });
+  el.querySelectorAll("[data-cfpay]").forEach(b => b.onclick = () => startPay({kind: "coffee", id: b.dataset.cfpay}, b));
   el.querySelectorAll("[data-cfx]").forEach(b => b.onclick = async () => { try { await setDoc(ref("coffeeReqs/" + b.dataset.cfx), {status: "cancelled"}, {merge: true}); toast("انلغى الطلب"); } catch (x) { handleWriteErr(x); } });
   el.querySelectorAll("[data-cfi]").forEach(row => row.onclick = () => {
     const it = (M.items || []).find(i => i.id === row.dataset.cfi), box = $("#cfo-" + it.id); if (box.innerHTML) { box.innerHTML = ""; return; }
@@ -4906,7 +4930,7 @@ function syncFinClear(){
 
 /* ================= finance ================= */
 const PLANS = {full: "كامل المبلغ", half: "50% / 50%", monthly: "أقساط شهرية", qasima: "قسيمة بلس (تابي / تمارا)"};
-const METHODS = ["تحويل بنكي", "نقد", "مدى / شبكة", "قسيمة بلس"];
+const METHODS = ["تحويل بنكي", "نقد", "مدى / شبكة", "قسيمة بلس", "دفع إلكتروني"];
 const SAR = n => (Math.round((Number(n) || 0) * 100) / 100).toLocaleString("en-US", {maximumFractionDigits: 2}) + " ر.س";
 const addMonths = (d, k) => { const [y, m, dd] = d.split("-").map(Number); const t = new Date(Date.UTC(y, m - 1 + k, 1)); const last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate(); return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}-${String(Math.min(dd, last)).padStart(2, "0")}`; };
 function startFinance(){
@@ -5046,13 +5070,18 @@ function studentFinReq(el){
     : full ? `${rej ? `<div class="notice err" style="margin:0 0 10px">طلبك السابق انرفض${rej.reason ? ": " + esc(rej.reason) : ""}</div>` : ""}<p style="margin-top:0">سدّدت كامل الرسوم ✓ تقدر تطلب فاتورتك النهائية الموقّعة والمختومة.</p><button class="btn pri" id="frInv">طلب الفاتورة النهائية</button>`
     : `<p class="muted" style="margin:0">زر طلب الفاتورة النهائية يظهر لك بعد سداد كامل الرسوم.</p>`;
   const inq = reqs.filter(r => r.type === "inquiry");
-  el.innerHTML = `<div class="card"><h2>الفاتورة النهائية</h2>${invBox}</div>
+  const payBox = st && st.net > 0 ? `<div class="card"><h2>💳 رسومي</h2>
+    <div class="stats"><div class="stat"><div class="n">${SAR(st.net)}</div><div class="l">الرسوم</div></div><div class="stat"><div class="n">${SAR(st.paid)}</div><div class="l">المدفوع</div></div><div class="stat"><div class="n">${SAR(st.remaining)}</div><div class="l">المتبقي</div></div>${st.overdue > 0 ? `<div class="stat"><div class="n" style="color:#b42318">${SAR(st.overdue)}</div><div class="l">مستحق الحين</div></div>` : ""}</div>
+    ${(S.site || {}).payFees && st.remaining >= 1 ? `<div style="margin-top:12px;padding:12px;border-radius:12px;background:#f6faf7;border:1.5px solid #1f6f43"><b>ادفع إلكترونياً</b> <span class="muted">— مدى، Apple Pay، STC Pay، والبطاقات. السند ينزل لك تلقائياً.</span>
+      <div class="row" style="margin-top:8px"><input type="number" id="payAmt" min="1" max="${st.remaining}" step="0.01" value="${st.overdue >= 1 ? st.overdue : st.remaining}" style="width:150px" aria-label="المبلغ"><span class="muted">ر.س</span><button class="btn pri" id="payGo">💳 ادفع إلكترونياً</button></div></div>` : ""}</div>` : "";
+  el.innerHTML = `${payBox}<div class="card"><h2>الفاتورة النهائية</h2>${invBox}</div>
   <div class="card"><h2>استفسار مالي</h2><p class="muted" style="margin-top:0">اكتب استفسارك، ومسؤول المالية يتواصل معك على الواتساب.</p>
     <label for="frT">استفسارك</label><textarea id="frT" rows="3" maxlength="800" placeholder="مثال: أبي أعرف موعد القسط الجاي"></textarea>
     <label for="frP">جوالك للتواصل</label><input type="tel" id="frP" dir="ltr" placeholder="05xxxxxxxx" inputmode="numeric">
     <div class="row" style="margin-top:10px"><button class="btn pri" id="frSend">إرسال للمالية</button></div>
     ${inq.length ? `<h3>استفساراتك</h3><div class="list">${inq.map(r => `<div class="item"><div class="grow"><div>${esc(r.text)}</div><div class="muted">${esc(bothDates((r.at || "").slice(0, 10)))}</div></div><span class="pill">${r.status === "done" ? "تم التواصل" : "قيد المراجعة"}</span></div>`).join("")}</div>` : ""}</div>`;
   const add = async d => { const id = "fr-" + uid() + uid(); await setDoc(ref("finReqs/" + id), {num: S.myNum, name: (S.myStudent && S.myStudent.name) || "", status: "new", at: new Date().toISOString(), ...d}); notify("fin", id); };
+  if ($("#payGo")) $("#payGo").onclick = () => { const v = Math.round(Number($("#payAmt").value) * 100) / 100; if (!(v >= 1) || v > st.remaining + 0.01) return toast(`اكتب مبلغ بين 1 و${st.remaining}`); startPay({kind: "fee", amount: v}, $("#payGo")); };
   if ($("#frPrint")) { $("#frPrint").onclick = () => printInvoice(inv.inv); if (!inv.seen) setDoc(ref("finReqs/" + inv.id), {seen: true}, {merge: true}).catch(() => {}); }
   if ($("#frInv")) $("#frInv").onclick = async e => { e.target.disabled = true; try { await add({type: "invoice"}); toast("انرسل طلبك للمالية"); } catch (x) { e.target.disabled = false; handleWriteErr(x); } };
   $("#frSend").onclick = async e => {
@@ -5359,8 +5388,17 @@ function finSoonText(s, st){
   return `السلام عليكم ${s.name}\nالرقم الأكاديمي: ${s.num}\n\nنذكّركم بموعد القسط القادم:\n${SAR(st.next.amount)} بتاريخ ${st.next.due}\nالمتبقي الكلي: ${SAR(st.remaining)}\n\nالمالية\n${INST_AR}`;
 }
 function finSettings(el){
-  const progs = S.finSet.programs || [];
-  el.innerHTML = `<div class="card"><h2>البرامج والرسوم</h2>
+  const progs = S.finSet.programs || [], canPay = ["admin", "academic"].includes(S.adminRole);
+  el.innerHTML = `<div class="card"><h2>👁️ المالية عند الطلاب</h2>
+    <p class="muted" style="margin-top:0">لو شلت الصح، يختفي تبويب «المالية والدفع» من بوابة كل الطلاب (رسومهم، الدفع، الفاتورة النهائية، الاستفسارات) لين ترجّعه — مفيد وقت تعديل الفواتير. بياناتكم ما تتأثر.</p>
+    <label class="row" style="gap:8px"><input type="checkbox" id="finShow" ${finShown() ? "checked" : ""} ${canPay ? "" : "disabled"}> إظهار «المالية والدفع» للطلاب</label>
+    ${canPay ? "" : `<p class="muted" style="margin:6px 0 0">الإظهار والإخفاء من حساب الإدارة العامة.</p>`}</div>
+  <div class="card"><h2>💳 الدفع الإلكتروني (Tap)</h2>
+    <p class="muted" style="margin-top:0">إذا تفعّل، يطلع للطالب في «المالية» زر يدفع فيه رسومه بمدى أو Apple Pay أو STC Pay أو البطاقة، وتنسجل الدفعة له تلقائياً بسند، ويوصلكم إشعار.</p>
+    <label class="row" style="gap:8px"><input type="checkbox" id="payOn" ${(S.site || {}).payFees ? "checked" : ""} ${canPay ? "" : "disabled"}> تفعيل الدفع الإلكتروني للطلاب</label>
+    ${canPay ? "" : `<p class="muted" style="margin:6px 0 0">التفعيل والإيقاف من حساب الإدارة العامة.</p>`}
+    ${(S.site || {}).pushUrl ? "" : `<div class="notice err" style="margin-top:8px">لازم يُضبط رابط خدمة الإشعارات أول (تبويب النظام).</div>`}</div>
+  <div class="card"><h2>البرامج والرسوم</h2>
     <div class="list">${progs.map((p, i) => `<div class="item"><span class="grow"><b>${esc(p.name)}</b></span><input type="number" data-pfee="${i}" value="${p.fee}" style="width:130px"><span class="muted">ر.س</span><button class="btn sm danger" data-pdel="${i}">حذف</button></div>`).join("") || `<span class="muted">ما فيه برامج</span>`}</div>
     <div class="row" style="margin-top:10px"><input type="text" id="prN" class="grow" placeholder="اسم البرنامج، مثل: دبلوم القانون"><input type="number" id="prF" min="0" placeholder="الرسوم" style="width:130px"><button class="btn gold sm" id="prAdd">+ إضافة</button><button class="btn pri sm" id="prSave">حفظ الرسوم</button></div>
     <p class="muted">تغيير رسوم البرنامج ما يغيّر حسابات الطلاب المفتوحة من قبل.</p></div>
@@ -5385,6 +5423,8 @@ function finSettings(el){
   el.querySelectorAll("[data-ptdel]").forEach(b => b.onclick = () => { if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟"; return; } const l = clone(S.finSet.partners || []); l.splice(Number(b.dataset.ptdel), 1); saveKey("partners", l, "حذف شريك"); });
   const save = async list => { try { await setDoc(ref("fin/settings"), {programs: list}, {merge: true}); S.finSet.programs = list; logAction("البرامج والرسوم", list.map(p => `${p.name}: ${p.fee}`).join("، ")); toast("انحفظ"); render(); } catch (e) { handleWriteErr(e); } };
   $("#prAdd").onclick = () => { const name = $("#prN").value.trim(), fee = Number($("#prF").value); if (!name || !(fee >= 0)) return toast("اكتب الاسم والرسوم"); save([...progs, {id: "pr-" + uid(), name, fee}]); };
+  if ($("#finShow") && ["admin", "academic"].includes(S.adminRole)) $("#finShow").onchange = e => saveSite({finStudents: e.target.checked}, e.target.checked ? "إظهار المالية للطلاب" : "إخفاء المالية عن الطلاب");
+  if ($("#payOn") && ["admin", "academic"].includes(S.adminRole)) $("#payOn").onchange = e => saveSite({payFees: e.target.checked}, e.target.checked ? "تفعيل الدفع الإلكتروني" : "إيقاف الدفع الإلكتروني");
   $("#prSave").onclick = () => { const list = clone(progs); el.querySelectorAll("[data-pfee]").forEach(x => list[Number(x.dataset.pfee)].fee = Number(x.value) || 0); save(list); };
   el.querySelectorAll("[data-pdel]").forEach(b => b.onclick = () => { const l = clone(progs); l.splice(Number(b.dataset.pdel), 1); save(l); });
 }
@@ -5650,7 +5690,8 @@ function studentFin(el){
   const st = accStatus(acc, S.myPay || []), pays = (S.myPay || []).filter(p => !p.void).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   el.innerHTML = `<div class="card"><h2>المالية</h2><p class="muted" style="margin-top:0">${PLANS[acc.plan] || ""}${acc.discount ? ` · خصم ${SAR(acc.discount)}` : ""}</p>
     <div class="stats"><div class="stat"><div class="n">${SAR(st.net)}</div><div class="l">الرسوم</div></div><div class="stat"><div class="n">${SAR(st.paid)}</div><div class="l">المدفوع</div></div><div class="stat"><div class="n">${SAR(st.remaining)}</div><div class="l">المتبقي</div></div><div class="stat"><div class="n" style="color:${st.overdue ? "var(--abs)" : "inherit"}">${SAR(st.overdue)}</div><div class="l">متأخر</div></div></div>
-    ${st.next ? `<div class="notice" style="margin-top:10px">الدفعة القادمة: <b>${SAR(st.next.amount)}</b> بتاريخ ${esc(fmtDate(st.next.due))}</div>` : ""}</div>
+    ${st.next ? `<div class="notice" style="margin-top:10px">الدفعة القادمة: <b>${SAR(st.next.amount)}</b> بتاريخ ${esc(fmtDate(st.next.due))}</div>` : ""}
+</div>
   <div class="card"><h2>جدول الدفعات</h2><div class="tbl"><table><thead><tr><th>#</th><th>الاستحقاق</th><th>المبلغ</th><th>الحالة</th></tr></thead><tbody>${st.sched.map((i, k) => `<tr><td>${i.label ? esc(i.label) : k + 1}</td><td>${dH(i.due)}</td><td>${SAR(i.amount)}</td><td><span class="pill ${INST_PILL[i.st]}">${INST_ST[i.st]}</span></td></tr>`).join("")}</tbody></table></div></div>
   <div class="card"><h2>السندات</h2><div class="list">${pays.map(p => `<div class="item"><div class="grow"><div class="t">${SAR(p.amount)}</div><div class="muted">سند ${esc(p.receiptNo)} · ${dH(p.date)} · ${esc(p.method)}</div></div><button class="btn sm" data-myrc="${esc(p.id)}">طباعة</button></div>`).join("") || `<span class="muted">ما فيه دفعات</span>`}</div></div>`;
   el.querySelectorAll("[data-myrc]").forEach(b => b.onclick = () => { const p = pays.find(x => x.id === b.dataset.myrc); const w = openPrint(); fillPrintFin(w, `سند قبض ${p.receiptNo}`, [{html: receiptHTML(p, acc, S.myPay || [])}]); });

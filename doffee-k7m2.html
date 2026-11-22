@@ -1828,7 +1828,7 @@ function afterPay(o){
 }
 
 /* ---------------- receipt / ticket / print ---------------- */
-const PAYN = {cash: "كاش", card: "شبكة", split: "مختلط"};
+const PAYN = {cash: "كاش", card: "شبكة", split: "مختلط", online: "إلكتروني (البوابة)"};
 function zatcaQR(o){   // ZATCA phase-1 TLV: 1 seller · 2 VAT no · 3 time · 4 total incl. VAT · 5 VAT
   const enc = new TextEncoder(), parts = [CFG.settings.name, CFG.settings.vat.number, new Date(o.at).toISOString().replace(/\.\d{3}Z$/, "Z"), m2(o.total), m2(o.vat)];
   const bytes = []; parts.forEach((v, i) => { const b = enc.encode(String(v)); bytes.push(i + 1, b.length, ...b); });
@@ -2392,7 +2392,7 @@ const CL = {
   cfgChanged(){ if (!this.linked()) return; clearTimeout(this.timers.cfg); this.timers.cfg = setTimeout(() => {
     DB.queue("cfg/main", {...CFG, held: [], savedAt: new Date().toISOString()}); DB.queue("pub/menu", this.menuPub()); }, 3000); },
   menuPub(){ const S = CFG.settings, P = CFG.preorder || {};
-    return {show: P.show !== false, open: !!P.on, name: S.name, branch: S.branch, osos: CFG.osos.on ? CFG.osos.pct : 0, cats: CFG.cats, groups: CFG.groups.map(g => ({id: g.id, name: g.name, multi: g.multi, choices: g.choices.map(c => ({n: c.n, p: c.p}))})),
+    return {show: P.show !== false, open: !!P.on, pay: !!P.pay, name: S.name, branch: S.branch, osos: CFG.osos.on ? CFG.osos.pct : 0, cats: CFG.cats, groups: CFG.groups.map(g => ({id: g.id, name: g.name, multi: g.multi, choices: g.choices.map(c => ({n: c.n, p: c.p}))})),
       items: CFG.items.filter(i => i.active).map(i => ({id: i.id, cat: i.cat, icon: i.icon, name: i.name, price: i.price, sizes: i.sizes, groups: i.groups})), at: new Date().toISOString()}; },
   async agg(day){
     const all = await DB.days(day, day), L = all.filter(o => o.status !== "void"), V = all.filter(o => o.status === "void"), X = await FX.expDays(day, day);
@@ -2402,7 +2402,7 @@ const CL = {
         const c = (CFG.cats.find(x => x.id === l.cat) || {name: "أخرى"}).name; cats[c] = r2((cats[c] || 0) + l.unit * l.qty * f); }); });
     const top = Object.fromEntries(Object.entries(items).sort((a, b) => b[1].v - a[1].v).slice(0, 40));
     const O = L.filter(o => o.osos);
-    return {day, sales: s(L, o => o.total), count: L.length, cash: s(L, o => o.pay.cash), card: s(L, o => o.pay.card), disc: s(L, o => o.disc), vat: s(L, o => o.vat),
+    return {day, sales: s(L, o => o.total), count: L.length, cash: s(L, o => o.pay.cash), card: s(L, o => o.pay.card), online: s(L, o => o.pay.online || 0), disc: s(L, o => o.disc), vat: s(L, o => o.vat),
       voidN: V.length, voidAmt: s(V, o => o.total), exp: s(X, x => x.amount), expN: X.length, exps: X.map(x => ({a: x.amount, r: x.reason, c: x.cat, by: x.userName})),
       ososN: O.length, ososAmt: s(O, o => o.total), rewards: L.filter(o => o.reward).length, loyalN: L.filter(o => o.phone).length,
       hours, items: top, cats, users, low: lowStock().map(x => ({n: x.name, q: x.qty, u: x.unit})), at: new Date().toISOString()};
@@ -2479,7 +2479,8 @@ const CL = {
         <div class="note" style="margin-top:10px;font-size:13.5px">لوحة المالك: افتح هذا الرابط من جوالك وادخل برمز الإدارة العامة في البوابة:<br><b dir="ltr" style="word-break:break-all">${esc(own)}</b></div></div>
       <div class="card"><h3>📥 طلبات المتدربين من البوابة</h3><p style="color:var(--mut);margin-bottom:8px">المتدرب يطلب من بوابة المعهد وهو في المحاضرة، والطلب يوصل هنا، وتقبله وتجهّزه ويوصله إشعار لما يجهز. الدفع عند الاستلام.</p>
         <label class="toggle"><input type="checkbox" id="pshow" ${P.show !== false ? "checked" : ""}> إظهار «كوفي دوفي» في بوابة الطلاب (إذا شلته يختفي التبويب كامل من عند كل الطلاب)</label>
-        <label class="toggle"><input type="checkbox" id="pon" ${P.on ? "checked" : ""}> استقبال الطلبات مفتوح</label><button class="btn pri" id="psv" style="margin-top:8px">حفظ</button></div>
+        <label class="toggle"><input type="checkbox" id="pon" ${P.on ? "checked" : ""}> استقبال الطلبات مفتوح</label>
+        <label class="toggle"><input type="checkbox" id="ppay" ${P.pay ? "checked" : ""}> 💳 المتدرب يقدر يدفع إلكترونياً من البوابة (Tap)</label><button class="btn pri" id="psv" style="margin-top:8px">حفظ</button></div>
       <div class="card"><button class="btn warn" id="cun">فصل الجهاز عن السحابة</button></div>`
       : `<div class="card"><h3>☁️ ربط الكاشير بالسحابة</h3>
         <p style="color:var(--mut)">بعد الربط: كل المبيعات تنحفظ نسخة في قاعدة بيانات المعهد تلقائياً، وتشوف المبيعات من جوالك، ويوصلك إشعار لما تنقفل الوردية، وتستقبل طلبات المتدربين من البوابة.</p>
@@ -2492,7 +2493,7 @@ const CL = {
         catch (x) { e.target.disabled = false; e.target.textContent = "🔗 ربط"; toast(x.message === "CODE" ? "رمز الإدارة غير صحيح" : "ما قدرت أربط — تأكد من النت ومن نشر قواعد Firestore الجديدة", 1); console.error(x); } }; return; }
     $("#csync").onclick = async () => { await this.flush(); toast(this.err ? "⚠️ ما اكتملت المزامنة" : "✅ متزامن"); this.settings(); };
     $("#cown").onclick = () => window.open(own, "_blank");
-    $("#psv").onclick = () => { P.show = $("#pshow").checked; P.on = P.show && $("#pon").checked; saveCfg(); toast(!P.show ? "🙈 انشال كوفي دوفي من بوابة الطلاب" : P.on ? "✅ الطلبات مفتوحة للمتدربين" : "انقفلت الطلبات"); render(); };
+    $("#psv").onclick = () => { P.show = $("#pshow").checked; P.on = P.show && $("#pon").checked; P.pay = $("#ppay").checked; saveCfg(); toast(!P.show ? "🙈 انشال كوفي دوفي من بوابة الطلاب" : P.on ? "✅ الطلبات مفتوحة للمتدربين" : "انقفلت الطلبات"); render(); };
     $("#cun").onclick = async () => { if (!(await confirmBox("تفصل الجهاز؟ البيانات تبقى على الجهاز، بس توقف المزامنة.", "فصل", 1))) return; await this.unlink(); toast("انفصل"); this.settings(); };
   }
 };
@@ -2512,12 +2513,13 @@ function reqsModal(){
   const L = CL.reqs, pk = r => r.pickup ? `<span class="tag">⏰ ${esc(r.pickup)}</span>` : "";
   const ov = modal(`<div class="mh"><b>📥 طلبات المتدربين (${L.length})</b><button class="x" data-close>×</button></div><div class="mb">
     ${L.length ? L.map(r => `<div class="card" style="padding:12px;margin-bottom:10px;border:1.5px solid ${r.status === "new" ? "var(--gold)" : "var(--line)"}">
+      ${r.paid ? `<div class="note green" style="margin-bottom:6px">💳 <b>مدفوع إلكترونياً ${m2(r.paidAmount)} ${cur()}</b> · ${esc(r.payMethod || "")} — لا تاخذ منه فلوس</div>` : ""}
       <div class="row" style="justify-content:space-between"><b>🎓 ${esc(r.name || "متدرب")} · <span class="num">${esc(r.num)}</span>${(CFG.noshow || {})[r.num] ? ` <span class="tag r">⚠️ ما استلم ${(CFG.noshow || {})[r.num]} طلب قبل</span>` : ""}${dayOf(new Date(r.at)) !== dayOf() ? ` <span class="tag r">طلب من يوم سابق</span>` : ""}</b><span class="tag ${r.status === "ready" ? "g" : ""}">${RQS[r.status]}</span></div>
       <div style="color:var(--mut);font-size:13.5px;margin:4px 0">${timeOf(new Date(r.at))} ${pk(r)}</div>
       <div>${(r.items || []).map(x => `<div><b>${x.qty} × ${esc(x.name)}</b>${x.size ? " · " + esc(x.size) : ""}${(x.opts || []).length ? `<small style="color:var(--mut)"> — ${esc(x.opts.map(o => o.n).join("، "))}</small>` : ""}${x.note ? `<small> 📝 ${esc(x.note)}</small>` : ""}</div>`).join("")}</div>
       ${r.note ? `<div class="note" style="margin-top:8px">💬 ${esc(r.note)}</div>` : ""}
       <div class="row" style="margin-top:10px">${r.status === "new" ? `<button class="btn ok sm" data-acc="${r.id}">✅ قبول وطباعة تذكرة</button><button class="btn sm warn" data-rej="${r.id}">❌ رفض</button>`
-        : r.status === "accepted" ? `<button class="btn ok sm" data-rdy2="${r.id}">🔔 جاهز — أرسل له إشعار</button><button class="btn sm warn" data-ns="${r.id}">🚫 إلغاء</button>` : `<button class="btn pri sm" data-take="${r.id}">💵 استلم ودفع</button><button class="btn sm" data-rdy2="${r.id}">🔔 ذكّره</button><button class="btn sm warn" data-ns="${r.id}">🚫 ما جاء</button>`}</div></div>`).join("")
+        : r.status === "accepted" ? `<button class="btn ok sm" data-rdy2="${r.id}">🔔 جاهز — أرسل له إشعار</button><button class="btn sm warn" data-ns="${r.id}">🚫 إلغاء</button>` : `<button class="btn pri sm" data-take="${r.id}">${r.paid ? "✅ سلّمه الطلب" : "💵 استلم ودفع"}</button><button class="btn sm" data-rdy2="${r.id}">🔔 ذكّره</button><button class="btn sm warn" data-ns="${r.id}">🚫 ما جاء</button>`}</div></div>`).join("")
       : `<div class="empty"><div class="big">📥</div>ما فيه طلبات${(CFG.preorder || {}).on ? "" : "<br><small>استقبال الطلبات مقفول — افتحه من الإعدادات ← السحابة</small>"}</div>`}</div>`, null, true);
   REQOV = ov;
   const R = id => CL.reqs.find(x => x.id === id), again = () => { if (ov.isConnected) { closeModal(ov); reqsModal(); } };
@@ -2540,7 +2542,11 @@ function reqsModal(){
     if (CART.lines.length) { if (!(await confirmBox("عندك طلب مفتوح — أعلّقه وأفتح طلب المتدرب؟", "نعم"))) return; CFG.held.push({...CART, at: new Date().toISOString()}); saveCfg(); }
     CART = newCart(); CART.lines = reqLines(r); CART.type = "takeaway"; CART.cust = r.name || ""; CART.osos = {num: r.num}; CART.reqId = r.id;
     if (CFG.osos.on && CFG.osos.pct > 0) CART.disc = {type: "pct", v: CFG.osos.pct, by: "متدرب أسس", osos: true};
-    closeModal(ov); VIEW = "pos"; render(); toast("الطلب في السلة — خذ الدفع"); });
+    closeModal(ov); VIEW = "pos"; render();
+    if (!r.paid) return toast("الطلب في السلة — خذ الدفع");
+    const t = totals(), diff = r2(t.total - r.paidAmount);
+    if (!(await confirmBox(`الطلب <b>مدفوع إلكترونياً ${m2(r.paidAmount)} ${cur()}</b> (${esc(r.payMethod || "")}).${Math.abs(diff) > 0.009 ? `<br><b style="color:var(--red)">تنبيه: حساب الكاشير ${m2(t.total)} — الفرق ${m2(diff)} (تغيّرت الأسعار؟)</b>` : ""}<br>تسلّمه الطلب الحين؟`, "✅ تسليم"))) return;
+    const o = await saveOrder({method: "online", cash: 0, card: 0, online: r.paidAmount, recv: r.paidAmount, change: 0, ref: r.payId || ""}); afterPay(o); });
 }
 FX.reqPaid = async o => { if (o.reqId && CL.linked()) { try { await CL.setReq({id: o.reqId}, {status: "done", orderId: o.id, total: o.total, doneAt: o.at}); } catch (e) {} } };
 
@@ -2656,15 +2662,15 @@ function promptBox(title, ph){ return new Promise(res => { const ov = modal(`<di
 async function shiftSummary(sh){
   const all = await DB.days(dayOf(new Date(sh.openAt)), dayOf());
   const mine = all.filter(o => o.shift === sh.id), paid = mine.filter(live), voidedHere = all.filter(o => o.status === "void" && o.voidShift === sh.id && o.shift !== sh.id);
-  const cash = r2(paid.reduce((a, o) => a + o.pay.cash, 0)), card = r2(paid.reduce((a, o) => a + o.pay.card, 0));
+  const cash = r2(paid.reduce((a, o) => a + o.pay.cash, 0)), card = r2(paid.reduce((a, o) => a + o.pay.card, 0)), online = r2(paid.reduce((a, o) => a + (o.pay.online || 0), 0));
   const refundCash = r2(voidedHere.reduce((a, o) => a + o.pay.cash, 0));   // voids of earlier shifts paid back from this drawer
   const X = await FX.shiftExpenses(sh), exp = r2(X.reduce((a, x) => a + x.amount, 0));
-  return {count: paid.length, voids: mine.filter(o => !live(o)).length + voidedHere.length, sales: r2(cash + card), cash, card, disc: r2(paid.reduce((a, o) => a + o.disc, 0)), refundCash, exp, expList: X.map(x => ({a: x.amount, r: x.reason, c: x.cat, by: x.userName})), expected: r2(sh.openCash + cash - refundCash - exp)};
+  return {count: paid.length, voids: mine.filter(o => !live(o)).length + voidedHere.length, sales: r2(cash + card + online), cash, card, online, disc: r2(paid.reduce((a, o) => a + o.disc, 0)), refundCash, exp, expList: X.map(x => ({a: x.amount, r: x.reason, c: x.cat, by: x.userName})), expected: r2(sh.openCash + cash - refundCash - exp)};
 }
 async function closeShiftPage(){
   const sh = SH(), S = await shiftSummary(sh);
   $("#pg").innerHTML = `<div class="wrap" style="max-width:640px"><div class="card"><h3>🕐 إغلاق الوردية</h3><p style="color:var(--mut)">فُتحت ${fmtDT(sh.openAt)} بواسطة ${esc(sh.openBy)}</p></div>
-    <div class="kpis"><div class="kpi"><small>المبيعات</small><b class="num">${m2(S.sales)}</b></div><div class="kpi"><small>عدد الطلبات</small><b class="num">${S.count}</b></div><div class="kpi"><small>كاش</small><b class="num">${m2(S.cash)}</b></div><div class="kpi"><small>شبكة</small><b class="num">${m2(S.card)}</b></div></div>
+    <div class="kpis"><div class="kpi"><small>المبيعات</small><b class="num">${m2(S.sales)}</b></div><div class="kpi"><small>عدد الطلبات</small><b class="num">${S.count}</b></div><div class="kpi"><small>كاش</small><b class="num">${m2(S.cash)}</b></div><div class="kpi"><small>شبكة</small><b class="num">${m2(S.card)}</b></div>${S.online ? `<div class="kpi"><small>إلكتروني (البوابة)</small><b class="num">${m2(S.online)}</b></div>` : ""}</div>
     <div class="card"><table class="t"><tr><td>فكّة بداية الوردية</td><td class="num">${m2(sh.openCash)}</td></tr><tr><td>+ مبيعات الكاش</td><td class="num">${m2(S.cash)}</td></tr>${S.refundCash ? `<tr><td>− مرتجعات كاش لطلبات سابقة</td><td class="num">${m2(S.refundCash)}</td></tr>` : ""}${S.exp ? `<tr><td>− مصروفات من الدرج (${S.expList.length})</td><td class="num">${m2(S.exp)}</td></tr>` : ""}<tr><td><b>المفروض في الدرج</b></td><td class="num"><b>${m2(S.expected)}</b></td></tr></table>
       ${S.expList.length ? `<details style="margin-top:8px"><summary style="cursor:pointer;color:var(--mut)">تفاصيل المصروفات</summary><table class="t">${S.expList.map(x => `<tr><td>${esc(x.r)}<br><small style="color:var(--mut)">${esc(x.c)} · ${esc(x.by)}</small></td><td class="num">${m2(x.a)}</td></tr>`).join("")}</table></details>` : ""}
       <button class="btn sm" id="cexp" style="margin-top:8px">💸 إضافة مصروف</button>
@@ -2681,7 +2687,7 @@ async function closeShiftPage(){
 function zHTML(s){ const S = s.sum;
   return `<div class="rcpt ${CFG.settings.paper === 58 ? "w58" : ""}"><div class="c"><h2>${esc(CFG.settings.name)}</h2><div style="font-weight:800">تقرير إغلاق الوردية</div></div><div class="hr"></div>
     <table><tr><td>الفتح</td><td class="p num">${fmtDT(s.openAt)}</td></tr><tr><td>الإغلاق</td><td class="p num">${fmtDT(s.closeAt)}</td></tr><tr><td>فتحها</td><td class="p">${esc(s.openBy)}</td></tr><tr><td>قفلها</td><td class="p">${esc(s.closeBy)}</td></tr></table><div class="hr"></div>
-    <table><tr><td>عدد الطلبات</td><td class="p num">${S.count}</td></tr><tr><td>الملغي</td><td class="p num">${S.voids}</td></tr><tr><td>الخصومات</td><td class="p num">${m2(S.disc)}</td></tr><tr><td>كاش</td><td class="p num">${m2(S.cash)}</td></tr><tr><td>شبكة</td><td class="p num">${m2(S.card)}</td></tr><tr class="tot"><td>المبيعات</td><td class="p num">${m2(S.sales)}</td></tr></table><div class="hr"></div>
+    <table><tr><td>عدد الطلبات</td><td class="p num">${S.count}</td></tr><tr><td>الملغي</td><td class="p num">${S.voids}</td></tr><tr><td>الخصومات</td><td class="p num">${m2(S.disc)}</td></tr><tr><td>كاش</td><td class="p num">${m2(S.cash)}</td></tr><tr><td>شبكة</td><td class="p num">${m2(S.card)}</td></tr>${S.online ? `<tr><td>إلكتروني</td><td class="p num">${m2(S.online)}</td></tr>` : ""}<tr class="tot"><td>المبيعات</td><td class="p num">${m2(S.sales)}</td></tr></table><div class="hr"></div>
     <table><tr><td>الفكّة</td><td class="p num">${m2(s.openCash)}</td></tr>${S.refundCash ? `<tr><td>مرتجعات كاش</td><td class="p num">-${m2(S.refundCash)}</td></tr>` : ""}${S.exp ? `<tr><td>مصروفات</td><td class="p num">-${m2(S.exp)}</td></tr>` : ""}<tr><td>المفروض</td><td class="p num">${m2(s.expected)}</td></tr><tr><td>المعدود</td><td class="p num">${m2(s.counted)}</td></tr><tr class="tot"><td>الفرق</td><td class="p num">${m2(s.diff)}</td></tr></table>${s.note ? `<div class="hr"></div><div>${esc(s.note)}</div>` : ""}</div>`; }
 
 /* ---------------- reports ---------------- */
@@ -2689,7 +2695,7 @@ let RR = {from: null, to: null};
 async function reportsPage(){
   const d = dayOf(); RR.from = RR.from || d; RR.to = RR.to || d;
   const all = await DB.days(RR.from, RR.to), L = all.filter(live), V = all.filter(o => !live(o));
-  const sales = r2(L.reduce((a, o) => a + o.total, 0)), cnt = L.length, cash = r2(L.reduce((a, o) => a + o.pay.cash, 0)), card = r2(L.reduce((a, o) => a + o.pay.card, 0)), disc = r2(L.reduce((a, o) => a + o.disc, 0));
+  const sales = r2(L.reduce((a, o) => a + o.total, 0)), cnt = L.length, cash = r2(L.reduce((a, o) => a + o.pay.cash, 0)), card = r2(L.reduce((a, o) => a + o.pay.card, 0)), online = r2(L.reduce((a, o) => a + (o.pay.online || 0), 0)), disc = r2(L.reduce((a, o) => a + o.disc, 0));
   const items = {}, cats = {}, hours = Array(24).fill(0), users = {}, types = {local: 0, takeaway: 0};
   L.forEach(o => { hours[new Date(o.at).getHours()] += o.total; users[o.userName] = r2((users[o.userName] || 0) + o.total); types[o.type] = r2(types[o.type] + o.total);
     const f = o.sub ? (o.total / o.sub) : 1;   // spread order discount over its lines
@@ -2699,7 +2705,7 @@ async function reportsPage(){
   const preset = [["اليوم", d, d], ["أمس", dayOf(new Date(Date.now() - 864e5)), dayOf(new Date(Date.now() - 864e5))], ["٧ أيام", dayOf(new Date(Date.now() - 6 * 864e5)), d], ["هذا الشهر", d.slice(0, 8) + "01", d]];
   $("#pg").innerHTML = `<div class="wrap"><div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">📊 التقارير</h3><div class="row">${preset.map(([n, a, b]) => `<button class="chip ${RR.from === a && RR.to === b ? "on" : ""}" data-rp="${a}|${b}">${n}</button>`).join("")}
       <input type="date" id="rf" value="${RR.from}" style="min-height:44px;border-radius:12px;border:1.5px solid var(--line);padding:4px 8px"><input type="date" id="rt" value="${RR.to}" style="min-height:44px;border-radius:12px;border:1.5px solid var(--line);padding:4px 8px"></div></div></div>
-    <div class="kpis"><div class="kpi"><small>المبيعات</small><b class="num">${m2(sales)}</b></div><div class="kpi"><small>عدد الطلبات</small><b class="num">${cnt}</b></div><div class="kpi"><small>متوسط الطلب</small><b class="num">${m2(cnt ? sales / cnt : 0)}</b></div><div class="kpi"><small>كاش / شبكة</small><b class="num" style="font-size:20px">${m2(cash)} / ${m2(card)}</b></div><div class="kpi"><small>الخصومات</small><b class="num">${m2(disc)}</b></div><div class="kpi"><small>الملغي</small><b class="num">${V.length} · ${m2(V.reduce((a, o) => a + o.total, 0))}</b></div></div>
+    <div class="kpis"><div class="kpi"><small>المبيعات</small><b class="num">${m2(sales)}</b></div><div class="kpi"><small>عدد الطلبات</small><b class="num">${cnt}</b></div><div class="kpi"><small>متوسط الطلب</small><b class="num">${m2(cnt ? sales / cnt : 0)}</b></div><div class="kpi"><small>كاش / شبكة${online ? " / إلكتروني" : ""}</small><b class="num" style="font-size:20px">${m2(cash)} / ${m2(card)}${online ? " / " + m2(online) : ""}</b></div><div class="kpi"><small>الخصومات</small><b class="num">${m2(disc)}</b></div><div class="kpi"><small>الملغي</small><b class="num">${V.length} · ${m2(V.reduce((a, o) => a + o.total, 0))}</b></div></div>
     ${CFG.settings.vat.on ? `<div class="card"><b>الضريبة المحصّلة:</b> <span class="num">${m2(L.reduce((a, o) => a + o.vat, 0))} ${cur()}</span></div>` : ""}
     <div class="card"><h3>⏰ المبيعات حسب الساعة</h3>${cnt ? `<div class="bars" style="margin-bottom:22px">${hours.slice(h0, h1 + 1).map((v, i) => `<div style="height:${Math.max(2, v / mx * 100)}%" title="${m2(v)}"><span class="num">${h0 + i}</span></div>`).join("")}</div>` : `<div class="empty">ما فيه مبيعات في الفترة</div>`}</div>
     <div class="row" style="align-items:stretch"><div class="card grow" style="min-width:300px"><h3>🏆 الأصناف الأكثر مبيعاً</h3><table class="t"><tr><th>الصنف</th><th>الكمية</th><th>المبيعات</th></tr>${top.slice(0, 15).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${v.q}</td><td class="num">${m2(v.v)}</td></tr>`).join("") || `<tr><td colspan="3" class="empty">—</td></tr>`}</table></div>
