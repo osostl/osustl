@@ -2354,7 +2354,7 @@ const CL = {
   cfgChanged(){ if (!this.linked()) return; clearTimeout(this.timers.cfg); this.timers.cfg = setTimeout(() => {
     DB.queue("cfg/main", {...CFG, held: [], savedAt: new Date().toISOString()}); DB.queue("pub/menu", this.menuPub()); }, 3000); },
   menuPub(){ const S = CFG.settings, P = CFG.preorder || {};
-    return {open: !!P.on, name: S.name, branch: S.branch, osos: CFG.osos.on ? CFG.osos.pct : 0, cats: CFG.cats, groups: CFG.groups.map(g => ({id: g.id, name: g.name, multi: g.multi, choices: g.choices.map(c => ({n: c.n, p: c.p}))})),
+    return {show: P.show !== false, open: !!P.on, name: S.name, branch: S.branch, osos: CFG.osos.on ? CFG.osos.pct : 0, cats: CFG.cats, groups: CFG.groups.map(g => ({id: g.id, name: g.name, multi: g.multi, choices: g.choices.map(c => ({n: c.n, p: c.p}))})),
       items: CFG.items.filter(i => i.active).map(i => ({id: i.id, cat: i.cat, icon: i.icon, name: i.name, price: i.price, sizes: i.sizes, groups: i.groups})), at: new Date().toISOString()}; },
   async agg(day){
     const all = await DB.days(day, day), L = all.filter(o => o.status !== "void"), V = all.filter(o => o.status === "void"), X = await FX.expDays(day, day);
@@ -2440,6 +2440,7 @@ const CL = {
         <div class="row" style="margin-top:10px"><button class="btn pri" id="csync">🔄 مزامنة الآن</button><button class="btn" id="cown">📊 لوحة المالك (جوالك)</button></div>
         <div class="note" style="margin-top:10px;font-size:13.5px">لوحة المالك: افتح هذا الرابط من جوالك وادخل برمز الإدارة العامة في البوابة:<br><b dir="ltr" style="word-break:break-all">${esc(own)}</b></div></div>
       <div class="card"><h3>📥 طلبات المتدربين من البوابة</h3><p style="color:var(--mut);margin-bottom:8px">المتدرب يطلب من بوابة المعهد وهو في المحاضرة، والطلب يوصل هنا، وتقبله وتجهّزه ويوصله إشعار لما يجهز. الدفع عند الاستلام.</p>
+        <label class="toggle"><input type="checkbox" id="pshow" ${P.show !== false ? "checked" : ""}> إظهار «كوفي دوفي» في بوابة الطلاب (إذا شلته يختفي التبويب كامل من عند كل الطلاب)</label>
         <label class="toggle"><input type="checkbox" id="pon" ${P.on ? "checked" : ""}> استقبال الطلبات مفتوح</label><button class="btn pri" id="psv" style="margin-top:8px">حفظ</button></div>
       <div class="card"><button class="btn warn" id="cun">فصل الجهاز عن السحابة</button></div>`
       : `<div class="card"><h3>☁️ ربط الكاشير بالسحابة</h3>
@@ -2453,7 +2454,7 @@ const CL = {
         catch (x) { e.target.disabled = false; e.target.textContent = "🔗 ربط"; toast(x.message === "CODE" ? "رمز الإدارة غير صحيح" : "ما قدرت أربط — تأكد من النت ومن نشر قواعد Firestore الجديدة", 1); console.error(x); } }; return; }
     $("#csync").onclick = async () => { await this.flush(); toast(this.err ? "⚠️ ما اكتملت المزامنة" : "✅ متزامن"); this.settings(); };
     $("#cown").onclick = () => window.open(own, "_blank");
-    $("#psv").onclick = () => { P.on = $("#pon").checked; saveCfg(); toast(P.on ? "✅ الطلبات مفتوحة للمتدربين" : "انقفلت الطلبات"); render(); };
+    $("#psv").onclick = () => { P.show = $("#pshow").checked; P.on = P.show && $("#pon").checked; saveCfg(); toast(!P.show ? "🙈 انشال كوفي دوفي من بوابة الطلاب" : P.on ? "✅ الطلبات مفتوحة للمتدربين" : "انقفلت الطلبات"); render(); };
     $("#cun").onclick = async () => { if (!(await confirmBox("تفصل الجهاز؟ البيانات تبقى على الجهاز، بس توقف المزامنة.", "فصل", 1))) return; await this.unlink(); toast("انفصل"); this.settings(); };
   }
 };
@@ -2553,9 +2554,10 @@ async function ownerDash(){
   ownerOffers();
 }
 async function ownerOffers(){
-  const M = CL.M, ref = M.doc(OW.db, "coffeePub", "offers"), el = $("#offc"); let items = [];
-  try { const d = await M.getDoc(ref); items = d.exists() ? d.data().items || [] : []; } catch (e) {}
-  el.innerHTML = `<h3>🎁 عروض لمتدربي معهد أسس</h3><p style="color:var(--mut);margin-bottom:8px">العرض يطلع للمتدربين في تبويب «كوفي دوفي» في البوابة، ويوصلهم إشعار. إذا حطيت نسبة خصم، الكاشير يقدر يطبّقها على طلباتهم.</p>
+  const M = CL.M, ref = M.doc(OW.db, "coffeePub", "offers"), el = $("#offc"); let items = [], hidden = false;
+  try { const d = await M.getDoc(ref); items = d.exists() ? d.data().items || [] : []; hidden = d.exists() && !!d.data().hidden; } catch (e) {}
+  el.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:10px"><b>${hidden ? "🙈 كوفي دوفي مخفي من بوابة الطلاب" : "👁️ كوفي دوفي ظاهر في بوابة الطلاب"}</b><button class="btn sm ${hidden ? "ok" : "warn"}" id="ohide">${hidden ? "إظهاره للطلاب" : "إخفاؤه من البوابة"}</button></div>
+    <h3>🎁 عروض لمتدربي معهد أسس</h3><p style="color:var(--mut);margin-bottom:8px">العرض يطلع للمتدربين في تبويب «كوفي دوفي» في البوابة، ويوصلهم إشعار. إذا حطيت نسبة خصم، الكاشير يقدر يطبّقها على طلباتهم.</p>
     ${items.length ? `<table class="t">${items.map((o, k) => `<tr><td><b>${esc(o.title)}</b>${o.pct ? ` <span class="tag g">${o.pct}٪</span>` : ""}<br><small style="color:var(--mut)">${esc(o.text || "")}${o.to ? " · لين " + esc(o.to) : ""}</small></td><td>${o.on ? "✅ ظاهر" : "⏸️ موقوف"}</td><td style="white-space:nowrap"><button class="btn sm" data-otg="${k}">${o.on ? "إيقاف" : "إظهار"}</button> <button class="btn sm" data-odl="${k}">🗑️</button></td></tr>`).join("")}</table>` : ""}
     <details style="margin-top:10px"><summary class="btn sm" style="display:inline-flex">+ عرض جديد</summary><div style="margin-top:10px">
       <label class="f"><span>عنوان العرض</span><input id="oft" placeholder="مثال: كرواسون + لاتيه بـ ٢٠ ريال"></label>
@@ -2563,7 +2565,8 @@ async function ownerOffers(){
       <div class="row"><label class="f grow"><span>خصم ٪ (اختياري)</span><input id="ofp" class="num" inputmode="decimal"></label><label class="f grow"><span>من</span><input id="off" type="date" value="${dayOf()}"></label><label class="f grow"><span>إلى</span><input id="ofe" type="date"></label></div>
       <label class="toggle"><input type="checkbox" id="ofn" checked> أرسل إشعار لكل المتدربين</label>
       <button class="btn pri" id="ofs">نشر العرض</button></div></details>`;
-  const save = async () => { await M.setDoc(ref, {items, at: new Date().toISOString()}); };
+  const save = async () => { await M.setDoc(ref, {items, hidden, at: new Date().toISOString()}); };
+  $("#ohide").onclick = async () => { if (!hidden && !(await confirmBox("تخفي تبويب «كوفي دوفي» من بوابة كل الطلاب؟ (الكاشير يكمّل شغله عادي)", "إخفاء", 1))) return; hidden = !hidden; try { await save(); toast(hidden ? "🙈 انشال من بوابة الطلاب" : "👁️ رجع يظهر للطلاب"); } catch (x) { toast("ما قدرت أحفظ", 1); } ownerOffers(); };
   el.querySelectorAll("[data-otg]").forEach(b => b.onclick = async () => { items[+b.dataset.otg].on = !items[+b.dataset.otg].on; await save(); ownerOffers(); });
   el.querySelectorAll("[data-odl]").forEach(b => b.onclick = async () => { if (!(await confirmBox("تحذف العرض؟", "حذف", 1))) return; items.splice(+b.dataset.odl, 1); await save(); ownerOffers(); });
   $("#ofs").onclick = async e => { const title = $("#oft").value.trim(), pct = r2(parseFloat($("#ofp").value) || 0); if (title.length < 3) return toast("اكتب عنوان العرض", 1); if (pct < 0 || pct > 100) return toast("نسبة غير صحيحة", 1);

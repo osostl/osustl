@@ -592,7 +592,7 @@ function startData(){
   annDocs.forEach(k => S.subs.push(onSnapshot(ref("ann/" + k), snap => { S.ann[k] = (snap.exists() && snap.data().items) || []; renderAnn(); }, () => {})));
   sub(collection(db, "trainers"), snap => {
     S.trainers = {}; snap.docs.forEach(d => S.trainers[d.id] = {id: d.id, ...d.data()});
-    if (S.role === "trainer") { const t = Object.values(S.trainers).find(t => t.uid === S.authUser.uid); S.me = t ? t.id : null; }
+    if (S.role === "trainer") { const t = Object.values(S.trainers).find(t => t.uid === S.authUser.uid); S.me = t ? t.id : null; if (S.me) watchMsgs(); }
     S.loaded.trainers = true; afterData();
   });
   if (S.role === "student") {
@@ -611,7 +611,7 @@ function startData(){
     S.subs.push(onSnapshot(query(collection(db, "idcards"), where("num", "==", S.myNum)), snap => { const t = snap.docs[0] ? snap.docs[0].id : null; if (t !== S.myIdTok) { S.myIdTok = t; if (S.sTab === "card" && !busyEditing()) render(); } }, () => {}));
     S.subs.push(onSnapshot(query(collection(db, "certs"), where("num", "==", S.myNum)), snap => { S.myCerts = snap.docs.map(d => d.data()).filter(c => !c.revoked); if (!busyEditing()) render(); }, () => {}));
     S.subs.push(onSnapshot(query(collection(db, "evals"), where("num", "==", S.myNum)), snap => { S.myEvals = snap.docs.map(d => d.data()); if (!busyEditing()) render(); }, () => {}));
-    watchCamp();
+    watchCamp(); watchMsgs();
     S.subs.push(onSnapshot(query(collection(db, "exams"), where("memberNums", "array-contains", S.myNum)), snap => { S.myExams = snap.docs.map(d => ({id: d.id, ...d.data()})); if (!S.exTake && !busyEditing()) render(); }, e => console.error(e)));
     S.subs.push(onSnapshot(query(collection(db, "examSubs"), where("num", "==", S.myNum)), snap => {
       const old = S.mySubs || {}; S.mySubs = {}; snap.docs.forEach(d => { const x = d.data({serverTimestamps: "estimate"}); S.mySubs[x.eid] = x; });
@@ -630,7 +630,7 @@ function startData(){
   if (S.role === "admin") {
     S.subs.push(onSnapshot(ref("public/disabled"), snap => { S.disabled = (snap.exists() && snap.data().list) || {}; afterData(); }, () => {}));
     // emergency lock: a session that signed in before its role's lock time leaves at once
-    watchStaffLock();
+    watchStaffLock(); watchMsgs();
     if (!RO()) { S.mail = null; mailSubs(); }
     if (!RO()) S.subs.push(onSnapshot(collection(db, "memos"), snap => { S.memos = snap.docs.map(d => ({id: d.id, ...d.data()})); afterData(); }, () => {}));
     if (!FIN()) S.subs.push(onSnapshot(collection(db, "acReqs"), snap => { S.aReqs = snap.docs.map(d => ({id: d.id, ...d.data()})); afterData(); }, () => {}));
@@ -657,7 +657,7 @@ function startData(){
   }
 }
 function fail(err){ console.error(err); $("#app").innerHTML = `<div class="notice err">تعذّر تحميل البيانات. ${err && err.code === "permission-denied" ? "حسابك ما عنده صلاحية، أو قواعد الحماية في Firebase تحتاج تحديث." : "تأكد من الاتصال وحدّث الصفحة."}</div>`; }
-function stopAll(){ S.subs.forEach(u => u()); S.subs = []; S.courses = null; S._crsOpen = null; S.signReqs = null; stopAtt(); stopAdminSubs(); S.trainers = {}; S.groups = {}; S.secrets = {}; S.students = {}; S.stSecrets = {}; S.grades = {}; S.myStudent = null; S.myAtt = []; S.myResults = []; S.myExc = []; S.myWarn = []; S.myEvals = []; S.myExams = []; S.mySubs = {}; S.exTake = null; S._exAns = null; clearInterval(S._exTimer); S.exams = {}; S.exView = null; S.hrStaff = null; S.hrAtt = null; S.camp = null; S._campOn = false; S.campExam = null; S._campLes = null; S.excuses = []; S.warnings = {}; S.sTab = "home"; S._trainerSynced = false; S.ann.trainers = []; S.ann.students = []; renderAnn(); }
+function stopAll(){ S.subs.forEach(u => u()); S.subs = []; S.courses = null; S._crsOpen = null; S.signReqs = null; stopAtt(); stopAdminSubs(); S.trainers = {}; S.groups = {}; S.secrets = {}; S.students = {}; S.stSecrets = {}; S.grades = {}; S.myStudent = null; S.myAtt = []; S.myResults = []; S.myExc = []; S.myWarn = []; S.myEvals = []; S.myExams = []; S.mySubs = {}; S.exTake = null; S._exAns = null; clearInterval(S._exTimer); S.exams = {}; S.exView = null; S.hrStaff = null; S.hrAtt = null; S.camp = null; S._campOn = false; S.campExam = null; S._campLes = null; S.excuses = []; S.warnings = {}; S.sTab = "home"; S._trainerSynced = false; S.ann.trainers = []; S.ann.students = []; renderAnn(); S._msgSub = false; S.inbox = []; S.inboxRead = new Set(); renderInboxBar(); }
 
 function afterData(){
   if (S._finModal && $("#modal").classList.contains("on") && S._finDraw && !busyEditing()) S._finDraw();
@@ -1777,7 +1777,7 @@ const EXC_ST = {pending: "قيد المراجعة", accepted: "مقبول", reje
 const EXC_PILL = {pending: "l", accepted: "p", rejected: "a"};
 function studentTabs(){
   const open = Object.values(S.groups).filter(g => g.evalOpen && !(S.myEvals || []).some(e => e.groupId === g.id)).length;
-  const tabs = [["home", "الرئيسية"], ...(campOn() ? [["camp", "🛡️ معسكر الأمن السيبراني"]] : []), ...(S.cfMenu ? [["coffee", "☕ كوفي دوفي" + ((S.cfMine || []).some(r => r.status === "ready") ? " (جاهز)" : "")]] : []), ["card", "بطاقتي"], ["att", "حضوري"], ["exams", "الاختبارات" + ((S.myExams || []).some(e => exState(e, Date.now(), S.myNum) === "open" && !(S.mySubs || {})[e.id]) ? " (1)" : "")], ["exc", "الأعذار"], ["warn", "الإنذارات" + ((S.myWarn || []).length ? ` (${S.myWarn.length})` : "")], ["eval", "التقييم" + (open ? ` (${open})` : "")], ["areq", "طلبات الأكاديمية" + ((S.myAReq || []).some(r => r.status === "done" && r.reply && !r.seen) ? " (1)" : "")], ["freq", "طلبات المالية" + ((S.myFReq || []).some(r => r.type === "invoice" && r.status === "approved" && !r.seen) ? " (1)" : "")], ...(S.survey && S.survey.open ? [["survey", "الاستبيان" + (S.surveyDone === S.survey.id ? "" : " (1)")]] : [])];
+  const tabs = [["home", "الرئيسية"], ...(campOn() ? [["camp", "🛡️ معسكر الأمن السيبراني"]] : []), ["msgs", "📨 رسائلي" + (unreadMsgs().length ? ` (${unreadMsgs().length})` : "")], ...(S.cfMenu ? [["coffee", "☕ كوفي دوفي" + ((S.cfMine || []).some(r => r.status === "ready") ? " (جاهز)" : "")]] : []), ["card", "بطاقتي"], ["att", "حضوري"], ["exams", "الاختبارات" + ((S.myExams || []).some(e => exState(e, Date.now(), S.myNum) === "open" && !(S.mySubs || {})[e.id]) ? " (1)" : "")], ["exc", "الأعذار"], ["warn", "الإنذارات" + ((S.myWarn || []).length ? ` (${S.myWarn.length})` : "")], ["eval", "التقييم" + (open ? ` (${open})` : "")], ["areq", "طلبات الأكاديمية" + ((S.myAReq || []).some(r => r.status === "done" && r.reply && !r.seen) ? " (1)" : "")], ["freq", "طلبات المالية" + ((S.myFReq || []).some(r => r.type === "invoice" && r.status === "approved" && !r.seen) ? " (1)" : "")], ...(S.survey && S.survey.open ? [["survey", "الاستبيان" + (S.surveyDone === S.survey.id ? "" : " (1)")]] : [])];
   return `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k, v]) => `<button class="tab ${(S.sTab || "home") === k ? "on" : ""}" data-stab="${k}">${v}</button>`).join("")}</div></div>`;
 }
 function bindStudentTabs(app){ app.querySelectorAll("[data-stab]").forEach(b => b.onclick = () => { S.sTab = b.dataset.stab; render(); window.scrollTo(0, 0); }); }
@@ -1791,8 +1791,11 @@ function myCourseStats(){
 function renderStudent(app){
   const st = S.myStudent;
   if (!st) { app.innerHTML = `<div class="notice err">ما لقينا سجلك. تواصل مع الشؤون الأكاديمية.</div>`; return; }
-  if (S.cfMenu === undefined) { S.cfMenu = null; getDoc(ref("coffeePub/menu")).then(d => { if (d.exists() && (d.data().items || []).length) { S.cfMenu = d.data(); if (S.view === "student") render(); } }).catch(() => {}); }
-  if ((S.sTab || "home") !== "home") { app.innerHTML = studentTabs() + `<div id="sb"></div>`; bindStudentTabs(app); ({coffee: studentCoffee, camp: studentCamp, card: studentCard, att: studentAtt, exams: studentExams, exc: studentExc, warn: studentWarn, eval: studentEval, fin: studentFinReq, areq: studentAcReq, freq: studentFinReq, survey: studentSurvey})[S.sTab]($("#sb")); return; }
+  if (S.cfMenu === undefined) { S.cfMenu = null; Promise.all([getDoc(ref("coffeePub/menu")), getDoc(ref("coffeePub/offers")).catch(() => null)]).then(([d, o]) => {
+      const off = o && o.exists() ? o.data() : {}; S.cfOffers = off.items || [];
+      if (d.exists() && (d.data().items || []).length && d.data().show !== false && !off.hidden) { S.cfMenu = d.data(); if (S.view === "student") render(); } }).catch(() => {}); }
+  if (S.sTab === "coffee" && !S.cfMenu) S.sTab = "home";
+  if ((S.sTab || "home") !== "home") { app.innerHTML = studentTabs() + `<div id="sb"></div>`; bindStudentTabs(app); ({msgs: studentMsgs, coffee: studentCoffee, camp: studentCamp, card: studentCard, att: studentAtt, exams: studentExams, exc: studentExc, warn: studentWarn, eval: studentEval, fin: studentFinReq, areq: studentAcReq, freq: studentFinReq, survey: studentSurvey})[S.sTab]($("#sb")); return; }
   const gs = Object.values(S.groups).sort((a,b) => (a.course||"").localeCompare(b.course||"","ar"));
   const res = {}; S.myResults.forEach(r => res[r.groupId] = r);
   const cards = gs.map(g => {
@@ -3241,22 +3244,30 @@ function adminMessages(el){
     $("#qStop").onclick = () => { S.msgQ = null; render(); };
     return;
   }
+  const M = S.msgF = S.msgF || {kind: "st_all", groups: [], pick: [], tpick: [], roles: [], abs: 1, chP: true, chW: false, q: ""};
+  const ROLE_N = {admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", auditor: "المراجع", admission: "القبول والتسجيل", business: "الأعمال", hr: "الموارد البشرية"};
+  const KINDS = [["st_all", "كل الطلاب"], ["st_m", "الطلاب (ذكور)"], ["st_f", "الطالبات"], ["st_group", "طلاب مقرر أو شعبة"], ["st_pick", "طلاب أختارهم بالاسم"], ["st_warn", "الطلاب اللي عليهم إنذار"], ["st_abs", "الطلاب اللي غيابهم عالي"], ...(SEES_FIN() && S.finAcc ? [["st_fee", "الطلاب اللي عليهم رسوم متبقية"]] : []), ["tr_all", "كل المدربين"], ["tr_pick", "مدربين أختارهم"], ["staff", "موظفي الإدارات"]];
+  const stName = n => (S.students[n] || {}).name || n, trName = t => (S.trainers[t] && trainerTitle(S.trainers[t])) || t;
   el.innerHTML = `
   <div class="card"><h2>الرسائل الجماعية</h2>
-    <p class="muted" style="margin-top:0">تختار المستلمين (مدربين أو طلاب) والرسالة، وبعدها تمر عليهم: كل واحد ضغطة تفتح محادثته ورسالته جاهزة، وأنت تضغط إرسال في واتساب.</p>
-    <div class="row">
-      <label class="f grow" for="mTo">المستلمون<select id="mTo"><option value="trainers">كل المدربين</option>${Object.values(S.trainers).sort((a,b)=>a.name.localeCompare(b.name,"ar")).map(t => `<option value="t:${esc(t.id)}">${esc(trainerTitle(t))}</option>`).join("")}<option value="all" selected>كل الطلاب</option><option value="m">الطلاب فقط</option><option value="f">الطالبات فقط</option>${gs.map(g => `<option value="g:${esc(g.id)}">${esc(g.course)} · ${esc(tName(g.trainerId))}</option>`).join("")}</select></label>
-      <label class="f grow" for="mType">الرسالة<select id="mType">
-        <option value="login">الرموز: بيانات الدخول لكل طالب</option>
+    <p class="muted" style="margin-top:0">اختار المستلمين، واكتب الرسالة، واختار توصل وين: <b>في البوابة + إشعار على الجوال</b> (ويبيّن لك مين قرأها)، أو <b>واتساب</b> (تمر عليهم واحد واحد)، أو الاثنين.</p>
+    <label class="f" for="mKind">المستلمون<select id="mKind">${KINDS.map(([k, v]) => `<option value="${k}" ${M.kind === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+    <div id="mPick" style="margin-top:8px"></div>
+    <div class="row" style="margin-top:10px;gap:16px;flex-wrap:wrap">
+      <label class="row" style="gap:6px"><input type="checkbox" id="chP" ${M.chP ? "checked" : ""}> 📲 في البوابة + إشعار</label>
+      <label class="row" style="gap:6px"><input type="checkbox" id="chW" ${M.chW ? "checked" : ""}> 💬 واتساب</label></div>
+    <label class="f" for="mTitle" style="margin-top:10px">عنوان الرسالة (للبوابة والإشعار)<input id="mTitle" maxlength="80" placeholder="مثال: تغيير موعد محاضرة الأحد" value="${esc(M.title || "")}"></label>
+    <label class="f grow" for="mType" style="margin-top:10px">نوع رسالة الواتساب<select id="mType">
         <option value="custom">رسالة عامة</option>
+        <option value="login">الرموز: بيانات الدخول لكل شخص</option>
         <option value="att">سجل الحضور لكل طالب</option>
         <option value="grades">الدرجات المعتمدة لكل طالب</option>
       </select></label>
-    </div>
-    <label class="f" for="mText" style="margin-top:10px">نص الرسالة <span class="muted">(تقدر تستخدم {الاسم} و{الرقم} و{الرمز} و{الرابط})</span><textarea id="mText" style="min-height:170px"></textarea></label>
+    <label class="f" for="mText" style="margin-top:10px">نص الرسالة <span class="muted">(تقدر تستخدم {الاسم} و{الرقم}${M.chW ? " و{الرمز} و{الرابط}" : ""})</span><textarea id="mText" style="min-height:170px"></textarea></label>
     <div id="mInfo" class="muted" style="margin:8px 0"></div>
-    <div class="row"><button class="btn pri" id="mPrep">تجهيز الرسائل</button><button class="btn sm" id="mCopy">نسخ النص (لقائمة بث في واتساب)</button></div>
-  </div>`;
+    <div class="row"><button class="btn pri" id="mSend">إرسال</button><button class="btn sm" id="mCopy">نسخ النص (لقائمة بث في واتساب)</button></div>
+  </div>
+  <div class="card" id="mHist"><h2>الرسائل المرسلة</h2><div class="muted">جاري التحميل…</div></div>`;
   const presets = {
     login: "السلام عليكم {الاسم}\n\nبيانات دخولكم لبوابة الطلاب:\nالرقم الأكاديمي: {الرقم}\nرمز الدخول: {الرمز}\nالرابط: {الرابط}" + SIGN,
     custom: "السلام عليكم {الاسم}\n\n" + SIGN,
@@ -3264,43 +3275,138 @@ function adminMessages(el){
     att: "(يتجهز سجل الحضور لكل طالب حسب بياناته)",
     grades: "(تتجهز الدرجات المعتمدة لكل طالب حسب بياناته)",
   };
-  const isTr = () => { const v = $("#mTo").value; return v === "trainers" || v.startsWith("t:"); };
+  const isTr = () => M.kind.startsWith("tr"), isStaffK = () => M.kind === "staff";
   const phoneOf = n => isTr() ? (S.trPhones || {})[n] : (S.stPhones || {})[n];
-  const nameOf = n => isTr() ? ((S.trainers[n] && trainerTitle(S.trainers[n])) || "") : ((S.students[n] || {}).name || "");
+  const nameOf = n => isTr() ? trName(n) : isStaffK() ? (ROLE_N[n] || n) : stName(n);
+  const absNums = () => { const out = new Set(); (S.allAtt ? absAlerts().alerts : []).forEach(x => { if (x.s.sid && x.st.level >= M.abs) out.add(x.s.sid); }); return [...out]; };
   const recips = () => {
-    const v = $("#mTo").value;
-    if (v === "trainers") return Object.keys(S.trainers);
-    if (v.startsWith("t:")) return [v.slice(2)];
-    let nums = Object.keys(S.students);
-    if (v === "m" || v === "f") nums = nums.filter(n => S.students[n].gender === v);
-    if (v.startsWith("g:")) nums = (S.groups[v.slice(2)] || {}).memberNums || [];
-    return nums.sort();
+    const k = M.kind, all = Object.keys(S.students);
+    if (k === "tr_all") return Object.keys(S.trainers);
+    if (k === "tr_pick") return M.tpick.filter(t => S.trainers[t]);
+    if (k === "staff") return M.roles.slice();
+    if (k === "st_m" || k === "st_f") return all.filter(n => S.students[n].gender === k.slice(3)).sort();
+    if (k === "st_group") return [...new Set(M.groups.flatMap(g => (S.groups[g] || {}).memberNums || []))].sort();
+    if (k === "st_pick") return M.pick.filter(n => S.students[n]);
+    if (k === "st_warn") return [...new Set(Object.values(S.warnings || {}).map(w => w.num).filter(n => n && S.students[n]))].sort();
+    if (k === "st_abs") return absNums().filter(n => S.students[n]).sort();
+    if (k === "st_fee") return Object.entries(S.finAcc || {}).filter(([n, acc]) => S.students[n] && accStatus(acc, paysOf(n)).remaining > 0).map(([n]) => n).sort();
+    return all.sort();
+  };
+  const label = () => { const k = M.kind, base = (KINDS.find(x => x[0] === k) || [, ""])[1];
+    if (k === "st_group") return "طلاب: " + M.groups.map(g => (S.groups[g] || {}).course).filter(Boolean).join("، ");
+    if (k === "staff") return M.roles.map(r => ROLE_N[r]).join("، ");
+    if (k === "st_abs") return base + (M.abs >= 3 ? " (محرومين)" : M.abs === 2 ? " (إنذار ثاني فأكثر)" : " (إنذار أول فأكثر)");
+    return base; };
+  const drawPick = () => {
+    const box = $("#mPick"), k = M.kind; box.innerHTML = "";
+    if (k === "st_group") box.innerHTML = `<div class="list" style="max-height:260px;overflow:auto">${gs.map(g => `<label class="item" style="gap:8px;padding:8px 12px"><input type="checkbox" data-mg="${esc(g.id)}" ${M.groups.includes(g.id) ? "checked" : ""}><span class="grow">${esc(g.course)} · ${esc(tName(g.trainerId))}</span><span class="muted">${(g.memberNums || []).length}</span></label>`).join("")}</div>`;
+    if (k === "st_pick" || k === "tr_pick") { const tr = k === "tr_pick", sel = tr ? M.tpick : M.pick, q = M.q.trim();
+      const pool = tr ? Object.keys(S.trainers).map(t => [t, trName(t)]) : Object.keys(S.students).map(n => [n, stName(n)]);
+      const shown = pool.filter(([id, nm]) => !q || nm.includes(q) || id.includes(q)).sort((a, b) => a[1].localeCompare(b[1], "ar")).slice(0, 60);
+      box.innerHTML = `<input type="search" id="mQ" placeholder="ابحث بالاسم أو الرقم…" value="${esc(M.q)}">
+        ${sel.length ? `<div style="margin:8px 0;display:flex;flex-wrap:wrap;gap:6px">${sel.map(id => `<span class="pill p" style="cursor:pointer" data-mx="${esc(id)}">${esc(tr ? trName(id) : stName(id))} ✕</span>`).join("")}</div>` : ""}
+        <div class="list" style="max-height:240px;overflow:auto;margin-top:6px">${shown.map(([id, nm]) => `<label class="item" style="gap:8px;padding:8px 12px"><input type="checkbox" data-mp="${esc(id)}" ${sel.includes(id) ? "checked" : ""}><span class="grow">${esc(nm)}</span><span class="muted">${esc(id)}</span></label>`).join("")}</div>`; }
+    if (k === "st_abs") box.innerHTML = `<select id="mAbs"><option value="1" ${M.abs === 1 ? "selected" : ""}>وصلوا الإنذار الأول فأكثر</option><option value="2" ${M.abs === 2 ? "selected" : ""}>وصلوا الإنذار الثاني فأكثر</option><option value="3" ${M.abs === 3 ? "selected" : ""}>وصلوا الحرمان</option></select>${S.allAtt ? "" : `<div class="muted" style="margin-top:6px">جاري حساب الغياب…</div>`}`;
+    if (k === "staff") box.innerHTML = `<div class="list">${Object.entries(ROLE_N).map(([r, n]) => `<label class="item" style="gap:8px;padding:8px 12px"><input type="checkbox" data-mr="${r}" ${M.roles.includes(r) ? "checked" : ""}><span class="grow">${n}</span></label>`).join("")}</div>`;
+    box.querySelectorAll("[data-mg]").forEach(c => c.onchange = () => { M.groups = c.checked ? [...M.groups, c.dataset.mg] : M.groups.filter(x => x !== c.dataset.mg); info(); });
+    box.querySelectorAll("[data-mr]").forEach(c => c.onchange = () => { M.roles = c.checked ? [...M.roles, c.dataset.mr] : M.roles.filter(x => x !== c.dataset.mr); info(); });
+    box.querySelectorAll("[data-mp]").forEach(c => c.onchange = () => { const key = k === "tr_pick" ? "tpick" : "pick"; M[key] = c.checked ? [...M[key], c.dataset.mp] : M[key].filter(x => x !== c.dataset.mp); drawPick(); info(); });
+    box.querySelectorAll("[data-mx]").forEach(c => c.onclick = () => { const key = k === "tr_pick" ? "tpick" : "pick"; M[key] = M[key].filter(x => x !== c.dataset.mx); drawPick(); info(); });
+    const qq = $("#mQ"); if (qq) { qq.oninput = () => { M.q = qq.value; const pos = qq.selectionStart; drawPick(); const x = $("#mQ"); x.focus(); x.setSelectionRange(pos, pos); }; }
+    const ab = $("#mAbs"); if (ab) ab.onchange = () => { M.abs = +ab.value; info(); };
+    if (k === "st_abs" && !S.allAtt) loadAllAtt().then(() => { if (S.aTab === "msgs" && M.kind === "st_abs") { drawPick(); info(); } }).catch(() => toast("تعذّر تحميل سجلات الحضور"));
   };
   const info = () => {
-    const nums = recips(), withP = nums.filter(n => phoneOf(n));
-    const miss = nums.filter(n => !phoneOf(n)).map(nameOf).filter(Boolean);
-    $("#mInfo").innerHTML = `${withP.length} من ${nums.length} عندهم رقم جوال.${miss.length ? ` <span>بدون جوال: ${esc(miss.slice(0, 8).join("، "))}${miss.length > 8 ? ` و${miss.length - 8} غيرهم` : ""}</span>` : ""}`;
+    const ids = recips(), wa = M.chW && !isStaffK(), withP = wa ? ids.filter(n => phoneOf(n)) : [];
+    const miss = wa ? ids.filter(n => !phoneOf(n)).map(nameOf).filter(Boolean) : [];
+    $("#mInfo").innerHTML = `<b>${ids.length}</b> ${isStaffK() ? "قسم" : isTr() ? "مدرب" : "طالب"}${wa ? ` · ${withP.length} منهم عندهم رقم جوال للواتساب${miss.length ? ` <span>(بدون جوال: ${esc(miss.slice(0, 6).join("، "))}${miss.length > 6 ? ` و${miss.length - 6} غيرهم` : ""})</span>` : ""}` : ""}${isStaffK() && M.chW ? " · <span>الواتساب ما يشمل الأقسام — توصلهم في البوابة</span>" : ""}`;
   };
-  const setType = () => { const t = $("#mType").value; if (isTr() && (t === "att" || t === "grades")) { toast("سجل الحضور والدرجات للطلاب فقط"); $("#mType").value = "custom"; return setType(); } $("#mText").value = isTr() && t === "login" ? presets.trLogin : presets[t]; $("#mText").disabled = t === "att" || t === "grades"; };
-  $("#mTo").onchange = () => { if (isTr() && ["att", "grades"].includes($("#mType").value)) { $("#mType").value = "custom"; setType(); } if (isTr() && $("#mType").value === "login") $("#mText").value = presets.trLogin; else if (!isTr() && $("#mType").value === "login") $("#mText").value = presets.login; info(); }; $("#mType").onchange = setType; setType(); info();
+  const setType = () => { const t = $("#mType").value; if (!M.chW && t !== "custom") { $("#mType").value = "custom"; return setType(); }
+    if ((isTr() || isStaffK()) && (t === "att" || t === "grades")) { toast("سجل الحضور والدرجات للطلاب فقط"); $("#mType").value = "custom"; return setType(); }
+    if (isStaffK() && t === "login") { $("#mType").value = "custom"; return setType(); }
+    $("#mText").value = isTr() && t === "login" ? presets.trLogin : presets[t]; $("#mText").disabled = t === "att" || t === "grades";
+    $("#mType").closest("label").style.display = M.chW ? "" : "none"; };
+  $("#mKind").onchange = () => { M.kind = $("#mKind").value; M.q = ""; drawPick(); if ($("#mType").value !== "custom") setType(); info(); };
+  $("#chP").onchange = () => { M.chP = $("#chP").checked; info(); };
+  $("#chW").onchange = () => { M.chW = $("#chW").checked; setType(); info(); };
+  $("#mTitle").oninput = () => M.title = $("#mTitle").value;
+  $("#mType").onchange = setType; setType(); drawPick(); info();
   $("#mCopy").onclick = async () => { try { await navigator.clipboard.writeText($("#mText").value.replace(/\{الاسم\}/g, "").replace(/السلام عليكم \n/, "السلام عليكم\n")); toast("انتسخ النص"); } catch { toast("المتصفح منع النسخ"); } };
-  $("#mPrep").onclick = async () => {
-    const type = $("#mType").value, tpl = $("#mText").value;
-    const tr = isTr();
-    const nums = recips().filter(n => /^9665\d{8}$/.test(phoneOf(n) || ""));
-    if (!nums.length) return toast(tr ? "ما فيه مدربين عندهم رقم جوال. أضف الأرقام من تبويب المدربين" : "ما فيه مستلمين عندهم رقم جوال. أضف الأرقام من تبويب الطلاب");
-    $("#mPrep").disabled = true; S._busy = true;
-    const items = [];
+  $("#mSend").onclick = async () => {
+    const type = $("#mType").value, tpl = $("#mText").value, ids = recips(), tr = isTr(), title = $("#mTitle").value.trim();
+    if (!M.chP && !M.chW) return toast("اختار وين توصل الرسالة: البوابة أو الواتساب");
+    if (!ids.length) return toast("ما فيه مستلمين — اختار المستلمين أول");
+    if (M.chP && (title.length < 3 || type !== "custom" || tpl.replace(/السلام عليكم|\{الاسم\}|الشؤون الأكاديمية|معهد أسس التقنية والقانون|\s/g, "").length < 3)) return toast(type !== "custom" ? "الرسالة في البوابة لازم تكون «رسالة عامة»" : "اكتب عنوان ونص الرسالة");
+    if (M.chP && /\{الرمز\}/.test(tpl)) return toast("ما ينفع ترسل {الرمز} في البوابة — شيله أو أرسله واتساب بس");
+    if (!confirm(`ترسل «${title || "رسالة"}» إلى ${ids.length} ${isStaffK() ? "قسم" : tr ? "مدرب" : "طالب"}${M.chP ? " في البوابة مع إشعار" : ""}${M.chW ? (M.chP ? " + " : " ") + "واتساب" : ""}؟`)) return;
+    $("#mSend").disabled = true; S._busy = true;
     try {
-      for (const [k, n] of nums.entries()) {
-        $("#mInfo").textContent = `تجهيز ${k + 1} من ${nums.length}…`;
-        const text = tr ? fillTrainerVars(tpl, n) : (type === "att" || type === "grades") ? await waText(n, type, {}) : fillVars(tpl, n);
-        items.push({num: n, name: nameOf(n), phone: phoneOf(n), text});
+      if (M.chP) {
+        const id = "m-" + Date.now().toString(36) + uid(), who = ROLE_N[S.adminRole] || "الإدارة";
+        await setDoc(ref("msgs/" + id), {title: title.slice(0, 80), text: tpl.slice(0, 2000), at: new Date().toISOString(), by: who, kind: M.kind, label: label(), count: ids.length,
+          nums: tr || isStaffK() ? [] : ids, tids: tr ? ids : [], roles: isStaffK() ? ids : []});
+        notify("msg", id); logAction("رسالة جماعية", `${title} → ${label()} (${ids.length})`); toast(`📨 وصلت الرسالة في البوابة لـ ${ids.length}`); S._msgHist = null;
       }
-      S.msgQ = {items, idx: 0};
-    } catch (e) { console.error(e); toast("تعذّر تجهيز الرسائل"); }
+      if (M.chW && !isStaffK()) {
+        const nums = ids.filter(n => /^9665\d{8}$/.test(phoneOf(n) || ""));
+        if (!nums.length) toast(tr ? "ما فيه مدربين عندهم رقم جوال" : "ما فيه مستلمين عندهم رقم جوال");
+        else { const items = [];
+          for (const [k, n] of nums.entries()) { $("#mInfo").textContent = `تجهيز واتساب ${k + 1} من ${nums.length}…`;
+            const text = tr ? fillTrainerVars(tpl, n) : (type === "att" || type === "grades") ? await waText(n, type, {}) : fillVars(tpl, n);
+            items.push({num: n, name: nameOf(n), phone: phoneOf(n), text}); }
+          S.msgQ = {items, idx: 0}; }
+      }
+      M.title = ""; 
+    } catch (e) { console.error(e); handleWriteErr(e); }
     S._busy = false; render();
   };
+  msgHistory($("#mHist"));
+}
+/* sent portal messages + who read them */
+async function msgHistory(box){
+  if (!box) return;
+  try { if (!S._msgHist) S._msgHist = (await getDocs(collection(db, "msgs"))).docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 30); }
+  catch (e) { box.innerHTML = `<h2>الرسائل المرسلة</h2><div class="notice err">تعذّر التحميل — تأكد إن قواعد Firestore الجديدة منشورة.</div>`; return; }
+  const L = S._msgHist;
+  box.innerHTML = `<h2>الرسائل المرسلة في البوابة</h2>${L.length ? `<div class="list">${L.map(m => `<div class="item" style="align-items:flex-start"><div class="grow"><b>${esc(m.title)}</b><div class="muted">${esc(m.label || "")} · ${m.count} مستلم · ${esc(bothDates(m.at.slice(0, 10)))} · ${esc(m.by || "")}</div><div id="rd-${esc(m.id)}"></div></div><button class="btn sm" data-rd="${esc(m.id)}">مين قرأ؟</button>${RO() ? "" : `<button class="btn sm danger" data-mdel="${esc(m.id)}">حذف</button>`}</div>`).join("")}</div>` : `<div class="muted">ما أرسلت رسائل في البوابة للحين.</div>`}`;
+  box.querySelectorAll("[data-rd]").forEach(b => b.onclick = async () => {
+    const m = L.find(x => x.id === b.dataset.rd), out = $("#rd-" + m.id); out.innerHTML = `<span class="muted">…</span>`;
+    try { const rs = (await getDocs(query(collection(db, "msgReads"), where("msg", "==", m.id)))).docs.map(d => d.data()), seen = new Set(rs.map(r => r.who));
+      const ids = [...(m.nums || []), ...(m.tids || []), ...(m.roles || [])], nm = id => (S.students[id] || {}).name || (S.trainers[id] && trainerTitle(S.trainers[id])) || id, not = ids.filter(id => !seen.has(id));
+      out.innerHTML = `<div style="margin-top:6px"><span class="pill p">قرأها ${seen.size} من ${ids.length}</span>${not.length ? `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer">ما قرأها (${not.length})</summary><div class="muted">${esc(not.map(nm).join("، "))}</div></details>` : ""}</div>`;
+    } catch (e) { out.innerHTML = `<span class="muted">تعذّر</span>`; } });
+  box.querySelectorAll("[data-mdel]").forEach(b => b.onclick = async () => { if (!confirm("تحذف الرسالة من البوابة عند كل المستلمين؟")) return;
+    try { await deleteDoc(ref("msgs/" + b.dataset.mdel)); S._msgHist = null; msgHistory(box); toast("انحذفت"); } catch (e) { handleWriteErr(e); } });
+}
+
+/* ---------- inbox: portal messages for students, trainers and staff ---------- */
+function msgFill(t){ const me = S.role === "student" ? {n: (S.myStudent || {}).name || "", id: S.myNum} : S.role === "trainer" ? {n: (S.trainers[S.me] && trainerTitle(S.trainers[S.me])) || "", id: S.me} : {n: "", id: ""};
+  return String(t || "").replace(/\{الاسم\}/g, me.n).replace(/\{الرقم\}/g, me.id || "").replace(/\{الرابط\}/g, location.origin + location.pathname).replace(/\{الرمز\}/g, ""); }
+function watchMsgs(){
+  if (S._msgSub || !S.authUser) return;
+  const field = S.role === "student" ? ["nums", S.myNum] : S.role === "trainer" ? (S.me ? ["tids", S.me] : null) : S.adminRole ? ["roles", S.adminRole] : null;
+  if (!field) return; S._msgSub = true;
+  S.subs.push(onSnapshot(query(collection(db, "msgs"), where(field[0], "array-contains", field[1])), snap => { S.inbox = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => b.at.localeCompare(a.at)); renderInboxBar(); if (S.sTab === "msgs" && !busyEditing()) render(); }, () => {}));
+  S.subs.push(onSnapshot(query(collection(db, "msgReads"), where("uid", "==", S.authUser.uid)), snap => { S.inboxRead = new Set(snap.docs.map(d => d.data().msg)); renderInboxBar(); if (S.role === "student" && !busyEditing()) render(); }, () => {}));
+}
+const unreadMsgs = () => (S.inbox || []).filter(m => !(S.inboxRead || new Set()).has(m.id));
+async function markMsgRead(m){
+  if ((S.inboxRead || new Set()).has(m.id)) return; S.inboxRead = new Set([...(S.inboxRead || []), m.id]);
+  const who = S.role === "student" ? S.myNum : S.role === "trainer" ? S.me : S.adminRole;
+  try { await setDoc(ref(`msgReads/${m.id}_${S.authUser.uid}`), {msg: m.id, uid: S.authUser.uid, who, name: S.role === "student" ? ((S.myStudent || {}).name || "") : "", at: new Date().toISOString()}); } catch (e) { console.error(e); }
+}
+function renderInboxBar(){
+  let bar = $("#inboxBar"); if (!bar) { bar = document.createElement("div"); bar.id = "inboxBar"; bar.style.cssText = "max-width:1040px;margin:12px auto 0;padding:0 16px;display:grid;gap:8px"; $("#app").before(bar); }
+  if (S.role === "student") { bar.innerHTML = ""; return; }   // students read them in their «رسائلي» tab
+  const U = unreadMsgs().slice(0, 3);
+  bar.innerHTML = U.map(m => `<div class="notice" role="status" style="border-inline-start:4px solid #c8873a"><b>📨 ${esc(m.title)}</b> <span class="muted">· ${esc(m.by || "")}</span><div style="white-space:pre-wrap;margin:6px 0">${esc(msgFill(m.text))}</div><button class="btn sm" data-mread="${esc(m.id)}">قرأتها ✓</button></div>`).join("");
+  bar.querySelectorAll("[data-mread]").forEach(b => b.onclick = () => { markMsgRead((S.inbox || []).find(x => x.id === b.dataset.mread)); renderInboxBar(); });
+}
+function studentMsgs(el){
+  const L = S.inbox || [];
+  el.innerHTML = `<div class="card"><h2>📨 رسائلي</h2>${L.length ? `<div class="list">${L.map(m => { const nw = !(S.inboxRead || new Set()).has(m.id);
+    return `<div class="item" style="display:block;${nw ? "border-inline-start:4px solid #c8873a" : ""}"><div class="row" style="justify-content:space-between"><b>${nw ? "🔵 " : ""}${esc(m.title)}</b><span class="muted">${esc(bothDates(m.at.slice(0, 10)))}</span></div><div class="muted">${esc(m.by || "")}</div><div style="white-space:pre-wrap;margin-top:6px">${esc(msgFill(m.text))}</div></div>`; }).join("")}</div>` : `<p class="muted">ما وصلتك رسائل للحين.</p>`}</div>`;
+  L.forEach(m => markMsgRead(m));
 }
 
 /* ---------- system tab ---------- */
