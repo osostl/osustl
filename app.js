@@ -608,6 +608,14 @@ function startData(){
     S.subs.push(onSnapshot(query(collection(db, "idcards"), where("num", "==", S.myNum)), snap => { const t = snap.docs[0] ? snap.docs[0].id : null; if (t !== S.myIdTok) { S.myIdTok = t; if (S.sTab === "card" && !busyEditing()) render(); } }, () => {}));
     S.subs.push(onSnapshot(query(collection(db, "certs"), where("num", "==", S.myNum)), snap => { S.myCerts = snap.docs.map(d => d.data()).filter(c => !c.revoked); if (!busyEditing()) render(); }, () => {}));
     S.subs.push(onSnapshot(query(collection(db, "evals"), where("num", "==", S.myNum)), snap => { S.myEvals = snap.docs.map(d => d.data()); if (!busyEditing()) render(); }, () => {}));
+    watchCamp();
+    S.subs.push(onSnapshot(query(collection(db, "exams"), where("memberNums", "array-contains", S.myNum)), snap => { S.myExams = snap.docs.map(d => ({id: d.id, ...d.data()})); if (!S.exTake && !busyEditing()) render(); }, e => console.error(e)));
+    S.subs.push(onSnapshot(query(collection(db, "examSubs"), where("num", "==", S.myNum)), snap => {
+      const old = S.mySubs || {}; S.mySubs = {}; snap.docs.forEach(d => { const x = d.data({serverTimestamps: "estimate"}); S.mySubs[x.eid] = x; });
+      // while answering, only redraw when the attempt first appears or gets submitted
+      if (S.exTake) { const a = old[S.exTake], b = S.mySubs[S.exTake]; if (!a !== !b || (a && b && a.done !== b.done) || (a && b && tsMs(a.startedAt) !== tsMs(b.startedAt))) render(); }
+      else if (!busyEditing()) render();
+    }, e => console.error(e)));
     return;
   }
   sub(collection(db, "groups"), snap => {
@@ -615,6 +623,7 @@ function startData(){
     S.loaded.groups = true; afterData();
   });
   S.subs.push(onSnapshot(collection(db, "grades"), snap => { S.grades = {}; snap.docs.forEach(d => S.grades[d.id] = d.data()); afterData(); }, () => {}));
+  if (S.role === "admin" && !FIN() && !MAILONLY()) { watchCamp(); S.subs.push(onSnapshot(ref("exams/" + CAMP_EID), snap => { S.campExam = snap.exists() ? {id: CAMP_EID, ...snap.data()} : null; if (S.aTab === "camp" && !busyEditing()) render(); }, () => {})); }
   if (S.role === "admin") {
     S.subs.push(onSnapshot(ref("public/disabled"), snap => { S.disabled = (snap.exists() && snap.data().list) || {}; afterData(); }, () => {}));
     // emergency lock: a session that signed in before its role's lock time leaves at once
@@ -645,7 +654,7 @@ function startData(){
   }
 }
 function fail(err){ console.error(err); $("#app").innerHTML = `<div class="notice err">تعذّر تحميل البيانات. ${err && err.code === "permission-denied" ? "حسابك ما عنده صلاحية، أو قواعد الحماية في Firebase تحتاج تحديث." : "تأكد من الاتصال وحدّث الصفحة."}</div>`; }
-function stopAll(){ S.subs.forEach(u => u()); S.subs = []; S.courses = null; S._crsOpen = null; S.signReqs = null; stopAtt(); stopAdminSubs(); S.trainers = {}; S.groups = {}; S.secrets = {}; S.students = {}; S.stSecrets = {}; S.grades = {}; S.myStudent = null; S.myAtt = []; S.myResults = []; S.myExc = []; S.myWarn = []; S.myEvals = []; S.excuses = []; S.warnings = {}; S.sTab = "home"; S._trainerSynced = false; S.ann.trainers = []; S.ann.students = []; renderAnn(); }
+function stopAll(){ S.subs.forEach(u => u()); S.subs = []; S.courses = null; S._crsOpen = null; S.signReqs = null; stopAtt(); stopAdminSubs(); S.trainers = {}; S.groups = {}; S.secrets = {}; S.students = {}; S.stSecrets = {}; S.grades = {}; S.myStudent = null; S.myAtt = []; S.myResults = []; S.myExc = []; S.myWarn = []; S.myEvals = []; S.myExams = []; S.mySubs = {}; S.exTake = null; S._exAns = null; clearInterval(S._exTimer); S.exams = {}; S.exView = null; S.hrStaff = null; S.hrAtt = null; S.camp = null; S._campOn = false; S.campExam = null; S._campLes = null; S.excuses = []; S.warnings = {}; S.sTab = "home"; S._trainerSynced = false; S.ann.trainers = []; S.ann.students = []; renderAnn(); }
 
 function afterData(){
   if (S._finModal && $("#modal").classList.contains("on") && S._finDraw && !busyEditing()) S._finDraw();
@@ -1150,13 +1159,530 @@ function weekTable(rows){
   }).join("");
 }
 
+/* ---------- exams: the trainer builds them, students take them in the portal, timed and marked automatically ----------
+   exams/{id}      title, times and settings (students of the course see it once it is published)
+   examQs/{id}     the questions without answers (students can open them only once the exam has opened)
+   examKeys/{id}   the right answers (trainer of the course and administration only)
+   examSubs/{id_num} a student's attempt: start time from the server, answers saved as they go */
+const EXQ = {mc: "اختيار من متعدد", tf: "صح أو خطأ", es: "مقالي"};
+const exId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const tsMs = t => !t ? 0 : t.toMillis ? t.toMillis() : t.seconds ? t.seconds * 1000 : Number(t) || 0;
+const dtLocal = ms => ms ? new Date(ms - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
+const fmtDT = ms => ms ? new Date(ms).toLocaleString("ar-SA-u-ca-gregory-nu-latn", {weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit"}) : "—";
+const exTotal = e => (e.qs || []).reduce((a, q) => a + (Number(q.p) || 0), 0);
+function exState(e, now = Date.now()){
+  if (e.status === "draft") return "draft";
+  if (e.status === "closed") return "ended";
+  return now < tsMs(e.start) ? "soon" : now < tsMs(e.end) ? "open" : "ended";
+}
+const EXST = {draft: ["مسودة", ""], soon: ["قادم", "e"], open: ["مفتوح الحين", "p"], ended: ["انتهى", "a"]};
+function exAuto(e, key, ans){
+  let s = 0;
+  (e.qs || []).forEach(q => { if (q.t === "es") return; const a = (ans || {})[q.id]; if (a !== undefined && a !== null && a !== "" && key && key[q.id] !== undefined && String(a) === String(key[q.id])) s += Number(q.p) || 0; });
+  return s;
+}
+/* the same student always gets the same order */
+function seeded(arr, seed){
+  let h = 2166136261 >>> 0; for (const c of String(seed)) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) { h = Math.imul(h ^ (h >>> 15), 2246822507) >>> 0; h = Math.imul(h ^ (h >>> 13), 3266489909) >>> 0; const j = h % (i + 1); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+const subDeadline = (e, sub) => Math.min(tsMs(sub.startedAt) + (Number(e.mins) || 0) * 60000, tsMs(e.end));
+
+/* trainer and administration: the exams of one course */
+function watchExams(gid){
+  S.exams = S.exams || {}; S._exL = S._exL || {};
+  if (S._exL[gid]) return;
+  let meta = null, qs = null;
+  const merge = () => { if (!meta || !qs) return; S.exams[gid] = meta.map(e => ({...e, qs: (qs[e.id] || {}).qs || []})).sort((a, b) => tsMs(b.start) - tsMs(a.start)); if (!busyEditing() && !$("#modal").classList.contains("on")) render(); };
+  const u1 = onSnapshot(query(collection(db, "exams"), where("gid", "==", gid)), snap => { meta = snap.docs.map(d => ({id: d.id, ...d.data()})); merge(); }, e => console.error(e));
+  const u2 = onSnapshot(query(collection(db, "examQs"), where("gid", "==", gid)), snap => { qs = {}; snap.docs.forEach(d => qs[d.id] = d.data()); merge(); }, e => console.error(e));
+  S._exL[gid] = () => { u1(); u2(); };
+  S.subs.push(() => { try { S._exL[gid](); } catch {} delete S._exL[gid]; });
+}
+function examsTab(g){
+  watchExams(g.id);
+  const list = (S.exams || {})[g.id];
+  if (S.exView && S.exView.gid === g.id) return examResults(g);
+  return `<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">الاختبارات</h2>${RO() ? "" : `<button class="btn pri" id="exNew">+ اختبار جديد</button>`}</div>
+    <p class="muted" style="margin:6px 0 0">الطالب يدخل الاختبار من بوابته في الوقت اللي تحدده، وعنده مدة محددة من لحظة ما يبدأ. الاختيار من متعدد والصح والخطأ يتصححون لحالهم، والمقالي تصححه أنت.</p></div>
+  <div class="list">${!list ? `<div class="card empty">جاري التحميل…</div>` : list.map(e => { const s = exState(e); return `<div class="item" style="flex-wrap:wrap">
+      <div class="grow"><div class="t">${esc(e.title)} <span class="pill ${EXST[s][1]}">${EXST[s][0]}</span>${e.resultsOut ? ` <span class="pill p">النتائج ظاهرة للطلاب</span>` : ""}</div>
+      <div class="muted">${(e.qs || []).length} سؤال · ${exTotal(e)} درجة · ${e.mins} دقيقة · من ${esc(fmtDT(tsMs(e.start)))} إلى ${esc(fmtDT(tsMs(e.end)))}</div></div>
+      <button class="btn sm pri" data-exres="${e.id}">النتائج والتصحيح</button>${RO() ? "" : `<button class="btn sm" data-exed="${e.id}">تعديل</button>`}</div>`; }).join("") || `<div class="card empty">ما فيه اختبارات لهذا المقرر.</div>`}</div>`;
+}
+function bindExamsTab(g){
+  const n = $("#exNew"); if (n) n.onclick = () => examEditor(g, null);
+  document.querySelectorAll("[data-exed]").forEach(b => b.onclick = () => examEditor(g, ((S.exams || {})[g.id] || []).find(e => e.id === b.dataset.exed)));
+  document.querySelectorAll("[data-exres]").forEach(b => b.onclick = () => { S.exView = {gid: g.id, eid: b.dataset.exres}; S.exSubs = null; S.exKey = null; render(); window.scrollTo(0, 0); });
+  if (S.exView && S.exView.gid === g.id) bindExamResults(g);
+}
+async function examEditor(g, e){
+  let key = {};
+  if (e) { try { const k = await getDoc(ref("examKeys/" + e.id)); key = k.exists() ? (k.data().ans || {}) : {}; } catch (x) { console.error(x); return toast("تعذّر فتح الاختبار"); } }
+  const now = Date.now(), d = e ? JSON.parse(JSON.stringify({...e, start: tsMs(e.start), end: tsMs(e.end)})) : {title: "", mins: 30, start: now + 3600e3, end: now + 3 * 3600e3, shuffle: true, qs: [], status: "draft"};
+  d.qs.forEach(q => { q.k = key[q.id]; });
+  S._exEd = {g, d, isNew: !e};
+  examEditorRender();
+}
+function exSync(){
+  const ed = S._exEd; if (!ed) return; const d = ed.d, v = s => { const x = $(s); return x ? x.value : ""; };
+  d.title = v("#exT").trim(); d.mins = Math.max(1, Math.min(600, Math.round(Number(v("#exM")) || 0)));
+  d.start = v("#exS") ? new Date(v("#exS")).getTime() : 0; d.end = v("#exE") ? new Date(v("#exE")).getTime() : 0;
+  d.shuffle = !!($("#exSh") || {}).checked;
+  d.qs.forEach((q, i) => {
+    q.q = v(`#qq${i}`).trim(); q.p = Math.max(0, Number(v(`#qp${i}`)) || 0);
+    if (q.t === "mc") { q.o = q.o.map((_, j) => v(`#qo${i}_${j}`).trim()); const c = document.querySelector(`input[name="qk${i}"]:checked`); q.k = c ? Number(c.value) : undefined; }
+    if (q.t === "tf") { const c = document.querySelector(`input[name="qk${i}"]:checked`); q.k = c ? c.value === "1" : undefined; }
+  });
+}
+function examEditorRender(){
+  const {g, d} = S._exEd, pub = d.status !== "draft";
+  $("#modalBox").innerHTML = `<div class="row" style="justify-content:space-between"><h2 style="margin:0;font-family:var(--display);color:var(--green);font-weight:600">${S._exEd.isNew ? "اختبار جديد" : "تعديل الاختبار"} · ${esc(g.course)}</h2><button class="btn sm" id="exX">إغلاق</button></div>
+    ${pub ? `<div class="notice" style="margin:8px 0">الاختبار منشور. تعديل الأسئلة أو الإجابات يأثر على الطلاب اللي بدأوا.</div>` : ""}
+    <label class="f" for="exT">عنوان الاختبار<input type="text" id="exT" maxlength="120" value="${esc(d.title)}" placeholder="مثال: الاختبار الفصلي الأول"></label>
+    <div class="row">
+      <label class="f grow" for="exS">يفتح من<input type="datetime-local" id="exS" value="${dtLocal(d.start)}"></label>
+      <label class="f grow" for="exE">ويقفل<input type="datetime-local" id="exE" value="${dtLocal(d.end)}"></label>
+      <label class="f" for="exM" style="width:130px">المدة (دقيقة)<input type="number" id="exM" min="1" max="600" value="${d.mins}"></label>
+    </div>
+    <label class="row" style="gap:6px;margin:6px 0"><input type="checkbox" id="exSh" ${d.shuffle ? "checked" : ""}> رتّب الأسئلة والخيارات بشكل مختلف لكل طالب</label>
+    <div class="list" style="margin-top:8px">${d.qs.map((q, i) => `<div class="card" style="margin:0;padding:12px">
+      <div class="row" style="justify-content:space-between"><b>سؤال ${i + 1} · ${EXQ[q.t]}</b><span class="row" style="gap:6px"><label class="row" style="gap:4px">الدرجة<input type="number" id="qp${i}" min="0" step="0.5" value="${q.p}" style="width:70px"></label><button class="btn sm danger" data-qdel="${i}">حذف</button></span></div>
+      <textarea id="qq${i}" style="min-height:52px;margin-top:6px" placeholder="نص السؤال">${esc(q.q || "")}</textarea>
+      ${q.t === "mc" ? `<div style="margin-top:6px">${q.o.map((o, j) => `<div class="row" style="gap:6px;margin:4px 0"><input type="radio" name="qk${i}" value="${j}" ${q.k === j ? "checked" : ""} title="الإجابة الصحيحة"><input type="text" id="qo${i}_${j}" class="grow" value="${esc(o)}" placeholder="الخيار ${j + 1}">${q.o.length > 2 ? `<button class="btn sm" data-odel="${i}_${j}">✕</button>` : ""}</div>`).join("")}
+        ${q.o.length < 6 ? `<button class="btn sm" data-oadd="${i}">+ خيار</button>` : ""} <span class="muted">اختر الدائرة جنب الإجابة الصحيحة</span></div>` : ""}
+      ${q.t === "tf" ? `<div class="row" style="gap:14px;margin-top:6px"><span class="muted">الإجابة الصحيحة:</span><label><input type="radio" name="qk${i}" value="1" ${q.k === true ? "checked" : ""}> صح</label><label><input type="radio" name="qk${i}" value="0" ${q.k === false ? "checked" : ""}> خطأ</label></div>` : ""}
+      ${q.t === "es" ? `<p class="muted" style="margin:6px 0 0">الطالب يكتب إجابته، وأنت تصححها من «النتائج والتصحيح».</p>` : ""}
+    </div>`).join("")}</div>
+    <div class="row" style="margin-top:8px;gap:6px"><button class="btn sm" data-qadd="mc">+ اختيار من متعدد</button><button class="btn sm" data-qadd="tf">+ صح أو خطأ</button><button class="btn sm" data-qadd="es">+ مقالي</button><span class="muted">المجموع: ${exTotal(d)} درجة</span></div>
+    <div class="row" style="margin-top:14px;gap:6px">
+      ${pub ? `<button class="btn pri" id="exSave">حفظ التعديلات</button><button class="btn" id="exClose">${d.status === "closed" ? "إعادة فتح" : "قفل الاختبار الحين"}</button>` : `<button class="btn pri" id="exPub">نشر للطلاب</button><button class="btn" id="exSave">حفظ كمسودة</button>`}
+      ${S._exEd.isNew ? "" : `<button class="btn danger" id="exDel">حذف الاختبار</button>`}
+    </div>`;
+  $("#modal").classList.add("on");
+  $("#exX").onclick = () => { S._exEd = null; closeModal(); };
+  document.querySelectorAll("[data-qadd]").forEach(b => b.onclick = () => { exSync(); const t = b.dataset.qadd; d.qs.push({id: Math.random().toString(36).slice(2, 8), t, q: "", p: t === "es" ? 5 : 1, ...(t === "mc" ? {o: ["", "", "", ""]} : {})}); examEditorRender(); });
+  document.querySelectorAll("[data-qdel]").forEach(b => b.onclick = () => { exSync(); d.qs.splice(Number(b.dataset.qdel), 1); examEditorRender(); });
+  document.querySelectorAll("[data-oadd]").forEach(b => b.onclick = () => { exSync(); d.qs[Number(b.dataset.oadd)].o.push(""); examEditorRender(); });
+  document.querySelectorAll("[data-odel]").forEach(b => b.onclick = () => { exSync(); const [i, j] = b.dataset.odel.split("_").map(Number), q = d.qs[i]; q.o.splice(j, 1); if (q.k === j) q.k = undefined; else if (q.k > j) q.k--; examEditorRender(); });
+  const save = async status => {
+    exSync();
+    if (!d.title) return toast("اكتب عنوان الاختبار");
+    if (!d.start || !d.end || d.end <= d.start) return toast("وقت القفل لازم يكون بعد وقت الفتح");
+    if (!d.qs.length) return toast("أضف سؤال واحد على الأقل");
+    for (const [i, q] of d.qs.entries()) {
+      if (!q.q) return toast(`اكتب نص السؤال ${i + 1}`);
+      if (q.t === "mc") { if (q.o.filter(Boolean).length < 2 || q.o.some(o => !o)) return toast(`السؤال ${i + 1}: عبّ كل الخيارات أو احذف الفاضي`); if (q.k === undefined) return toast(`السؤال ${i + 1}: اختر الإجابة الصحيحة`); }
+      if (q.t === "tf" && q.k === undefined) return toast(`السؤال ${i + 1}: اختر صح أو خطأ`);
+    }
+    const id = (S._exEd.isNew ? (S._exEd.newId = S._exEd.newId || exId()) : d.id);
+    const qs = d.qs.map(q => ({id: q.id, t: q.t, q: q.q.slice(0, 2000), p: q.p, ...(q.t === "mc" ? {o: q.o.map(o => o.slice(0, 400))} : {})}));
+    const ans = {}; d.qs.forEach(q => { if (q.t !== "es") ans[q.id] = q.k; });
+    const st = status || d.status;
+    const ex = {gid: g.id, tid: g.trainerId || "", course: g.course || "", title: d.title, mins: d.mins, start: Timestamp.fromMillis(d.start), end: Timestamp.fromMillis(d.end), shuffle: d.shuffle, nq: qs.length, total: exTotal(d), status: st,
+      memberNums: st === "draft" ? [] : [...(g.memberNums || [])], resultsOut: !!d.resultsOut, updatedAt: new Date().toISOString(), by: S.me || S.adminRole || ""};
+    try {
+      const b = writeBatch(db); b.set(ref("exams/" + id), ex); b.set(ref("examQs/" + id), {gid: g.id, tid: g.trainerId || "", qs}); b.set(ref("examKeys/" + id), {gid: g.id, tid: g.trainerId || "", ans}); await b.commit();
+      logAction(st === "draft" ? "حفظ اختبار" : "نشر اختبار", `${g.course} · ${d.title}`);
+      if (st !== "draft" && d.status === "draft") notify("exam", id);
+      toast(st === "draft" ? "انحفظ كمسودة" : "انحفظ، والطلاب يشوفونه في بوابتهم"); S._exEd = null; closeModal();
+    } catch (x) { handleWriteErr(x); }
+  };
+  if ($("#exPub")) $("#exPub").onclick = () => save("open");
+  $("#exSave").onclick = () => save();
+  if ($("#exClose")) $("#exClose").onclick = () => save(d.status === "closed" ? "open" : "closed");
+  if ($("#exDel")) $("#exDel").onclick = async ev => {
+    if (!ev.target.dataset.sure) { ev.target.dataset.sure = 1; ev.target.textContent = "متأكد؟ ينحذف مع إجاباته"; return; }
+    try { const b = writeBatch(db); b.delete(ref("exams/" + d.id)); b.delete(ref("examQs/" + d.id)); b.delete(ref("examKeys/" + d.id)); await b.commit(); logAction("حذف اختبار", `${g.course} · ${d.title}`); S._exEd = null; closeModal(); }
+    catch (x) { handleWriteErr(x); }
+  };
+}
+/* results: automatic marks, essay marking, publishing to students, Excel */
+function examResults(g){
+  const e = ((S.exams || {})[g.id] || []).find(x => x.id === S.exView.eid);
+  if (!e) return `<div class="card empty">الاختبار انحذف. <button class="btn sm" id="exBack">رجوع</button></div>`;
+  if (!S.exSubs || S.exSubs.eid !== e.id) {
+    S.exSubs = {eid: e.id, list: null};
+    if (S._exSubL) try { S._exSubL(); } catch {}
+    const q = S.role === "trainer" ? query(collection(db, "examSubs"), where("eid", "==", e.id), where("tid", "==", S.me)) : query(collection(db, "examSubs"), where("eid", "==", e.id));
+    S._exSubL = onSnapshot(q, snap => { if (!S.exSubs || S.exSubs.eid !== e.id) return; S.exSubs.list = snap.docs.map(d => ({id: d.id, ...d.data({serverTimestamps: "estimate"})})); if (!busyEditing()) render(); }, x => console.error(x));
+    S.subs.push(() => { try { S._exSubL && S._exSubL(); } catch {} });
+    getDoc(ref("examKeys/" + e.id)).then(k => { S.exKey = {eid: e.id, ans: k.exists() ? k.data().ans || {} : {}}; render(); }).catch(x => console.error(x));
+  }
+  const subs = S.exSubs.list, key = S.exKey && S.exKey.eid === e.id ? S.exKey.ans : null, es = (e.qs || []).filter(q => q.t === "es"), total = exTotal(e);
+  const byNum = {}; (subs || []).forEach(s => byNum[s.num] = s);
+  const stu = (g.students || []).slice().sort((a, b) => (a.name || "").localeCompare(b.name || "", "ar"));
+  const now = Date.now();
+  const stTxt = s => !s ? `<span class="pill">ما دخل</span>` : s.done ? `<span class="pill p">سلّم</span>` : now < subDeadline(e, s) ? `<span class="pill e">يحل الحين</span>` : `<span class="pill l">انتهى وقته</span>`;
+  const rows = stu.map(st => { const s = byNum[st.sid]; const auto = s && key ? exAuto(e, key, s.ans) : null; const esSum = s ? es.reduce((a, q) => a + (Number((s.es || {})[q.id]) || 0), 0) : 0;
+    return `<div class="item" style="display:block">
+      <div class="row" style="justify-content:space-between"><div><b>${esc(st.name)}</b> <span class="muted">${esc(st.sid || "")}</span> ${stTxt(s)}${s && s.away ? ` <span class="pill a" title="خرج من صفحة الاختبار">خرج ${s.away} مرة</span>` : ""}</div>
+      <div><b>${s ? (auto === null ? "…" : auto + esSum) : "—"}</b> <span class="muted">/ ${total}</span>${s && s.graded ? ` <span class="pill p">مصحّح</span>` : ""}</div></div>
+      ${s && es.length ? es.map(q => `<div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:6px"><div class="muted">${esc(q.q)} (${q.p} درجة)</div><div style="white-space:pre-wrap;margin:4px 0">${esc((s.ans || {})[q.id] || "— ما كتب شي —")}</div>
+        ${RO() ? `<span>${Number((s.es || {})[q.id]) || 0}</span>` : `<label class="row" style="gap:6px">الدرجة<input type="number" min="0" max="${q.p}" step="0.5" data-esg="${esc(s.id)}|${q.id}" value="${(s.es || {})[q.id] ?? ""}" style="width:80px"></label>`}</div>`).join("") : ""}
+    </div>`; }).join("");
+  const done = (subs || []).length;
+  return `<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><button class="btn sm" id="exBack">→ الاختبارات</button><span class="pill ${EXST[exState(e)][1]}">${EXST[exState(e)][0]}</span></div>
+    <h2 style="margin:10px 0 4px">${esc(e.title)}</h2><p class="muted" style="margin:0">${done} من ${stu.length} دخلوا · ${total} درجة · ${es.length ? `فيه ${es.length} سؤال مقالي يحتاج تصحيح` : "كل الأسئلة تتصحح لحالها"}</p>
+    ${RO() ? "" : `<div class="row" style="margin-top:10px;gap:6px"><button class="btn pri" id="exGrade">حفظ التصحيح</button><button class="btn ${e.resultsOut ? "" : "gold"}" id="exOut">${e.resultsOut ? "إخفاء النتائج عن الطلاب" : "إظهار النتائج للطلاب"}</button><button class="btn" id="exXls">Excel</button></div>`}
+  </div><div class="list">${subs === null ? `<div class="card empty">جاري التحميل…</div>` : rows || `<div class="card empty">ما فيه طلاب في المقرر.</div>`}</div>`;
+}
+function bindExamResults(g){
+  $("#exBack").onclick = () => { S.exView = null; try { S._exSubL && S._exSubL(); } catch {} S._exSubL = null; S.exSubs = null; render(); };
+  const e = ((S.exams || {})[g.id] || []).find(x => x.id === (S.exView || {}).eid); if (!e) return;
+  const key = S.exKey && S.exKey.eid === e.id ? S.exKey.ans : null, es = (e.qs || []).filter(q => q.t === "es");
+  if ($("#exGrade")) $("#exGrade").onclick = async ev => {
+    if (!key) return toast("انتظر شوي، الإجابات تتحمّل");
+    const marks = {}; document.querySelectorAll("[data-esg]").forEach(x => { const [sid, qid] = x.dataset.esg.split("|"); const q = es.find(y => y.id === qid); let v = x.value === "" ? null : Math.max(0, Math.min(Number(q.p) || 0, Number(x.value) || 0)); (marks[sid] = marks[sid] || {})[qid] = v; });
+    ev.target.disabled = true;
+    try {
+      const b = writeBatch(db); let n = 0;
+      (S.exSubs.list || []).forEach(s => { const m = {...(s.es || {}), ...(marks[s.id] || {})}; Object.keys(m).forEach(k => { if (m[k] === null) delete m[k]; }); const auto = exAuto(e, key, s.ans); const essayDone = es.every(q => m[q.id] !== undefined);
+        b.set(ref("examSubs/" + s.id), {auto, es: m, score: auto + es.reduce((a, q) => a + (Number(m[q.id]) || 0), 0), graded: essayDone, gradedAt: new Date().toISOString()}, {merge: true}); n++; });
+      if (n) await b.commit(); logAction("تصحيح اختبار", `${g.course} · ${e.title}`); toast(`انحفظ تصحيح ${n} طالب`);
+    } catch (x) { handleWriteErr(x); } finally { ev.target.disabled = false; }
+  };
+  if ($("#exOut")) $("#exOut").onclick = async () => {
+    try { await setDoc(ref("exams/" + e.id), {resultsOut: !e.resultsOut}, {merge: true}); if (!e.resultsOut) notify("examres", e.id); toast(e.resultsOut ? "النتائج انخفت" : "النتائج ظاهرة للطلاب الحين"); }
+    catch (x) { handleWriteErr(x); }
+  };
+  if ($("#exXls")) $("#exXls").onclick = () => {
+    const byNum = {}; (S.exSubs.list || []).forEach(s => byNum[s.num] = s);
+    const rows = (g.students || []).map(st => { const s = byNum[st.sid]; const auto = s && key ? exAuto(e, key, s.ans) : ""; const esSum = s ? es.reduce((a, q) => a + (Number((s.es || {})[q.id]) || 0), 0) : "";
+      return [st.sid || "", st.name, s ? (s.done ? "سلّم" : "ما سلّم") : "ما دخل", auto, esSum, s ? (auto === "" ? "" : auto + esSum) : "", exTotal(e), s ? (s.away || 0) : ""]; });
+    excelDownload(`نتائج ${e.title} - ${g.course}`, [{title: "النتائج", rows: [[INST_AR], [`${g.course} · ${e.title}`], [], ["الرقم", "الاسم", "الحالة", "التلقائي", "المقالي", "المجموع", "من", "خرج من الصفحة"], ...rows], widths: [12, 26, 10, 10, 10, 10, 8, 12]}]);
+  };
+}
+
+/* student: list, take, results */
+function studentExams(el){
+  const list = (S.myExams || []).filter(e => e.status !== "draft").sort((a, b) => tsMs(b.start) - tsMs(a.start)), now = Date.now();
+  if (S.exTake) { const e = list.find(x => x.id === S.exTake); if (e) return studentTakeExam(el, e); S.exTake = null; }
+  el.innerHTML = `<div class="card"><h2 style="margin:0">الاختبارات</h2><p class="muted" style="margin:6px 0 0">الاختبار يفتح في وقته. أول ما تضغط «ابدأ» يبدأ العداد، وإجاباتك تنحفظ أول بأول.</p></div>
+  <div class="list">${list.map(e => { const s = (S.mySubs || {})[e.id], st = exState(e, now), dl = s ? subDeadline(e, s) : 0, live = s && !s.done && now < dl && st === "open";
+    const res = e.resultsOut && s && s.graded ? `<b>${s.score}</b> / ${e.total}` : e.resultsOut && s ? "النتيجة تحت التصحيح" : "";
+    return `<div class="item" style="flex-wrap:wrap"><div class="grow"><div class="t">${esc(e.title)}</div><div class="muted">${esc(e.course || "")} · ${e.nq || 0} سؤال · ${e.mins} دقيقة · ${st === "soon" ? "يفتح " + esc(fmtDT(tsMs(e.start))) : "يقفل " + esc(fmtDT(tsMs(e.end)))}</div>${res ? `<div style="margin-top:4px">النتيجة: ${res}</div>` : ""}</div>
+      ${st === "open" && !s ? `<button class="btn pri" data-exstart="${e.id}">ابدأ الاختبار</button>` : live ? `<button class="btn gold" data-excont="${e.id}">كمّل الاختبار</button>` : s ? `<span class="pill p">${s.done ? "سلّمت" : "انتهى وقتك"}</span>` : st === "soon" ? `<span class="pill e">قادم</span>` : `<span class="pill a">فاتك</span>`}</div>`; }).join("") || `<div class="card empty">ما فيه اختبارات للحين.</div>`}</div>`;
+  el.querySelectorAll("[data-exstart]").forEach(b => b.onclick = async () => {
+    const e = list.find(x => x.id === b.dataset.exstart); if (!e) return;
+    if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = `متأكد؟ عندك ${e.mins} دقيقة من الحين`; return; }
+    b.disabled = true;
+    try { await setDoc(ref(`examSubs/${e.id}_${S.myNum}`), {eid: e.id, gid: e.gid, tid: e.tid, num: S.myNum, startedAt: serverTimestamp(), ans: {}, done: false, away: 0}); S.exTake = e.id; render(); window.scrollTo(0, 0); }
+    catch (x) { console.error(x); b.disabled = false; toast("ما قدرت أفتح الاختبار. تأكد إن وقته مفتوح"); }
+  });
+  el.querySelectorAll("[data-excont]").forEach(b => b.onclick = () => { S.exTake = b.dataset.excont; render(); window.scrollTo(0, 0); });
+}
+function studentTakeExam(el, e){
+  const s = (S.mySubs || {})[e.id];
+  if (!s) { el.innerHTML = `<div class="card empty">جاري فتح الاختبار…</div>`; return; }
+  const dl = subDeadline(e, s);
+  if (s.done || Date.now() >= dl) { S.exTake = null; S._exAns = null; clearInterval(S._exTimer); return studentExams(el); }
+  S._exQs = S._exQs || {};
+  if (!S._exQs[e.id]) {
+    el.innerHTML = `<div class="card empty">جاري فتح الأسئلة…</div>`;
+    if (!S._exQsL) { S._exQsL = true; const get = n => getDoc(ref("examQs/" + e.id)).then(d => { S._exQsL = false; S._exQs[e.id] = (d.data() || {}).qs || []; render(); }).catch(x => { console.error(x); if (n < 4) setTimeout(() => get(n + 1), 3000); else { S._exQsL = false; el.innerHTML = `<div class="card empty">ما قدرت أفتح الأسئلة. حدّث الصفحة وجرّب مرة ثانية.</div>`; } }); get(0); }
+    return;
+  }
+  S._exAns = S._exAns && S._exAns.eid === e.id ? S._exAns : {eid: e.id, ans: {...(s.ans || {})}};
+  const allQ = S._exQs[e.id], ans = S._exAns.ans, qs = e.shuffle ? seeded(allQ, e.id + S.myNum) : allQ;
+  el.innerHTML = `<div class="card" style="position:sticky;top:0;z-index:5"><div class="row" style="justify-content:space-between;align-items:center"><div><b>${esc(e.title)}</b><div class="muted">${esc(e.course || "")} · ${e.total} درجة</div></div><div style="font-size:22px;font-weight:700" id="exClock">--:--</div></div><div class="muted" id="exSaved" style="font-size:13px">إجاباتك تنحفظ أول بأول</div></div>
+  ${qs.map((q, i) => { const opts = q.t === "mc" ? (e.shuffle ? seeded(q.o.map((o, j) => [o, j]), q.id + S.myNum) : q.o.map((o, j) => [o, j])) : null;
+    return `<div class="card"><div class="row" style="justify-content:space-between"><b>سؤال ${i + 1}</b><span class="muted">${q.p} درجة</span></div><p style="white-space:pre-wrap;margin:6px 0 10px;font-size:16px">${esc(q.q)}</p>
+    ${q.t === "mc" ? opts.map(([o, j]) => `<label class="item" style="cursor:pointer;gap:10px;margin:4px 0"><input type="radio" name="a${q.id}" value="${j}" data-exa="${q.id}" ${String(ans[q.id]) === String(j) ? "checked" : ""}><span>${esc(o)}</span></label>`).join("") : ""}
+    ${q.t === "tf" ? `<div class="row" style="gap:10px">${[["true", "صح"], ["false", "خطأ"]].map(([v, l]) => `<label class="item" style="cursor:pointer;gap:10px;flex:1"><input type="radio" name="a${q.id}" value="${v}" data-exa="${q.id}" ${String(ans[q.id]) === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>` : ""}
+    ${q.t === "es" ? `<textarea id="exTa${q.id}" data-exa="${q.id}" style="min-height:120px" placeholder="اكتب إجابتك">${esc(ans[q.id] || "")}</textarea>` : ""}</div>`; }).join("")}
+  <div class="card"><button class="btn pri" id="exSubmit" style="width:100%">تسليم الاختبار</button><p class="muted" style="margin:6px 0 0">بعد التسليم ما تقدر تعدّل. وإذا خلص الوقت ينسلّم لحاله.</p></div>`;
+  const ref1 = ref(`examSubs/${e.id}_${S.myNum}`);
+  const flush = async (done) => {
+    clearTimeout(S._exSaveT);
+    try { await setDoc(ref1, {ans: S._exAns ? S._exAns.ans : ans, ...(done ? {done: true, doneAt: serverTimestamp()} : {})}, {merge: true}); const x = $("#exSaved"); if (x) x.textContent = "✓ انحفظت " + new Date().toLocaleTimeString("ar-SA-u-nu-latn", {hour: "numeric", minute: "2-digit", second: "2-digit"}); return true; }
+    catch (x) { console.error(x); const y = $("#exSaved"); if (y) y.textContent = "⚠️ ما انحفظت، تأكد من النت"; return false; }
+  };
+  el.querySelectorAll("[data-exa]").forEach(x => { const h = () => { const qid = x.dataset.exa; const q = qs.find(y => y.id === qid); ans[qid] = q.t === "mc" ? Number(x.value) : q.t === "tf" ? x.value === "true" : x.value.slice(0, 8000); clearTimeout(S._exSaveT); S._exSaveT = setTimeout(() => flush(false), q.t === "es" ? 1500 : 300); }; x.onchange = h; if (x.tagName === "TEXTAREA") x.oninput = h; });
+  $("#exSubmit").onclick = async ev => {
+    if (!ev.target.dataset.sure) { const left = qs.filter(q => ans[q.id] === undefined || ans[q.id] === "").length; ev.target.dataset.sure = 1; ev.target.textContent = left ? `باقي ${left} سؤال ما جاوبته. متأكد؟` : "متأكد؟ تسليم نهائي"; return; }
+    ev.target.disabled = true; if (await flush(true)) { clearInterval(S._exTimer); S.exTake = null; S._exAns = null; toast("انسلّم الاختبار ✓"); render(); } else ev.target.disabled = false;
+  };
+  clearInterval(S._exTimer);
+  const tick = () => { const left = dl - Date.now(), c = $("#exClock"); if (!c) { clearInterval(S._exTimer); return; }
+    if (left <= 0) { clearInterval(S._exTimer); c.textContent = "00:00"; flush(true).then(() => { S.exTake = null; S._exAns = null; toast("خلص الوقت وانسلّم الاختبار"); render(); }); return; }
+    const m = Math.floor(left / 60000), sec = Math.floor(left % 60000 / 1000); c.textContent = `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`; c.style.color = left < 60000 ? "#C0392B" : ""; };
+  tick(); S._exTimer = setInterval(tick, 1000);
+  if (!S._exVis) { S._exVis = true; document.addEventListener("visibilitychange", () => { if (document.hidden && S.exTake && S.myNum) { const sub = (S.mySubs || {})[S.exTake]; if (sub && !sub.done) setDoc(ref(`examSubs/${S.exTake}_${S.myNum}`), {away: (sub.away || 0) + 1}, {merge: true}).catch(() => {}); } }); }
+}
+
+/* ---------- human resources: staff list, daily attendance (typed in or imported from Excel), monthly report ----------
+   hrStaff/{id}  employee: name, job, dept, phone, shift from/to, grace minutes, work days, active
+   hrAtt/{date}  one day: rec[staffId] = {in, out, st, note}  st: p present, l late, a absent, v leave, x excused */
+const HR_ST = {p: "حاضر", l: "متأخر", a: "غائب", v: "إجازة", x: "مستأذن"};
+const HR_PILL = {p: "p", l: "l", a: "a", v: "e", x: "e"};
+const WDAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+const hm = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ""); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
+const hmStr = n => n == null ? "" : `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
+function hrAuto(s, r){
+  if (r && (r.st === "v" || r.st === "x")) return r.st;
+  const i = hm(r && r.in); if (i === null) return "a";
+  return i > (hm(s.from) ?? 480) + (Number(s.grace) || 0) ? "l" : "p";
+}
+const hrLateMin = (s, r) => { const i = hm(r && r.in); return i === null ? 0 : Math.max(0, i - (hm(s.from) ?? 480) - (Number(s.grace) || 0)); };
+const hrWorks = (s, d) => (s.days || [0, 1, 2, 3, 4]).includes(new Date(d + "T12:00:00").getDay()) && (!s.start || d >= s.start);
+function hrSubs(){
+  if (S._hrOn) return; S._hrOn = true;
+  S.subs.push(onSnapshot(collection(db, "hrStaff"), snap => { S.hrStaff = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => (a.name || "").localeCompare(b.name || "", "ar")); afterData(); }, e => console.error(e)));
+  S.subs.push(() => { S._hrOn = false; if (S._hrMonL) try { S._hrMonL(); } catch {} S._hrMonL = null; S._hrMon = null; });
+}
+function hrMonth(m){
+  if (S._hrMon === m) return; S._hrMon = m; S.hrAtt = null;
+  if (S._hrMonL) try { S._hrMonL(); } catch {}
+  S._hrMonL = onSnapshot(query(collection(db, "hrAtt"), where("date", ">=", m + "-01"), where("date", "<=", m + "-31")), snap => { S.hrAtt = {}; snap.docs.forEach(d => S.hrAtt[d.id] = d.data()); afterData(); }, e => console.error(e));
+}
+function hrTab(el){
+  hrSubs();
+  const t = S.hrTab || "att";
+  el.innerHTML = `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${[["att", "الحضور والانصراف"], ["staff", "الموظفين"], ["rep", "التقرير الشهري"]].map(([k, v]) => `<button class="tab ${t === k ? "on" : ""}" data-hrt="${k}">${v}</button>`).join("")}</div></div><div id="hrb"></div>`;
+  el.querySelectorAll("[data-hrt]").forEach(b => b.onclick = () => { S.hrTab = b.dataset.hrt; render(); });
+  ({att: hrAttView, staff: hrStaffView, rep: hrRepView})[t]($("#hrb"));
+}
+function hrAttView(el){
+  const d = S.hrDate || today(); hrMonth(d.slice(0, 7));
+  const staff = (S.hrStaff || []).filter(s => s.active !== false), day = (S.hrAtt || {})[d] || {rec: {}}, rec = day.rec || {};
+  const draft = S._hrDraft && S._hrDraft.d === d ? S._hrDraft.rec : (S._hrDraft = {d, rec: JSON.parse(JSON.stringify(rec))}).rec;
+  const working = staff.filter(s => hrWorks(s, d));
+  const cnt = {p: 0, l: 0, a: 0, v: 0, x: 0}; working.forEach(s => cnt[hrAuto(s, draft[s.id])]++);
+  el.innerHTML = `<div class="card"><div class="row" style="align-items:end;gap:8px">
+      <label class="f" for="hrD" style="width:170px">التاريخ<input type="date" id="hrD" value="${d}" max="${today()}"></label>
+      <span class="muted">${WDAYS[new Date(d + "T12:00:00").getDay()]} · ${working.length} موظف دوامهم اليوم</span><span class="grow"></span>
+      <button class="btn sm" id="hrTpl">نموذج Excel</button><label class="btn sm" for="hrX" style="cursor:pointer">استيراد من Excel</label><input type="file" id="hrX" accept=".xlsx,.xls,.csv" style="display:none">
+    </div>
+    <div class="stats" style="margin-top:10px">${["p", "l", "a", "v", "x"].map(k => `<div class="stat"><div class="n">${cnt[k]}</div><div class="l">${HR_ST[k]}</div></div>`).join("")}</div></div>
+  ${!staff.length ? `<div class="card empty">ما فيه موظفين. أضفهم من تبويب «الموظفين».</div>` : `<div class="list">${working.map(s => { const r = draft[s.id] || {}, st = hrAuto(s, r), late = hrLateMin(s, r);
+    return `<div class="item" style="flex-wrap:wrap;gap:8px"><div class="grow" style="min-width:160px"><b>${esc(s.name)}</b><div class="muted">${esc(s.job || "")} · الدوام ${esc(s.from || "08:00")}–${esc(s.to || "16:00")}</div></div>
+      <label class="row" style="gap:4px">دخول<input type="time" data-hin="${s.id}" value="${esc(r.in || "")}" style="width:110px"></label>
+      <label class="row" style="gap:4px">خروج<input type="time" data-hout="${s.id}" value="${esc(r.out || "")}" style="width:110px"></label>
+      <select data-hst="${s.id}" style="width:auto"><option value="">تلقائي</option>${["v", "x"].map(k => `<option value="${k}" ${r.st === k ? "selected" : ""}>${HR_ST[k]}</option>`).join("")}</select>
+      <span class="pill ${HR_PILL[st]}">${HR_ST[st]}${st === "l" ? ` ${late} د` : ""}</span>
+      <input type="text" data-hnote="${s.id}" value="${esc(r.note || "")}" placeholder="ملاحظة" style="width:150px"></div>`; }).join("") || `<div class="card empty">ما فيه أحد دوامه هذا اليوم.</div>`}</div>
+    <div class="row" style="margin:10px 0;gap:6px"><button class="btn pri" id="hrSave">حفظ اليوم</button><button class="btn sm" id="hrNow">سجّل دخول اللي ما سجّلوا بالوقت الحالي</button></div>`}`;
+  $("#hrD").onchange = e => { S.hrDate = e.target.value || today(); S._hrDraft = null; render(); };
+  const upd = (id, k, v) => { (draft[id] = draft[id] || {})[k] = v; };
+  el.querySelectorAll("[data-hin]").forEach(x => x.onchange = () => { upd(x.dataset.hin, "in", x.value); render(); });
+  el.querySelectorAll("[data-hout]").forEach(x => x.onchange = () => { upd(x.dataset.hout, "out", x.value); });
+  el.querySelectorAll("[data-hst]").forEach(x => x.onchange = () => { upd(x.dataset.hst, "st", x.value); render(); });
+  el.querySelectorAll("[data-hnote]").forEach(x => x.oninput = () => upd(x.dataset.hnote, "note", x.value.slice(0, 200)));
+  if ($("#hrNow")) $("#hrNow").onclick = () => { const n = new Date(), t = hmStr(n.getHours() * 60 + n.getMinutes()); working.forEach(s => { const r = draft[s.id] || {}; if (!r.in && !r.st) upd(s.id, "in", t); }); render(); };
+  if ($("#hrSave")) $("#hrSave").onclick = async () => {
+    const out = {}; working.forEach(s => { const r = draft[s.id] || {}; out[s.id] = {in: r.in || "", out: r.out || "", st: hrAuto(s, r), note: r.note || "", late: hrLateMin(s, r)}; });
+    try { await setDoc(ref("hrAtt/" + d), {date: d, rec: out, by: S.adminRole, at: new Date().toISOString()}, {merge: true}); logAction("حضور الموظفين", d); toast("انحفظ حضور اليوم"); }
+    catch (e) { handleWriteErr(e); }
+  };
+  $("#hrTpl").onclick = () => excelDownload("نموذج حضور الموظفين", [{title: "الحضور", rows: [["الرقم", "الاسم", "التاريخ", "الدخول", "الخروج", "ملاحظة"], ...staff.map(s => [s.id, s.name, today(), "08:00", "16:00", ""])], widths: [14, 26, 12, 9, 9, 20]}]);
+  $("#hrX").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (f) hrImport(f); };
+}
+/* Excel: one row per employee per day; columns found by their header (الرقم/الاسم، التاريخ، الدخول، الخروج، ملاحظة) */
+async function hrImport(f){
+  let rows; try { const X = await loadXLSX(); const wb = X.read(await f.arrayBuffer(), {cellDates: true}); rows = X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header: 1, defval: "", raw: false, dateNF: "yyyy-mm-dd"}); }
+  catch (x) { console.error(x); return toast("ما قدرت أقرأ الملف"); }
+  const hi = rows.findIndex(r => r.some(c => /التاريخ|date/i.test(String(c)))); if (hi < 0) return toast("ما لقيت عمود «التاريخ» في الملف");
+  const h = rows[hi].map(c => String(c).trim()), col = re => h.findIndex(c => re.test(c));
+  const cId = col(/^(الرقم|رقم|id)/i), cName = col(/الاسم|name/i), cDate = col(/التاريخ|date/i), cIn = col(/الدخول|حضور|in/i), cOut = col(/الخروج|انصراف|out/i), cNote = col(/ملاحظ|note/i);
+  const staff = S.hrStaff || [], byId = Object.fromEntries(staff.map(s => [s.id, s])), byName = Object.fromEntries(staff.map(s => [String(s.name).trim(), s]));
+  const normD = v => { v = String(v).trim(); let m = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/.exec(v); if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`; m = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/.exec(v); return m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : ""; };
+  const normT = v => { v = String(v).trim(); const m = /(\d{1,2}):(\d{2})/.exec(v); if (!m) return ""; let H = Number(m[1]); if (/م|pm/i.test(v) && H < 12) H += 12; if (/ص|am/i.test(v) && H === 12) H = 0; return `${String(H).padStart(2, "0")}:${m[2]}`; };
+  const days = {}, miss = new Set(); let n = 0;
+  rows.slice(hi + 1).forEach(r => { const d = normD(r[cDate]); if (!d) return; const s = (cId >= 0 && byId[String(r[cId]).trim()]) || (cName >= 0 && byName[String(r[cName]).trim()]); if (!s) { const nm = String(r[cName] ?? r[cId] ?? "").trim(); if (nm) miss.add(nm); return; }
+    const rec = {in: cIn >= 0 ? normT(r[cIn]) : "", out: cOut >= 0 ? normT(r[cOut]) : "", note: cNote >= 0 ? String(r[cNote]).slice(0, 200) : ""}; rec.st = hrAuto(s, rec); rec.late = hrLateMin(s, rec);
+    (days[d] = days[d] || {})[s.id] = rec; n++; });
+  const ds = Object.keys(days).sort(); if (!n) return toast("ما لقيت صفوف تنطبق على الموظفين المسجلين");
+  if (!confirm(`بيتسجل ${n} سجل حضور في ${ds.length} يوم (${ds[0]} إلى ${ds[ds.length - 1]}).${miss.size ? `\nما لقيت هالأسماء في قائمة الموظفين: ${[...miss].slice(0, 8).join("، ")}` : ""}\nالسجلات الموجودة لنفس الموظف ونفس اليوم تتبدّل. نكمل؟`)) return;
+  try { for (let i = 0; i < ds.length; i += 400) { const b = writeBatch(db); ds.slice(i, i + 400).forEach(d => b.set(ref("hrAtt/" + d), {date: d, rec: days[d], by: S.adminRole, at: new Date().toISOString()}, {merge: true})); await b.commit(); }
+    logAction("استيراد حضور الموظفين", `${n} سجل`); toast(`انضاف ${n} سجل`); S._hrDraft = null; }
+  catch (x) { handleWriteErr(x); }
+}
+function hrStaffView(el){
+  const list = S.hrStaff || [], ed = S._hrEd;
+  el.innerHTML = `<div class="card"><h2>${ed && ed.id ? "تعديل موظف" : "إضافة موظف"}</h2>
+    <div class="row"><label class="f grow" for="hsN">الاسم<input type="text" id="hsN" value="${esc(ed ? ed.name : "")}"></label><label class="f grow" for="hsJ">الوظيفة<input type="text" id="hsJ" value="${esc(ed ? ed.job || "" : "")}" placeholder="مدرب، محاسب، استقبال…"></label><label class="f grow" for="hsDp">القسم<input type="text" id="hsDp" value="${esc(ed ? ed.dept || "" : "")}"></label></div>
+    <div class="row"><label class="f grow" for="hsP">الجوال<input type="tel" id="hsP" dir="ltr" value="${esc(ed ? ed.phone || "" : "")}" placeholder="05xxxxxxxx"></label><label class="f" for="hsF" style="width:120px">بداية الدوام<input type="time" id="hsF" value="${esc(ed ? ed.from || "08:00" : "08:00")}"></label><label class="f" for="hsT" style="width:120px">نهاية الدوام<input type="time" id="hsT" value="${esc(ed ? ed.to || "16:00" : "16:00")}"></label><label class="f" for="hsG" style="width:120px">سماح التأخير (د)<input type="number" id="hsG" min="0" max="120" value="${ed ? ed.grace ?? 15 : 15}"></label><label class="f" for="hsS" style="width:150px">تاريخ المباشرة<input type="date" id="hsS" value="${esc(ed ? ed.start || "" : "")}"></label></div>
+    <div class="row" style="gap:10px;margin:6px 0">أيام الدوام: ${WDAYS.map((w, i) => `<label class="row" style="gap:3px"><input type="checkbox" data-hday="${i}" ${(ed ? ed.days || [0, 1, 2, 3, 4] : [0, 1, 2, 3, 4]).includes(i) ? "checked" : ""}>${w}</label>`).join("")}</div>
+    <div class="row" style="gap:6px"><button class="btn pri" id="hsSave">${ed && ed.id ? "حفظ" : "+ إضافة"}</button>${ed ? `<button class="btn" id="hsCancel">إلغاء</button>` : ""}</div></div>
+  <div class="list">${list.map(s => `<div class="item"><div class="grow"><b>${esc(s.name)}</b> ${s.active === false ? `<span class="pill a">موقوف</span>` : ""}<div class="muted">${esc(s.job || "")}${s.dept ? " · " + esc(s.dept) : ""} · ${esc(s.from || "08:00")}–${esc(s.to || "16:00")} · ${(s.days || [0, 1, 2, 3, 4]).map(i => WDAYS[i]).join("، ")}</div></div>
+    <button class="btn sm" data-hsed="${s.id}">تعديل</button><button class="btn sm" data-hsact="${s.id}">${s.active === false ? "تفعيل" : "إيقاف"}</button></div>`).join("") || `<div class="card empty">ما فيه موظفين للحين.</div>`}</div>`;
+  $("#hsSave").onclick = async () => {
+    const d = {name: $("#hsN").value.trim().slice(0, 80), job: $("#hsJ").value.trim().slice(0, 60), dept: $("#hsDp").value.trim().slice(0, 60), phone: $("#hsP").value.trim() ? normPhone($("#hsP").value) : "", from: $("#hsF").value || "08:00", to: $("#hsT").value || "16:00", grace: Math.max(0, Math.min(120, Number($("#hsG").value) || 0)), start: $("#hsS").value || "", days: [...el.querySelectorAll("[data-hday]:checked")].map(x => Number(x.dataset.hday))};
+    if (!d.name) return toast("اكتب اسم الموظف"); if (!d.days.length) return toast("اختر أيام الدوام");
+    const id = ed && ed.id ? ed.id : "e" + Date.now().toString(36);
+    try { await setDoc(ref("hrStaff/" + id), {...d, active: ed && ed.id ? ed.active !== false : true}, {merge: true}); logAction("بيانات موظف", d.name); S._hrEd = null; toast("انحفظ"); render(); }
+    catch (x) { handleWriteErr(x); }
+  };
+  if ($("#hsCancel")) $("#hsCancel").onclick = () => { S._hrEd = null; render(); };
+  el.querySelectorAll("[data-hsed]").forEach(b => b.onclick = () => { S._hrEd = {...list.find(s => s.id === b.dataset.hsed)}; render(); window.scrollTo(0, 0); });
+  el.querySelectorAll("[data-hsact]").forEach(b => b.onclick = async () => { const s = list.find(x => x.id === b.dataset.hsact); try { await setDoc(ref("hrStaff/" + s.id), {active: s.active === false}, {merge: true}); } catch (x) { handleWriteErr(x); } });
+}
+function hrRepRows(m){
+  const days = []; const last = new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0).getDate();
+  for (let i = 1; i <= last; i++) { const d = `${m}-${String(i).padStart(2, "0")}`; if (d <= today()) days.push(d); }
+  return (S.hrStaff || []).map(s => { const c = {work: 0, p: 0, l: 0, a: 0, v: 0, x: 0, late: 0, mins: 0};
+    days.forEach(d => { if (!hrWorks(s, d)) return; c.work++; const r = (((S.hrAtt || {})[d] || {}).rec || {})[s.id]; const st = r ? (r.st || hrAuto(s, r)) : "a"; c[st]++; if (st === "l") c.late += r.late ?? hrLateMin(s, r);
+      const i = hm(r && r.in), o = hm(r && r.out); if (i !== null && o !== null && o > i) c.mins += o - i; });
+    return {s, c}; });
+}
+function hrRepView(el){
+  const m = S.hrRepM || today().slice(0, 7); hrMonth(m);
+  const rows = S.hrAtt ? hrRepRows(m) : null;
+  el.innerHTML = `<div class="card"><div class="row" style="align-items:end;gap:8px"><label class="f" for="hrM" style="width:170px">الشهر<input type="month" id="hrM" value="${m}"></label><span class="grow"></span><button class="btn sm" id="hrXls">Excel</button><button class="btn sm" id="hrPrt">طباعة</button></div></div>
+  <div class="card">${!rows ? `<p class="muted">جاري التحميل…</p>` : `<div class="tbl"><table><thead><tr><th>الموظف</th><th>أيام الدوام</th><th>حاضر</th><th>متأخر</th><th>دقائق التأخير</th><th>غائب</th><th>إجازة</th><th>مستأذن</th><th>ساعات العمل</th></tr></thead><tbody>${rows.map(({s, c}) => `<tr><td style="text-align:right">${esc(s.name)}</td><td>${c.work}</td><td>${c.p}</td><td>${c.l}</td><td>${c.late}</td><td${c.a ? ` style="color:#B3261E;font-weight:700"` : ""}>${c.a}</td><td>${c.v}</td><td>${c.x}</td><td>${(c.mins / 60).toFixed(1)}</td></tr>`).join("")}</tbody></table></div>`}</div>`;
+  $("#hrM").onchange = e => { S.hrRepM = e.target.value || today().slice(0, 7); render(); };
+  const data = () => (rows || []).map(({s, c}) => [s.name, s.job || "", c.work, c.p, c.l, c.late, c.a, c.v, c.x, +(c.mins / 60).toFixed(1)]);
+  const head = ["الموظف", "الوظيفة", "أيام الدوام", "حاضر", "متأخر", "دقائق التأخير", "غائب", "إجازة", "مستأذن", "ساعات العمل"];
+  $("#hrXls").onclick = () => rows && excelDownload(`حضور الموظفين ${m}`, [{title: m, rows: [[INST_AR], [`تقرير حضور الموظفين · ${m}`], [], head, ...data()], widths: [26, 18, 10, 8, 8, 12, 8, 8, 8, 10]}]);
+  $("#hrPrt").onclick = () => { if (!rows) return; const w = openPrint(); if (!w) return; fillPrint(w, `حضور الموظفين ${m}`, [{html: `<h1>تقرير حضور الموظفين · ${esc(m)}</h1><table><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${data().map(r => `<tr>${r.map((c, i) => `<td${i === 0 ? ` class="n"` : ""}>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table><div class="sig"><div>الموارد البشرية</div><div>مدير المعهد</div></div>`}], true, "الموارد البشرية"); };
+}
+
+/* ---------- معسكر الأمن السيبراني: شعبة تدريبية داخل البوابة — منهج + مقاطع فيديو + دليل + اختبار نظري ----------
+   camp/config: { enabled, intro, guideUrl, lessons:[{id,week,title,type,url,dur,desc}] }
+   الاختبار النظري يُنشأ كـ exams/cyber-theory (gid="camp") فيظهر للطلاب تلقائياً في تبويب الاختبارات */
+const CAMP_WEEKS = [
+  [1, "مدخل الأمن السيبراني وبناء المختبر", "مبادئ CIA، أنواع المهاجمين، الأخلاقيات، تثبيت بيئة المختبر المعزولة", 70],
+  [2, "لينكس والشبكات", "سطر أوامر لينكس، الصلاحيات، TCP/IP وOSI، المنافذ والخدمات", 75],
+  [3, "الويب من الداخل والبرمجة النصية", "HTTP/HTTPS، DNS، إعداد Burp Suite، أساسيات Python وBash", 75],
+  [4, "الاستطلاع وجمع المعلومات", "OSINT، الفحص بـ nmap، التعداد، رسم سطح الهجوم", 80],
+  [5, "ثغرات الحقن — SQL وCommand Injection", "اكتشاف واستغلال وترقيع الحقن على DVWA", 80],
+  [6, "XSS وCSRF", "البرمجة عبر المواقع وتزوير الطلب: الهجوم والدفاع", 80],
+  [7, "المصادقة والصلاحيات ورفع الملفات", "كسر المصادقة، IDOR، تجاوز الصلاحيات، رفع الملفات الخبيثة", 80],
+  [8, "ثغرات متقدمة", "SSRF، XXE، كشف البيانات، سوء الإعداد الأمني", 75],
+  [9, "اختراق الشبكات والأنظمة", "Metasploit، تصعيد الصلاحيات، ما بعد الاستغلال في المختبر", 80],
+  [10, "مواضيع متخصّصة (محاكاة مختبرية)", "Active Directory، أمن الواي فاي، أمن إنترنت الأشياء/الكاميرات، مقدمة تحليل البرمجيات الخبيثة", 70],
+  [11, "الفريق الأزرق والدفاع", "التحصين، التسجيل والمراقبة، SIEM، الاستجابة للحوادث، الكود الآمن", 70],
+  [12, "المشروع الختامي والاختبار", "شبكة شركة وهمية: اختراق + تحصين + تقرير فني + الاختبار النهائي", 90]
+];
+/* الاختبار النظري — كله تلقائي التصحيح (اختيار وصح/خطأ) */
+const CAMP_EXAM = {
+  title: "الاختبار النظري — معسكر الأمن السيبراني", mins: 30,
+  qs: [
+    {id: "c1", t: "mc", q: "أي مبدأ من مثلث أمن المعلومات (CIA) يُنتهك عند تسريب بيانات العملاء؟", p: 1, o: ["السرية Confidentiality", "السلامة Integrity", "التوافر Availability", "عدم الإنكار"], k: 0},
+    {id: "c2", t: "mc", q: "ما أول مرحلة في منهجية البحث عن الثغرة؟", p: 1, o: ["الاستغلال", "الاستطلاع وجمع المعلومات", "كتابة التقرير", "الترقيع"], k: 1},
+    {id: "c3", t: "mc", q: "أي الدفاعات أقوى ضد حقن SQL؟", p: 1, o: ["إخفاء رسائل الخطأ", "منع علامة الاقتباس فقط", "الاستعلامات المُعاملة (Prepared Statements)", "تغيير اسم الجدول"], k: 2},
+    {id: "c4", t: "tf", q: "خاصية HttpOnly للكوكي تمنع جافاسكربت من قراءتها، فتقلّل أثر ثغرة XSS.", p: 1, k: true},
+    {id: "c5", t: "mc", q: "ثغرة IDOR تنتمي لعائلة:", p: 1, o: ["التحكم بالصلاحيات (Access Control)", "التشفير", "سوء الإعداد", "الحقن"], k: 0},
+    {id: "c6", t: "tf", q: "يجوز تجربة أدوات الاختراق على أي موقع حقيقي طالما النية التعلّم.", p: 1, k: false},
+    {id: "c7", t: "mc", q: "أفضل دفاع ضد رفع الملفات الخبيثة:", p: 1, o: ["فحص امتداد الاسم فقط", "التحقق من المحتوى الحقيقي وإعادة التسمية والتخزين خارج جذر الويب ومنع التنفيذ", "تصغير حجم الصورة", "منع الصور فقط"], k: 1},
+    {id: "c8", t: "mc", q: "ثغرة SSRF تسمح للمهاجم بأن:", p: 1, o: ["يسرق كوكي الضحية", "يجبر الخادم على طلب خدمات داخلية", "يكسر التشفير", "يعطّل الموقع فقط"], k: 1},
+    {id: "c9", t: "tf", q: "رمز CSRF الفريد لكل جلسة وخاصية SameSite يدافعان عن ثغرة تزوير الطلب.", p: 1, k: true},
+    {id: "c10", t: "mc", q: "ما الذي يجب أن يتضمنه التقرير الفني لكل ثغرة؟", p: 1, o: ["الوصف والخطورة وخطوات الإعادة والدليل والتوصية", "اسم المهاجم فقط", "رأي شخصي", "إعلان تسويقي"], k: 0},
+    {id: "c11", t: "tf", q: "مبدأ «أقل صلاحية» يقلّل الضرر إذا اختُرق حساب أو خدمة.", p: 1, k: true},
+    {id: "c12", t: "mc", q: "الفحص اليدوي ضروري لأن:", p: 1, o: ["الماسحات الآلية تكتشف كل شيء", "الماسحات قد تفوّت ثغرات منطقية وتعطي إيجابيات كاذبة", "لا فائدة من الأدوات", "يمنعه النظام"], k: 1}
+  ]
+};
+const CAMP_EID = "cyber-theory";
+function watchCamp(){
+  if (S._campOn) return; S._campOn = true;
+  S.subs.push(onSnapshot(ref("camp/config"), snap => { S.camp = snap.exists() ? snap.data() : {enabled: false, lessons: []}; if (!busyEditing()) render(); }, () => { S.camp = {enabled: false, lessons: []}; }));
+}
+const campOn = () => S.camp && S.camp.enabled;
+const ytId = u => { const m = /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{6,})/.exec(u || ""); return m ? m[1] : ""; };
+function campPlayer(url){
+  const y = ytId(url);
+  if (y) return `<iframe style="width:100%;aspect-ratio:16/9;border:0;border-radius:10px" src="https://www.youtube.com/embed/${esc(y)}" allowfullscreen loading="lazy"></iframe>`;
+  if (/\.(mp4|webm|ogg|m4v)(\?|$)/i.test(url)) return `<video controls style="width:100%;border-radius:10px" src="${esc(url)}"></video>`;
+  return `<a class="btn pri" href="${esc(url)}" target="_blank" rel="noopener">فتح المقطع ↗</a>`;
+}
+function campLessonsByWeek(){ const by = {}; ((S.camp || {}).lessons || []).forEach(l => (by[l.week || 0] = by[l.week || 0] || []).push(l)); return by; }
+
+/* ---- بوابة الطالب: تبويب المعسكر ---- */
+function studentCamp(el){
+  const c = S.camp || {}, by = campLessonsByWeek();
+  const ex = (S.myExams || []).find(e => e.id === CAMP_EID && e.status !== "draft"), sub = ex && (S.mySubs || {})[CAMP_EID];
+  el.innerHTML = `<div class="card" style="background:linear-gradient(135deg,#17352a,#0f251c);color:#fff;border:0">
+      <div style="display:flex;align-items:center;gap:10px"><span style="font-size:26px">🛡️</span><div><h2 style="margin:0;color:#fff">معسكر الأمن السيبراني الاحترافي</h2><div style="color:#cfe0d6;font-size:13px">برنامج مكثّف ٣ أشهر · ٧٥٪ تطبيقي · من المبتدئ إلى الاحتراف</div></div></div>
+      ${c.intro ? `<p style="color:#e6efe9;margin:12px 0 0;white-space:pre-wrap">${esc(c.intro)}</p>` : ""}
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        ${validLink(c.guideUrl) ? `<a class="btn gold" style="display:inline-block;text-decoration:none" href="${esc(c.guideUrl)}" target="_blank" rel="noopener">📖 افتح دليل المعسكر الكامل</a>` : ""}
+        ${validLink(c.labUrl) ? `<a class="btn" style="display:inline-block;text-decoration:none;background:#b3303c;color:#fff;border:0" href="${esc(c.labUrl)}" target="_blank" rel="noopener">🧪 ادخل المختبر التفاعلي</a>` : ""}
+      </div>
+    </div>
+    ${ex ? `<div class="card" style="border:1px solid var(--gold)"><div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div><b>${esc(ex.title)}</b><div class="muted">${(ex.nq || 0)} سؤال · ${ex.mins} دقيقة · ${exState(ex) === "open" ? "متاح الآن" : exState(ex) === "soon" ? "يفتح " + esc(fmtDT(tsMs(ex.start))) : "مقفل"}</div></div>
+      ${sub && sub.done ? `<span class="pill p">سلّمت${ex.resultsOut && sub.graded ? ` · ${sub.score}/${ex.total}` : ""}</span>` : `<button class="btn pri" id="campGoExam">${sub ? "كمّل الاختبار" : "ابدأ الاختبار النظري"}</button>`}</div></div>` : ""}
+    <div class="card"><h2 style="margin:0 0 4px">المنهج · ١٢ أسبوعاً</h2><p class="muted" style="margin:0 0 10px">كل أسبوع فيه نظري وتطبيقي. التطبيق كله على مختبر معزول قانوني. المقاطع تظهر تحت كل أسبوع لما يرفعها المدرب.</p>
+      <div class="list">${CAMP_WEEKS.map(([n, t, d, pr]) => { const vids = by[n] || []; return `<details class="wk" style="border:1px solid var(--line);border-radius:12px;margin:8px 0;background:var(--card)">
+        <summary style="list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:10px"><span class="pill g" style="min-width:34px;text-align:center">${n}</span><span class="grow"><b>${esc(t)}</b><div class="muted" style="font-size:12.5px">${esc(d)}</div></span>${vids.length ? `<span class="pill b">▶ ${vids.length}</span>` : ""}<span class="pill gold">تطبيقي ${pr}٪</span></summary>
+        <div style="padding:0 14px 14px">${vids.length ? vids.map(v => `<div style="margin:10px 0"><b>${v.type === "read" ? "📄" : "▶"} ${esc(v.title)}</b>${v.dur ? ` <span class="muted">· ${esc(v.dur)}</span>` : ""}${v.desc ? `<div class="muted" style="font-size:12.5px;margin:2px 0 6px">${esc(v.desc)}</div>` : ""}${v.type === "read" ? (validLink(v.url) ? `<a class="btn sm" href="${esc(v.url)}" target="_blank" rel="noopener">فتح</a>` : "") : campPlayer(v.url)}</div>`).join("") : `<p class="muted" style="margin:8px 0">ما نُزّلت مقاطع لهذا الأسبوع بعد.</p>`}</div></details>`; }).join("")}</div></div>`;
+  if ($("#campGoExam")) $("#campGoExam").onclick = () => { S.sTab = "exams"; S.exTake = CAMP_EID; render(); window.scrollTo(0, 0); };
+}
+
+/* ---- بوابة الإدارة: إدارة المعسكر ---- */
+function campTab(el){
+  const c = S.camp || {enabled: false, lessons: []}, ed = S._campLes;
+  const examLive = S.campExam;
+  el.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">معسكر الأمن السيبراني</h2>
+      <label class="row" style="gap:8px;cursor:pointer"><input type="checkbox" id="campEn" ${c.enabled ? "checked" : ""}> <b>${c.enabled ? "ظاهر للطلاب" : "مخفي"}</b></label></div>
+    <p class="muted" style="margin:8px 0 0">لما تفعّله يظهر للطلاب تبويب «معسكر الأمن السيبراني» تلقائياً فيه المنهج والمقاطع والدليل والاختبار.</p></div>
+  <div class="card"><h3 style="margin-top:0">مقدمة ورابط الدليل</h3>
+    <label class="f" for="campIntro">نبذة تظهر للطلاب<textarea id="campIntro" style="min-height:70px">${esc(c.intro || "")}</textarea></label>
+    <label class="f" for="campGuide">رابط دليل المعسكر (الصفحة التفاعلية)<input type="url" id="campGuide" dir="ltr" value="${esc(c.guideUrl || "")}" placeholder="https://..."></label>
+    <label class="f" for="campLab">رابط المختبر التفاعلي (lab.html على نفس نطاق البوابة)<input type="url" id="campLab" dir="ltr" value="${esc(c.labUrl || "")}" placeholder="https://osustl.com/lab.html"></label>
+    <p class="muted" style="margin:0 0 8px;font-size:12px">لوحة متابعة تقدّم الطلاب في المختبر: افتح نفس الرابط مع إضافة <span dir="ltr">?admin=1</span> وأنت مسجّل دخول كمشرف/مدرب.</p>
+    <button class="btn pri" id="campSaveTop">حفظ</button></div>
+  <div class="card"><h3 style="margin-top:0">${ed ? (ed.id ? "تعديل مقطع" : "إضافة مقطع / درس") : "إضافة مقطع / درس"}</h3>
+    <div class="row"><label class="f" for="lesWk" style="width:120px">الأسبوع<select id="lesWk">${CAMP_WEEKS.map(([n, t]) => `<option value="${n}" ${ed && ed.week === n ? "selected" : ""}>${n} · ${esc(t.slice(0, 18))}</option>`).join("")}</select></label>
+      <label class="f" for="lesType" style="width:130px">النوع<select id="lesType"><option value="video" ${!ed || ed.type !== "read" ? "selected" : ""}>مقطع فيديو</option><option value="read" ${ed && ed.type === "read" ? "selected" : ""}>مادة للقراءة</option></select></label>
+      <label class="f grow" for="lesTitle">العنوان<input type="text" id="lesTitle" value="${esc(ed ? ed.title || "" : "")}" placeholder="مثال: شرح حقن SQL عملي"></label>
+      <label class="f" for="lesDur" style="width:110px">المدة<input type="text" id="lesDur" value="${esc(ed ? ed.dur || "" : "")}" placeholder="12:30"></label></div>
+    <label class="f" for="lesUrl">الرابط (يوتيوب أو رابط مباشر mp4)<input type="url" id="lesUrl" dir="ltr" value="${esc(ed ? ed.url || "" : "")}" placeholder="https://youtu.be/..."></label>
+    <label class="f" for="lesDesc">وصف مختصر (اختياري)<input type="text" id="lesDesc" value="${esc(ed ? ed.desc || "" : "")}"></label>
+    <div class="row" style="gap:6px"><button class="btn pri" id="lesSave">${ed && ed.id ? "حفظ المقطع" : "+ إضافة"}</button>${ed ? `<button class="btn" id="lesCancel">إلغاء</button>` : ""}</div></div>
+  <div class="card"><h3 style="margin-top:0">المقاطع المرفوعة (${(c.lessons || []).length})</h3>
+    <div class="list">${(c.lessons || []).slice().sort((a, b) => (a.week - b.week) || 0).map(l => `<div class="item"><div class="grow"><b>${l.type === "read" ? "📄" : "▶"} ${esc(l.title)}</b> <span class="pill g">أسبوع ${l.week}</span>${l.dur ? ` <span class="muted">${esc(l.dur)}</span>` : ""}<div class="muted" style="font-size:12px;direction:ltr;text-align:right">${esc((l.url || "").slice(0, 60))}</div></div><button class="btn sm" data-lese="${esc(l.id)}">تعديل</button><button class="btn sm danger" data-lesd="${esc(l.id)}">حذف</button></div>`).join("") || `<div class="card empty">ما فيه مقاطع بعد. أضف أول مقطع من فوق.</div>`}</div></div>
+  <div class="card"><h3 style="margin-top:0">الاختبار النظري</h3>
+    <p class="muted" style="margin-top:0">اختبار من ${CAMP_EXAM.qs.length} أسئلة يتصحّح تلقائياً. لما تصدره ينزل لكل الطلاب في تبويب «الاختبارات» وتبويب المعسكر.</p>
+    ${examLive ? `<div class="notice">الاختبار منشور · ${examLive.memberNums ? examLive.memberNums.length : 0} طالب · <b>${examLive.resultsOut ? "النتائج ظاهرة" : "النتائج مخفية"}</b></div>
+      <div class="row" style="gap:6px"><button class="btn pri" id="campExRefresh">تحديث قائمة الطلاب</button><button class="btn ${examLive.resultsOut ? "" : "gold"}" id="campExOut">${examLive.resultsOut ? "إخفاء النتائج" : "إظهار النتائج للطلاب"}</button><button class="btn" id="campExRes">النتائج</button><button class="btn danger" id="campExDel">سحب الاختبار</button></div>` : `<button class="btn gold" id="campExMake">📝 إصدار الاختبار النظري للطلاب</button>`}
+    <div id="campResBox"></div></div>`;
+  $("#campEn").onchange = async e => { try { await setDoc(ref("camp/config"), {enabled: e.target.checked}, {merge: true}); logAction("المعسكر", e.target.checked ? "تفعيل" : "إخفاء"); toast(e.target.checked ? "ظهر للطلاب" : "انخفى"); } catch (x) { handleWriteErr(x); e.target.checked = !e.target.checked; } };
+  $("#campSaveTop").onclick = async () => { const g = $("#campGuide").value.trim(); const lb = $("#campLab").value.trim(); if (g && !validLink(g)) return toast("رابط الدليل لازم يبدأ بـ https://"); if (lb && !validLink(lb)) return toast("رابط المختبر لازم يبدأ بـ https://"); try { await setDoc(ref("camp/config"), {intro: $("#campIntro").value.trim().slice(0, 1500), guideUrl: g, labUrl: lb}, {merge: true}); logAction("المعسكر", "تعديل المقدمة"); toast("انحفظ"); } catch (x) { handleWriteErr(x); } };
+  $("#lesSave").onclick = async () => {
+    const url = $("#lesUrl").value.trim(); if (!$("#lesTitle").value.trim()) return toast("اكتب عنوان المقطع"); if (!validLink(url)) return toast("حط رابط صحيح يبدأ بـ https://");
+    const les = {id: ed && ed.id ? ed.id : "L" + Date.now().toString(36), week: Number($("#lesWk").value), type: $("#lesType").value, title: $("#lesTitle").value.trim().slice(0, 140), url: url.slice(0, 400), dur: $("#lesDur").value.trim().slice(0, 20), desc: $("#lesDesc").value.trim().slice(0, 200)};
+    const list = (c.lessons || []).filter(x => x.id !== les.id); list.push(les);
+    try { await setDoc(ref("camp/config"), {lessons: list}, {merge: true}); logAction("المعسكر", "مقطع: " + les.title); S._campLes = null; toast("انحفظ"); render(); } catch (x) { handleWriteErr(x); }
+  };
+  if ($("#lesCancel")) $("#lesCancel").onclick = () => { S._campLes = null; render(); };
+  el.querySelectorAll("[data-lese]").forEach(b => b.onclick = () => { S._campLes = {...(c.lessons || []).find(l => l.id === b.dataset.lese)}; render(); window.scrollTo(0, 0); });
+  el.querySelectorAll("[data-lesd]").forEach(b => b.onclick = async () => { if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟"; return; } try { await setDoc(ref("camp/config"), {lessons: (c.lessons || []).filter(l => l.id !== b.dataset.lesd)}, {merge: true}); logAction("المعسكر", "حذف مقطع"); render(); } catch (x) { handleWriteErr(x); } });
+  if ($("#campExMake")) $("#campExMake").onclick = () => campMakeExam();
+  if ($("#campExRefresh")) $("#campExRefresh").onclick = () => campMakeExam(true);
+  if ($("#campExDel")) $("#campExDel").onclick = async b => { if (!b.target.dataset.sure) { b.target.dataset.sure = 1; b.target.textContent = "متأكد؟ ينسحب من الطلاب"; return; } try { const w = writeBatch(db); w.delete(ref("exams/" + CAMP_EID)); w.delete(ref("examQs/" + CAMP_EID)); w.delete(ref("examKeys/" + CAMP_EID)); await w.commit(); logAction("المعسكر", "سحب الاختبار"); toast("انسحب"); } catch (x) { handleWriteErr(x); } };
+  if ($("#campExOut")) $("#campExOut").onclick = async () => { try { await setDoc(ref("exams/" + CAMP_EID), {resultsOut: !examLive.resultsOut}, {merge: true}); if (!examLive.resultsOut) notify("examres", CAMP_EID); toast(examLive.resultsOut ? "انخفت" : "ظهرت للطلاب"); } catch (x) { handleWriteErr(x); } };
+  if ($("#campExRes")) $("#campExRes").onclick = () => campResults($("#campResBox"));
+}
+async function campMakeExam(refresh){
+  const nums = Object.keys(S.students || {}); if (!nums.length) return toast("ما فيه طلاب مسجلين بعد");
+  const now = Date.now(), qs = CAMP_EXAM.qs.map(q => ({id: q.id, t: q.t, q: q.q, p: q.p, ...(q.t === "mc" ? {o: q.o} : {})})), ans = {}; CAMP_EXAM.qs.forEach(q => ans[q.id] = q.k);
+  const prev = S.campExam;
+  const ex = {gid: "camp", tid: "", course: "معسكر الأمن السيبراني", title: CAMP_EXAM.title, mins: CAMP_EXAM.mins, start: Timestamp.fromMillis(prev ? tsMs(prev.start) : now), end: Timestamp.fromMillis(now + 180 * 864e5), shuffle: true, nq: qs.length, total: qs.reduce((a, q) => a + q.p, 0), status: "open", memberNums: nums, resultsOut: prev ? !!prev.resultsOut : false, updatedAt: new Date().toISOString(), by: S.adminRole};
+  try { const b = writeBatch(db); b.set(ref("exams/" + CAMP_EID), ex); b.set(ref("examQs/" + CAMP_EID), {gid: "camp", tid: "", qs}); b.set(ref("examKeys/" + CAMP_EID), {gid: "camp", tid: "", ans}); await b.commit(); if (!prev) notify("exam", CAMP_EID); logAction("المعسكر", refresh ? "تحديث طلاب الاختبار" : "إصدار الاختبار النظري"); toast(refresh ? `تحدّثت القائمة (${nums.length} طالب)` : `انصدر الاختبار لـ ${nums.length} طالب`); render(); }
+  catch (x) { handleWriteErr(x); }
+}
+function campResults(box){
+  if (!box) return; box.innerHTML = `<p class="muted">جاري التحميل…</p>`;
+  Promise.all([getDocs(query(collection(db, "examSubs"), where("eid", "==", CAMP_EID))), getDoc(ref("examKeys/" + CAMP_EID))]).then(([snap, k]) => {
+    const key = k.exists() ? k.data().ans : {}, subs = snap.docs.map(d => d.data()), byNum = {}; subs.forEach(s => byNum[s.num] = s);
+    const rows = Object.keys(S.students || {}).sort().map(n => { const s = byNum[n]; const sc = s ? exAuto({qs: CAMP_EXAM.qs}, key, s.ans) : null; return [n, (S.students[n] || {}).name || "", s ? (s.done ? "سلّم" : "ما سلّم") : "ما دخل", s ? sc : "—", CAMP_EXAM.qs.length]; });
+    box.innerHTML = `<div class="row" style="justify-content:space-between;margin-top:12px"><b>النتائج (${subs.filter(s => s.done).length} سلّموا)</b><button class="btn sm" id="campXls">Excel</button></div>
+      <div class="tbl" style="margin-top:8px"><table><thead><tr><th>الرقم</th><th>الاسم</th><th>الحالة</th><th>الدرجة</th><th>من</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r[0])}</td><td style="text-align:right">${esc(r[1])}</td><td>${r[2]}</td><td><b>${r[3]}</b></td><td>${r[4]}</td></tr>`).join("")}</tbody></table></div>`;
+    $("#campXls").onclick = () => excelDownload("نتائج اختبار المعسكر", [{title: "النتائج", rows: [[INST_AR], ["الاختبار النظري — معسكر الأمن السيبراني"], [], ["الرقم", "الاسم", "الحالة", "الدرجة", "من"], ...rows], widths: [12, 26, 10, 8, 6]}]);
+  }).catch(x => { console.error(x); box.innerHTML = `<p class="muted">تعذّر تحميل النتائج</p>`; });
+}
+
 /* ---------- student portal ---------- */
 const EVAL_Q = ["وضوح شرح المدرب", "التزام المدرب بالوقت", "تفاعل المدرب مع الطلاب", "فائدة محتوى المقرر", "رضاك العام عن المقرر"];
 const EXC_ST = {pending: "قيد المراجعة", accepted: "مقبول", rejected: "مرفوض"};
 const EXC_PILL = {pending: "l", accepted: "p", rejected: "a"};
 function studentTabs(){
   const open = Object.values(S.groups).filter(g => g.evalOpen && !(S.myEvals || []).some(e => e.groupId === g.id)).length;
-  const tabs = [["home", "الرئيسية"], ["card", "بطاقتي"], ["att", "حضوري"], ["exc", "الأعذار"], ["warn", "الإنذارات" + ((S.myWarn || []).length ? ` (${S.myWarn.length})` : "")], ["eval", "التقييم" + (open ? ` (${open})` : "")], ["areq", "طلبات الأكاديمية" + ((S.myAReq || []).some(r => r.status === "done" && r.reply && !r.seen) ? " (1)" : "")], ["freq", "طلبات المالية" + ((S.myFReq || []).some(r => r.type === "invoice" && r.status === "approved" && !r.seen) ? " (1)" : "")], ...(S.survey && S.survey.open ? [["survey", "الاستبيان" + (S.surveyDone === S.survey.id ? "" : " (1)")]] : [])];
+  const tabs = [["home", "الرئيسية"], ...(campOn() ? [["camp", "🛡️ معسكر الأمن السيبراني"]] : []), ["card", "بطاقتي"], ["att", "حضوري"], ["exams", "الاختبارات" + ((S.myExams || []).some(e => exState(e) === "open" && !(S.mySubs || {})[e.id]) ? " (1)" : "")], ["exc", "الأعذار"], ["warn", "الإنذارات" + ((S.myWarn || []).length ? ` (${S.myWarn.length})` : "")], ["eval", "التقييم" + (open ? ` (${open})` : "")], ["areq", "طلبات الأكاديمية" + ((S.myAReq || []).some(r => r.status === "done" && r.reply && !r.seen) ? " (1)" : "")], ["freq", "طلبات المالية" + ((S.myFReq || []).some(r => r.type === "invoice" && r.status === "approved" && !r.seen) ? " (1)" : "")], ...(S.survey && S.survey.open ? [["survey", "الاستبيان" + (S.surveyDone === S.survey.id ? "" : " (1)")]] : [])];
   return `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k, v]) => `<button class="tab ${(S.sTab || "home") === k ? "on" : ""}" data-stab="${k}">${v}</button>`).join("")}</div></div>`;
 }
 function bindStudentTabs(app){ app.querySelectorAll("[data-stab]").forEach(b => b.onclick = () => { S.sTab = b.dataset.stab; render(); window.scrollTo(0, 0); }); }
@@ -1170,7 +1696,7 @@ function myCourseStats(){
 function renderStudent(app){
   const st = S.myStudent;
   if (!st) { app.innerHTML = `<div class="notice err">ما لقينا سجلك. تواصل مع الشؤون الأكاديمية.</div>`; return; }
-  if ((S.sTab || "home") !== "home") { app.innerHTML = studentTabs() + `<div id="sb"></div>`; bindStudentTabs(app); ({card: studentCard, att: studentAtt, exc: studentExc, warn: studentWarn, eval: studentEval, fin: studentFinReq, areq: studentAcReq, freq: studentFinReq, survey: studentSurvey})[S.sTab]($("#sb")); return; }
+  if ((S.sTab || "home") !== "home") { app.innerHTML = studentTabs() + `<div id="sb"></div>`; bindStudentTabs(app); ({camp: studentCamp, card: studentCard, att: studentAtt, exams: studentExams, exc: studentExc, warn: studentWarn, eval: studentEval, fin: studentFinReq, areq: studentAcReq, freq: studentFinReq, survey: studentSurvey})[S.sTab]($("#sb")); return; }
   const gs = Object.values(S.groups).sort((a,b) => (a.course||"").localeCompare(b.course||"","ar"));
   const res = {}; S.myResults.forEach(r => res[r.groupId] = r);
   const cards = gs.map(g => {
@@ -1473,6 +1999,7 @@ function renderTrainer(app){
         <button class="tab ${S.tTab==="roll"?"on":""}" data-tab="roll">التحضير</button>
         <button class="tab ${S.tTab==="hist"?"on":""}" data-tab="hist">سجل الحضور</button>
         <button class="tab ${S.tTab==="grades"?"on":""}" data-tab="grades">الدرجات</button>
+        <button class="tab ${S.tTab==="exams"?"on":""}" data-tab="exams">الاختبارات</button>
       </div>
     </div>
   </div>`;
@@ -1496,6 +2023,7 @@ function renderTrainer(app){
     </div></div>
     <div class="list" id="roll">${st.length ? st.map((s,i) => stuRow(s,i,rec[s.id]||{})).join("") : `<div class="card empty">ما فيه طلاب في هذا المقرر بعد.</div>`}</div>`;
   } else if (S.tTab === "hist") body = `<div class="card"><h2>سجل الحضور</h2>${matrixTable(g, S.groupAtt)}</div>`;
+  else if (S.tTab === "exams") body = examsTab(g);
   else body = gradesEditor(g, "trainer");
   app.innerHTML = head + body;
   $("#back").onclick = () => { S.tGroup = null; stopAtt(); render(); };
@@ -1540,6 +2068,7 @@ function renderTrainer(app){
     if (isLocked(S.tDate) || isHoliday(S.tDate)) app.querySelectorAll("#roll button, #roll input, #allP, #allOut, #allA, #allJ").forEach(x => x.disabled = true);
   }
   else if (S.tTab === "hist") bindCopy();
+  else if (S.tTab === "exams") bindExamsTab(g);
   else bindGrades(g, "trainer");
 }
 function stuRow(s, i, r){
@@ -1714,6 +2243,7 @@ const PRINT_CSS = `
 .hd .meta{font-size:11px;text-align:left;color:#555}
 .hd .licq svg{width:52px;height:52px;display:block}
 h1{font-size:19px;color:#1F5136;text-align:center;margin:6px 0 14px}
+h2{font-size:14px;color:#1F5136;margin:14px 0 6px;border-bottom:1px solid #e3e8e4;padding-bottom:3px}
 table{width:100%;border-collapse:collapse;font-size:11px}th,td{border:1px solid #c9d2cc;padding:5px 6px;text-align:center}
 th{background:#1F5136;color:#fff;font-weight:600}td.n{text-align:right}tr:nth-child(even) td{background:#f6f8f6}
 .info{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 18px;margin:0 0 12px;font-size:12.5px}.info div b{color:#1F5136}
@@ -2001,15 +2531,21 @@ function renderAdmin(app){
   if (FIN()) {
     app.innerHTML = `<div id="ab"></div>`; adminFinance($("#ab")); return;
   }
-  if (MAILONLY()) { app.innerHTML = `<div id="ab"></div>`; mailTab($("#ab")); return; }
-  const tabs = [["dash","لوحة اليوم"],["kpi","المؤشرات"],["groups","المقررات والطلاب"],["students","الطلاب"],["msgs","الرسائل الجماعية"],["trainers","المدربين والرموز"],["grades","الدرجات"],["follow","المتابعة"],["excuses","الأعذار"],["areqs","طلبات الطلاب" + ((S.aReqs || []).some(r => r.status === "new") ? ` (${S.aReqs.filter(r => r.status === "new").length})` : "")],["evals","التقييمات"],["report","التقارير"],["courses","الدورات والشهادات"],["sign","طلبات التوقيع"],["memos","المراسلات" + memoBadge()],["mail","البريد" + mailBadge()],...(MEET() ? [["live","المحاضرات والتسجيلات"]] : []),["system","النظام"],...(SEES_FIN() ? [["finance","المالية" + ((S.fReqs || []).some(r => r.status === "fin_signed") ? ` (${(S.fReqs || []).filter(r => r.status === "fin_signed").length})` : "")]] : []),["archive","الأرشيف"],...(S.adminRole === "admin" ? [["logs","السجل"]] : [])];
+  if (MAILONLY()) {
+    if (S.adminRole !== "hr") { app.innerHTML = `<div id="ab"></div>`; mailTab($("#ab")); return; }
+    if (!["mail", "hr"].includes(S.aTab)) S.aTab = "hr";
+    app.innerHTML = `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${[["hr", "الموارد البشرية"], ["mail", "البريد" + mailBadge()]].map(([k, v]) => `<button class="tab ${S.aTab === k ? "on" : ""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
+    app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
+    (S.aTab === "hr" ? hrTab : mailTab)($("#ab")); return;
+  }
+  const tabs = [["dash","لوحة اليوم"],["kpi","المؤشرات"],["groups","المقررات والطلاب"],["students","الطلاب"],["msgs","الرسائل الجماعية"],["trainers","المدربين والرموز"],["grades","الدرجات"],["exams","الاختبارات"],["camp","المعسكر"],["follow","المتابعة"],["excuses","الأعذار"],["areqs","طلبات الطلاب" + ((S.aReqs || []).some(r => r.status === "new") ? ` (${S.aReqs.filter(r => r.status === "new").length})` : "")],["evals","التقييمات"],["report","التقارير"],["courses","الدورات والشهادات"],["sign","طلبات التوقيع"],["memos","المراسلات" + memoBadge()],["mail","البريد" + mailBadge()],...(MEET() ? [["live","المحاضرات والتسجيلات"]] : []),["system","النظام"],...(S.adminRole === "admin" ? [["hr","الموارد البشرية"]] : []),...(SEES_FIN() ? [["finance","المالية" + ((S.fReqs || []).some(r => r.status === "fin_signed") ? ` (${(S.fReqs || []).filter(r => r.status === "fin_signed").length})` : "")]] : []),["archive","الأرشيف"],...(S.adminRole === "admin" ? [["logs","السجل"]] : [])];
   if (!tabs.some(([k]) => k === S.aTab)) S.aTab = "dash";
   const waiting = Object.values(S.grades).filter(x => x.status === "submitted").length;
   app.innerHTML = `${backupNag()}${absNag()}${S.sys && S.sys.maintenance ? `<div class="notice err">وضع الصيانة شغّال: الموقع مقفل على الكل ما عدا الإدارة. تطفيه من تبويب "النظام".</div>` : ""}<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}${k === "grades" && waiting ? ` (${waiting})` : ""}${k === "follow" && S.allAtt && ["academic", "admin"].includes(S.adminRole) ? (n => n ? ` (${n})` : "")(absAlerts().alerts.filter(alertWaiting).length) : ""}${k === "excuses" && (S.excuses || []).filter(x => x.status === "pending").length ? ` (${S.excuses.filter(x => x.status === "pending").length})` : ""}</button>`).join("")}</div></div><div id="ab"></div>`;
   app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
   if ($("#nagAbs")) $("#nagAbs").onclick = () => { S.aTab = "follow"; render(); };
   if ($("#nagBk")) $("#nagBk").onclick = async e => { e.target.disabled = true; try { await backupAll(); toast("نزلت النسخة الاحتياطية"); render(); } catch (x) { console.error(x); toast("تعذّر أخذ النسخة"); e.target.disabled = false; } };
-  ({dash: adminDash, kpi: adminKpi, groups: adminGroups, students: adminStudents, msgs: adminMessages, trainers: adminTrainers, grades: adminGrades, follow: adminFollow, excuses: adminExcuses, areqs: adminAcReqs, evals: adminEvals, report: adminReport, courses: adminCourses, sign: signRequests, memos: memosTab, mail: mailTab, live: liveTab, system: adminSystem, archive: adminArchive, finance: adminFinance, logs: adminLogs})[S.aTab]($("#ab"));
+  ({dash: adminDash, kpi: adminKpi, groups: adminGroups, students: adminStudents, msgs: adminMessages, trainers: adminTrainers, grades: adminGrades, exams: adminExams, camp: campTab, hr: hrTab, follow: adminFollow, excuses: adminExcuses, areqs: adminAcReqs, evals: adminEvals, report: adminReport, courses: adminCourses, sign: signRequests, memos: memosTab, mail: mailTab, live: liveTab, system: adminSystem, archive: adminArchive, finance: adminFinance, logs: adminLogs})[S.aTab]($("#ab"));
 }
 
 function adminDash(el){
@@ -2060,6 +2596,14 @@ function adminDash(el){
   el.querySelectorAll("[data-wabs]").forEach(b => b.onclick = () => openWhatsApp(b.dataset.wabs, {type: "absence", course: b.dataset.course}));
 }
 
+function adminExams(el){
+  const gs = sortedGroups();
+  if (S.aExG && !S.groups[S.aExG]) S.aExG = null;
+  const g = S.aExG ? S.groups[S.aExG] : null;
+  el.innerHTML = `<div class="card"><label class="f" for="aexg">المقرر<select id="aexg"><option value="">اختر الشعبة…</option>${gs.map(x => `<option value="${esc(x.id)}" ${x.id === S.aExG ? "selected" : ""}>${esc(x.course)} · ${esc(tName(x.trainerId))}</option>`).join("")}</select></label></div>${g ? examsTab(g) : `<div class="card empty">اختر الشعبة عشان تشوف اختباراتها، أو تنشئ لها اختبار.</div>`}`;
+  $("#aexg").onchange = e => { S.aExG = e.target.value || null; S.exView = null; render(); };
+  if (g) bindExamsTab(g);
+}
 function adminGroups(el){
   const gs = sortedGroups();
   const unassigned = gs.filter(g => !g.trainerId || !S.trainers[g.trainerId]).length;
@@ -3390,6 +3934,64 @@ function adminKpi(el){
 
 /* ---------- full trainee profile (kept with the login secrets: administration only) ---------- */
 const NATS = ["سعودي", "غير سعودي"];
+/* ---------- student documents and the printable student file ---------- */
+const DOC_KINDS = ["الهوية الوطنية / الإقامة", "شهادة الثانوي", "السجل الأكاديمي", "صورة شخصية", "أخرى"];
+async function docsApi(body){
+  const url = ((S.site || {}).pushUrl || "").replace(/\/+$/, ""); if (!url) throw new Error("no service");
+  const r = await fetch(url + "/docs", {method: "POST", headers: {"content-type": "application/json", authorization: "Bearer " + await S.authUser.getIdToken()}, body: JSON.stringify(body)});
+  const j = await r.json().catch(() => ({})); if (!r.ok) { const e = new Error(j.error || "failed"); e.code = j.error; throw e; } return j;
+}
+const docSize = n => n > 1048576 ? (n / 1048576).toFixed(1) + " ميجا" : Math.max(1, Math.round(n / 1024)) + " ك.ب";
+function stuDocsBind(num){
+  if (S._docL) try { S._docL(); } catch {}
+  S._docL = onSnapshot(ref("studentDocs/" + num), snap => { S.stDocs = S.stDocs || {}; S.stDocs[num] = snap.exists() ? (snap.data().files || []) : []; draw(); }, e => { console.error(e); const x = $("#pfDocs"); if (x) x.innerHTML = `<div class="muted">ما قدرت أفتح المستندات</div>`; });
+  const prev = S.subs.indexOf(S._docLp); if (prev >= 0) S.subs.splice(prev, 1);
+  S._docLp = () => { try { S._docL && S._docL(); } catch {} }; S.subs.push(S._docLp);
+  const draw = () => { const el = $("#pfDocs"); if (!el) { try { S._docL(); } catch {} S._docL = null; return; } const files = (S.stDocs || {})[num] || [];
+    el.innerHTML = files.map(f => `<div class="item"><div class="grow"><b>${esc(f.kind)}</b><div class="muted">${esc(f.name)} · ${docSize(f.size || 0)} · ${esc((f.at || "").slice(0, 10))}</div></div><button class="btn sm" data-dget="${esc(f.rid)}">فتح</button><button class="btn sm danger" data-ddel="${esc(f.rid)}">حذف</button></div>`).join("") || `<div class="muted">ما فيه مستندات مرفوعة.</div>`;
+    el.querySelectorAll("[data-dget]").forEach(b => b.onclick = async () => { const w = window.open("", "_blank"); try { const j = await docsApi({action: "get", num, rid: b.dataset.dget}); if (w) w.location = j.url; else location.href = j.url; } catch (x) { if (w) w.close(); toast("تعذّر فتح المستند"); } });
+    el.querySelectorAll("[data-ddel]").forEach(b => b.onclick = async () => {
+      if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟"; return; }
+      const f = files.find(x => x.rid === b.dataset.ddel); b.disabled = true;
+      try { await docsApi({action: "del", num, rid: f.rid}); await setDoc(ref("studentDocs/" + num), {files: files.filter(x => x.rid !== f.rid)}, {merge: true}); logAction("حذف مستند متدرب", `${(S.students[num] || {}).name || num} · ${f.kind}`); }
+      catch (x) { console.error(x); b.disabled = false; toast("تعذّر الحذف"); }
+    });
+  };
+  $("#pfDf").onchange = async e => {
+    const file = e.target.files[0]; e.target.value = ""; if (!file) return;
+    if (file.size > 10 * 1024 ** 2) return toast("الملف أكبر من 10 ميجا");
+    if (!/^(application\/pdf|image\/)/.test(file.type)) return toast("ارفع PDF أو صورة");
+    const kind = $("#pfDk").value, pg = $("#pfDp");
+    try {
+      const t = await docsApi({action: "up", num, size: file.size});
+      await new Promise((ok, no) => { const x = new XMLHttpRequest(); x.open("PUT", t.url); x.upload.onprogress = ev => { if (ev.lengthComputable && pg) pg.textContent = Math.floor(ev.loaded / ev.total * 100) + "%"; }; x.onload = () => x.status < 300 ? ok() : no(new Error("up " + x.status)); x.onerror = () => no(new Error("net")); x.send(file); });
+      const files = (S.stDocs || {})[num] || [];
+      await setDoc(ref("studentDocs/" + num), {files: [...files, {kind, name: file.name.slice(0, 120), type: file.type, size: file.size, rid: t.rid, at: new Date().toISOString(), by: S.adminRole}]}, {merge: true});
+      logAction("رفع مستند متدرب", `${(S.students[num] || {}).name || num} · ${kind}`); if (pg) pg.textContent = "✓ انرفع";
+    } catch (x) { console.error(x); if (pg) pg.textContent = ""; toast("تعذّر رفع الملف"); }
+  };
+}
+function printStudentFile(num){
+  const st = S.students[num]; if (!st) return;
+  const w = openPrint(); if (!w) return;
+  const p = (S.stProf || {})[num] || {}, files = (S.stDocs || {})[num] || [];
+  const gs = Object.values(S.groups).filter(g => (g.memberNums || []).includes(num)).sort((a, b) => (a.course || "").localeCompare(b.course || "", "ar"));
+  const ph = v => v ? "0" + String(v).replace(/^966/, "") : "—";
+  const row = (k, v) => `<div><b>${k}:</b> ${esc(v || "—")}</div>`;
+  let fin = "";
+  const acc = SEES_FIN() && S.finAcc ? S.finAcc[num] : null;
+  if (acc) { const a = accStatus(acc, paysOf(num));
+    fin = `<h2>البيانات المالية</h2><div class="info">${row("البرنامج", (((S.finSet || {}).programs || []).find(x => x.id === acc.program) || {}).name || "")}${row("طريقة السداد", PLANS[acc.plan] || "")}${row("صافي الرسوم", SAR(a.net))}${row("المدفوع", SAR(a.paid))}${row("المتبقي", SAR(a.remaining))}${row("الحالة", FST[a.status])}</div>
+    ${a.sched.length ? `<table><thead><tr><th>#</th><th>تاريخ الاستحقاق</th><th>البيان</th><th>المبلغ</th><th>المسدد منه</th><th>الحالة</th></tr></thead><tbody>${a.sched.map((i, k) => `<tr><td>${k + 1}</td><td>${esc(bothDates(i.due))}</td><td class="n">${esc(i.label || "قسط")}</td><td>${SAR(i.amount)}</td><td>${SAR(i.covered)}</td><td>${INST_ST[i.st]}</td></tr>`).join("")}</tbody></table>` : `<p>ما فيه أقساط مجدولة.</p>`}`; }
+  const html = `<h1>ملف المتدرب</h1>
+    <div class="info">${row("الاسم", st.name)}${row("الرقم الأكاديمي", num)}${row("رقم الهوية / الإقامة", p.nid)}${row("تاريخ الميلاد", p.dob ? bothDates(p.dob) : "")}${row("الجنسية", p.nat)}${row("الجنس", GENDER[st.gender] || "")}${row("جوال المتدرب", ph(p.phone))}${row("جوال ولي الأمر", ph(p.gphone))}${row("البريد الإلكتروني", p.email)}${row("المؤهل", p.edu)}${row("المدينة / الحي", p.city)}</div>
+    <h2>المقررات المسجل فيها</h2>${gs.length ? `<table><thead><tr><th>#</th><th>المقرر</th><th>المدرب/ة</th><th>نمط الحضور</th></tr></thead><tbody>${gs.map((g, i) => `<tr><td>${i + 1}</td><td class="n">${esc(g.course)}</td><td class="n">${esc(tName(g.trainerId))}</td><td>${esc(g.mode || "—")}</td></tr>`).join("")}</tbody></table>` : `<p>ما هو مسجل في مقررات.</p>`}
+    <h2>المستندات</h2><table><thead><tr><th>المستند</th><th>الحالة</th><th>تاريخ الرفع</th></tr></thead><tbody>${DOC_KINDS.filter(k => k !== "أخرى").map(k => { const f = files.find(x => x.kind === k); return `<tr><td class="n">${k}</td><td>${f ? "✓ مرفق" : "✗ غير مرفق"}</td><td>${f ? esc(bothDates(f.at.slice(0, 10))) : "—"}</td></tr>`; }).join("")}${files.filter(f => f.kind === "أخرى").map(f => `<tr><td class="n">أخرى: ${esc(f.name)}</td><td>✓ مرفق</td><td>${esc(bothDates(f.at.slice(0, 10)))}</td></tr>`).join("")}</tbody></table>
+    ${fin}
+    ${p.note ? `<h2>ملاحظات</h2><p style="white-space:pre-wrap">${esc(p.note)}</p>` : ""}
+    <div class="sig"><div>الشؤون الأكاديمية</div>${acc ? "<div>المالية</div>" : ""}<div>مدير المعهد</div></div>`;
+  fillPrint(w, `ملف المتدرب ${st.name}`, [{html}], false, "الشؤون الأكاديمية");
+}
 function openProfile(num){
   const st = S.students[num]; if (!st) return;
   const p = (S.stProf || {})[num] || {};
@@ -3411,10 +4013,16 @@ function openProfile(num){
       <label class="f grow" for="pfCity">المدينة / الحي<input type="text" id="pfCity" value="${esc(p.city || "")}"></label>
     </div>
     <label class="f" for="pfN">ملاحظات<textarea id="pfN" style="min-height:60px">${esc(p.note || "")}</textarea></label>
-    <div class="row"><button class="btn pri" id="pfSave">حفظ</button><button class="btn sm" id="pfCard">طباعة بطاقته</button></div>`;
+    <div class="row"><button class="btn pri" id="pfSave">حفظ</button><button class="btn sm" id="pfCard">طباعة بطاقته</button><button class="btn sm gold" id="pfPrint">طباعة ملف المتدرب</button></div>
+    <hr style="border:0;border-top:1px solid var(--line);margin:4px 0">
+    <div><h3 style="margin:0 0 4px">المستندات</h3><p class="muted" style="margin:0 0 8px">الهوية وشهادة الثانوي والسجل الأكاديمي. تنحفظ على سيرفر المعهد وما يشوفها إلا الإدارة والشؤون الأكاديمية. PDF أو صورة، حتى 10 ميجا.</p>
+      <div class="list" id="pfDocs"><div class="muted">جاري التحميل…</div></div>
+      <div class="row" style="margin-top:8px;gap:6px"><select id="pfDk" style="width:auto">${DOC_KINDS.map(k => `<option>${k}</option>`).join("")}</select><label class="btn sm pri" for="pfDf" style="cursor:pointer">+ رفع مستند</label><input type="file" id="pfDf" accept=".pdf,image/*" style="display:none"><span class="muted" id="pfDp"></span></div></div>`;
   $("#modal").classList.add("on");
   $("#pfx").onclick = closeModal;
   $("#pfCard").onclick = () => printIdCards([num]);
+  $("#pfPrint").onclick = () => printStudentFile(num);
+  stuDocsBind(num);
   $("#pfSave").onclick = async () => {
     const nid = digits($("#pfNid").value), ph = $("#pfPh").value.trim() ? normPhone($("#pfPh").value) : "", gp = $("#pfG").value.trim() ? normPhone($("#pfG").value) : "";
     if (nid && !/^[12]\d{9}$/.test(nid)) return toast("رقم الهوية لازم يكون 10 أرقام ويبدأ بـ 1 أو 2");
