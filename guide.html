@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>معسكر الأمن السيبراني الاحترافي · معهد أسس</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Reem+Kufi:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --green:#1F5136; --green-d:#16403b; --green2:#2b6b49; --gold:#C9A54C; --gold-d:#a9842f;
+  --red:#C0271C; --red-bg:#fdecea; --red-bd:#f0b4ae; --red-d:#8e1b13;
+  --grn:#1d7a4d; --grn-bg:#e8f6ee; --grn-bd:#b3e0c6;
+  --blue:#2457a7; --blue-bg:#eaf1fb;
+  --ink:#1d2621; --muted:#5d6b63; --line:#dce4de; --bg:#eef2ef; --card:#fff;
+}
+[data-theme=dark]{--ink:#e7efe9;--muted:#9fb0a6;--line:#2c3a32;--bg:#0f1713;--card:#152019;--red-bg:#2a1210;--red-bd:#5a211b;--grn-bg:#10251a;--grn-bd:#235138;--blue-bg:#11203a;}
+*{box-sizing:border-box}
+body{margin:0;font-family:"IBM Plex Sans Arabic",Tahoma,sans-serif;color:var(--ink);background:var(--bg);line-height:1.75;font-size:15px}
+a{color:var(--green2)}
+code,pre,.mono{font-family:"JetBrains Mono",monospace;direction:ltr;text-align:left;unicode-bidi:embed}
+/* header */
+header.top{background:linear-gradient(135deg,var(--green) 0%,#123524 60%,#0d2a1c 100%);color:#fff;padding:0}
+.top .in{max-width:1080px;margin:0 auto;padding:18px 20px;display:flex;align-items:center;gap:14px}
+.top .logo{width:52px;height:52px;border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center;flex:0 0 auto;overflow:hidden}
+.top .logo img{width:46px;height:46px;object-fit:contain}
+.top h1{margin:0;font-family:"Reem Kufi";font-size:21px;font-weight:700;letter-spacing:.2px}
+.top .sub{color:#d9e4dd;font-size:12.5px;margin-top:2px}
+.top .en{color:var(--gold);font-size:11px;letter-spacing:.5px}
+.top .by{color:#adc4b6;font-size:11px;margin-top:3px;font-weight:600}
+.top .badge{margin-inline-start:auto;background:rgba(192,39,28,.18);border:1px solid rgba(240,180,174,.4);color:#ffd7d2;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;display:flex;gap:6px;align-items:center}
+.top .badge b{color:#fff}
+#tgl{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;padding:7px 10px;cursor:pointer;font:inherit;font-size:12px}
+/* tabs */
+nav.tabs{position:sticky;top:0;z-index:30;background:var(--card);border-bottom:1px solid var(--line);box-shadow:0 2px 8px rgba(0,0,0,.04)}
+nav.tabs .in{max-width:1080px;margin:0 auto;display:flex;gap:2px;overflow-x:auto;padding:0 10px}
+nav.tabs button{flex:0 0 auto;background:none;border:0;border-bottom:3px solid transparent;color:var(--muted);font:inherit;font-weight:600;font-size:14px;padding:13px 15px;cursor:pointer;white-space:nowrap}
+nav.tabs button:hover{color:var(--ink)}
+nav.tabs button.on{color:var(--green);border-bottom-color:var(--gold)}
+main{max-width:1080px;margin:0 auto;padding:22px 20px 70px}
+section.tab{display:none;animation:fade .25s ease}
+section.tab.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+h2.sec{font-family:"Reem Kufi";color:var(--green);font-size:24px;margin:6px 0 4px;display:flex;align-items:center;gap:10px}
+h2.sec .ic{width:34px;height:34px;flex:0 0 auto;border-radius:9px;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px}
+.lead{color:var(--muted);font-size:15px;margin:0 0 18px}
+h3{font-family:"Reem Kufi";color:var(--green-d,#16403b);font-size:18px;margin:26px 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:14px 0;box-shadow:0 1px 3px rgba(0,0,0,.03)}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:760px){.g2,.g3,.g4{grid-template-columns:1fr}.top h1{font-size:18px}.top .badge{display:none}}
+ul,ol{margin:8px 0;padding-inline-start:22px}li{margin:4px 0}
+.pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;line-height:1.9}
+.pill.g{background:var(--grn-bg);color:var(--grn);border:1px solid var(--grn-bd)}
+.pill.r{background:var(--red-bg);color:var(--red);border:1px solid var(--red-bd)}
+.pill.b{background:var(--blue-bg);color:var(--blue)}
+.pill.gold{background:#fbf3df;color:var(--gold-d);border:1px solid #ecd9a5}
+/* legal banner */
+.legal{background:var(--red-bg);border:1px solid var(--red-bd);border-inline-start:5px solid var(--red);border-radius:12px;padding:16px 18px;margin:16px 0}
+.legal h3{color:var(--red-d);margin:0 0 6px;font-size:16px}
+.legal p,.legal li{color:var(--red-d)}
+/* stage flow */
+.flow{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0}
+@media(max-width:760px){.flow{grid-template-columns:1fr 1fr}}
+.stg{border-radius:12px;padding:14px;color:#fff;position:relative;overflow:hidden}
+.stg .n{font-size:12px;opacity:.85;font-weight:600}
+.stg .t{font-family:"Reem Kufi";font-size:17px;font-weight:700;margin:3px 0}
+.stg .d{font-size:12.5px;opacity:.92}
+.stg.s1{background:linear-gradient(135deg,#3a6ea5,#274d78)}
+.stg.s2{background:linear-gradient(135deg,#C0271C,#8e1b13)}
+.stg.s3{background:linear-gradient(135deg,#1d7a4d,#135536)}
+.stg.s4{background:linear-gradient(135deg,#C9A54C,#a9842f)}
+/* week accordion */
+.wk{border:1px solid var(--line);border-radius:12px;margin:10px 0;overflow:hidden;background:var(--card)}
+.wk>summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;align-items:center;gap:12px;font-weight:600}
+.wk>summary::-webkit-details-marker{display:none}
+.wk>summary .num{width:34px;height:34px;flex:0 0 auto;border-radius:9px;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-family:"Reem Kufi";font-weight:700}
+.wk>summary .ti{flex:1}
+.wk>summary .ti small{display:block;color:var(--muted);font-weight:400;font-size:12.5px}
+.wk>summary .ph{font-size:11.5px}
+.wk[open]>summary{background:var(--bg);border-bottom:1px solid var(--line)}
+.wk .body{padding:14px 18px}
+.split{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.split .bar{height:9px;border-radius:5px}
+.bar.t{background:var(--blue)}.bar.p{background:var(--grn)}
+/* vuln cards */
+.vuln{border:1px solid var(--line);border-radius:14px;margin:16px 0;overflow:hidden;background:var(--card)}
+.vuln>summary{list-style:none;cursor:pointer;padding:16px 18px;display:flex;align-items:center;gap:12px}
+.vuln>summary::-webkit-details-marker{display:none}
+.vuln>summary .vn{width:40px;height:40px;border-radius:10px;background:var(--red);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;flex:0 0 auto}
+.vuln>summary .vt{flex:1}
+.vuln>summary .vt b{font-family:"Reem Kufi";font-size:17px;color:var(--ink)}
+.vuln>summary .vt small{display:block;color:var(--muted);font-size:12.5px;direction:ltr;text-align:right}
+.vuln>summary .chev{color:var(--muted);transition:.2s}
+.vuln[open]>summary .chev{transform:rotate(180deg)}
+.vuln[open]>summary{border-bottom:1px solid var(--line);background:var(--bg)}
+.vbody{padding:6px 18px 18px}
+.stage{border-radius:12px;padding:14px 16px;margin:14px 0;border:1px solid var(--line)}
+.stage h4{margin:0 0 8px;font-size:15px;display:flex;align-items:center;gap:8px;font-family:"Reem Kufi"}
+.stage h4 .dot{width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;flex:0 0 auto}
+.stage.find{background:var(--blue-bg);border-color:#cfe0f6}
+.stage.find h4{color:var(--blue)} .stage.find .dot{background:var(--blue)}
+.stage.atk{background:var(--red-bg);border-color:var(--red-bd)}
+.stage.atk h4{color:var(--red-d)} .stage.atk .dot{background:var(--red)}
+.stage.def{background:var(--grn-bg);border-color:var(--grn-bd)}
+.stage.def h4{color:var(--grn)} .stage.def .dot{background:var(--grn)}
+.stage.rep{background:#fbf3df;border-color:#ecd9a5}
+[data-theme=dark] .stage.rep{background:#241d0e;border-color:#4a3c18}
+.stage.rep h4{color:var(--gold-d)} .stage.rep .dot{background:var(--gold-d)}
+pre{background:#0d1b14;color:#e8f2ea;border-radius:10px;padding:12px 14px;overflow-x:auto;font-size:13px;margin:8px 0;border:1px solid #1d3528}
+pre.bad{background:#1c0f0d;border-color:#4a211b;box-shadow:inset 3px 0 0 var(--red)}
+pre.good{background:#0c1c13;border-color:#1f4a31;box-shadow:inset 3px 0 0 var(--grn)}
+pre .c{color:#7fa890}
+pre b{color:#ff9d93;font-weight:600}
+pre.good b{color:#8ee6ac}
+.tag{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px;direction:ltr;display:inline-block;margin-bottom:4px}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin:10px 0}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:right}
+th{background:var(--green);color:#fff;font-weight:600;font-size:13px}
+tr:nth-child(even) td{background:var(--bg)}
+.tool{display:inline-block;background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:3px 9px;font-size:12.5px;margin:3px 3px 0 0;font-family:"JetBrains Mono";direction:ltr}
+.note{background:var(--bg);border-inline-start:4px solid var(--gold);border-radius:8px;padding:10px 14px;margin:10px 0;font-size:13.5px}
+.chk{list-style:none;padding:0}
+.chk li{padding-inline-start:28px;position:relative;margin:6px 0}
+.chk li:before{content:"▢";position:absolute;inset-inline-start:0;color:var(--green2);font-size:16px}
+/* exam */
+.exbox{border:2px solid var(--line);border-radius:14px;overflow:hidden;margin:16px 0}
+.exhead{padding:14px 18px;color:#fff;display:flex;align-items:center;gap:12px}
+.exhead .num{width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-family:"Reem Kufi";font-weight:700;font-size:18px}
+.exhead b{font-family:"Reem Kufi";font-size:18px}
+.exhead small{display:block;opacity:.9;font-size:12.5px}
+.exhead .pts{margin-inline-start:auto;font-weight:700;font-size:15px}
+.ex1 .exhead{background:linear-gradient(120deg,#C0271C,#8e1b13)}
+.ex2 .exhead{background:linear-gradient(120deg,#1d7a4d,#135536)}
+.ex3 .exhead{background:linear-gradient(120deg,#C9A54C,#a9842f)}
+.ex0 .exhead{background:linear-gradient(120deg,#2457a7,#274d78)}
+.exbody{padding:16px 20px;background:var(--card)}
+.rubric td:first-child{font-weight:600}
+.foot{text-align:center;color:var(--muted);font-size:12.5px;padding:30px 0 0}
+.kpi{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+.kpi .k{flex:1;min-width:120px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:center}
+.kpi .k .v{font-family:"Reem Kufi";font-size:26px;color:var(--green);font-weight:700}
+.kpi .k .l{font-size:12.5px;color:var(--muted)}
+.print{background:var(--green);color:#fff;border:0;border-radius:9px;padding:9px 16px;font:inherit;font-weight:600;cursor:pointer;margin:4px}
+@media print{.pbyline{display:block!important;position:fixed;bottom:4mm;left:0;right:0;text-align:center;font-size:9px;color:#888}@page{margin-bottom:16mm}nav.tabs,#tgl,.print,header .badge{display:none!important}section.tab{display:block!important}.vuln[open]>summary,.wk>summary{break-inside:avoid}body{background:#fff}}
+
+/* ---- practice lab ---- */
+.chal{border:1px solid var(--line);border-radius:14px;overflow:hidden;margin:18px 0;background:var(--card);box-shadow:0 2px 10px rgba(0,0,0,.05)}
+.chal .head{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.chal .lvl{font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px}
+.lvl.b1{background:#e8f6ee;color:#1d7a4d}.lvl.b2{background:#fff3df;color:#a9842f}.lvl.b3{background:#fdecea;color:#C0271C}
+.chal .ct{font-family:"Reem Kufi";font-weight:700;font-size:16px;color:var(--green)}
+.chal .mission{padding:10px 16px;background:var(--blue-bg);color:var(--blue);font-size:13.5px;border-bottom:1px solid var(--line)}
+.fakebar{display:flex;align-items:center;gap:8px;background:#e9edf1;padding:8px 12px;font-family:"JetBrains Mono";font-size:12.5px;direction:ltr;color:#3a4652;border-bottom:1px solid #d4dae1}
+[data-theme=dark] .fakebar{background:#1a2630;color:#9fb0bd;border-color:#263642}
+.fakebar .dots{display:flex;gap:4px}.fakebar .dots i{width:10px;height:10px;border-radius:50%;display:inline-block}
+.fakebar .url{background:#fff;border-radius:6px;padding:4px 10px;flex:1;color:#2a333c;border:1px solid #d4dae1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+[data-theme=dark] .fakebar .url{background:#0f1a22;color:#c4d2dd;border-color:#2a3a46}
+.site{padding:20px 18px;background:#fbfcfd}
+[data-theme=dark] .site{background:#101a14}
+.site.corp{background:linear-gradient(160deg,#f4f7fb,#eef2f7)}
+[data-theme=dark] .site.corp{background:#0d1620}
+.site h4{margin:0 0 4px;font-family:"Reem Kufi";color:#24364a;font-size:18px}
+[data-theme=dark] .site h4{color:#cfe0f0}
+.site .brand{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.site .brand .lg{width:34px;height:34px;border-radius:8px;background:#2457a7;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+.site input[type=text],.site input[type=password]{width:100%;padding:9px 11px;border:1px solid #c7d0da;border-radius:8px;margin:5px 0;font:inherit;direction:ltr;text-align:left;background:#fff;color:#1d2621}
+.site label{font-size:13px;color:#51606e;font-weight:600}
+.site .sbtn{background:#2457a7;color:#fff;border:0;border-radius:8px;padding:9px 18px;font:inherit;font-weight:600;cursor:pointer;margin-top:8px}
+.site .sbtn:hover{background:#1c478a}
+.res{padding:0 16px}
+.res .box{border-radius:10px;padding:12px 14px;margin:0 0 12px;font-size:14px;font-weight:600}
+.res .ok{background:var(--red-bg);border:1px solid var(--red-bd);color:var(--red-d)}
+.res .no{background:var(--grn-bg);border:1px solid var(--grn-bd);color:var(--grn)}
+.res .nu{background:var(--bg);border:1px solid var(--line);color:var(--muted)}
+.helpbtn{margin:0 16px 14px;background:linear-gradient(135deg,#C0271C,#8e1b13);color:#fff;border:0;border-radius:10px;padding:11px 18px;font:inherit;font-weight:700;cursor:pointer;display:inline-flex;gap:8px;align-items:center;box-shadow:0 2px 8px rgba(192,39,28,.3)}
+.helpbtn:hover{filter:brightness(1.08)}
+.help{margin:0 16px 16px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.help .hp{padding:12px 15px;border-bottom:1px solid var(--line)}
+.help .hp:last-child{border-bottom:0}
+.help .hp .t{font-weight:700;font-size:14px;display:flex;gap:7px;align-items:center;margin-bottom:3px}
+.help .hp.p{background:var(--red-bg)} .help .hp.p .t{color:var(--red-d)}
+.help .hp.v{background:#fff}.help .hp.v .t{color:var(--ink)}
+[data-theme=dark] .help .hp.v{background:var(--card)}
+.help .hp.f{background:var(--grn-bg)} .help .hp.f .t{color:var(--grn)}
+.inv{background:#eef2f7;border:1px solid #d4dae1;border-radius:8px;padding:8px 11px;margin:6px 0;font-family:"JetBrains Mono";font-size:12.5px;direction:ltr;text-align:left;cursor:pointer}
+[data-theme=dark] .inv{background:#14202a;border-color:#263642}
+.inv:hover{border-color:var(--red)}
+.invlbl{font-size:12px;color:var(--muted);margin-top:8px}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="in">
+    <div class="logo"><img src="logo-mark.png" alt="" onerror="this.style.display='none'"></div>
+    <div>
+      <h1>معسكر الأمن السيبراني الاحترافي</h1>
+      <div class="sub">معهد أسس التقنية والقانون العالي للتدريب — برنامج مكثّف ٣ أشهر · ٧٥٪ تطبيقي</div>
+      <div class="en">OSOS · Offensive &amp; Defensive Security Bootcamp</div>
+      <div class="by">إعداد: Khalid Alhussaini · 21 أكتوبر 2026</div>
+    </div>
+    <div class="badge">⚠️ <b>مختبر تدريبي فقط</b></div>
+    <button id="tgl" onclick="dark()">🌙 ليلي</button>
+  </div>
+</header>
+
+<nav class="tabs"><div class="in" id="tabnav">
+  <button class="on" data-t="over">نظرة عامة</button>
+  <button data-t="curr">المنهج · ١٢ أسبوع</button>
+  <button data-t="lab">المختبر</button>
+  <button data-t="method">منهجية البحث</button>
+  <button data-t="vulns">دليل الثغرات</button>
+  <button data-t="practice">🎯 تدرّب (محاكاة)</button>
+  <button data-t="exam">الاختبار النهائي</button>
+  <button data-t="report">قالب التقرير</button>
+</div></nav>
+
+<main>
+<div class="pbyline" style="display:none">إعداد: Khalid Alhussaini · 21 أكتوبر 2026 · معهد أسس</div>
+
+<!-- ============ OVERVIEW ============ -->
+<section class="tab on" id="over">
+  <h2 class="sec"><span class="ic">🛡️</span> نظرة عامة على المعسكر</h2>
+  <p class="lead">برنامج احترافي بحت يبني المتدرب من الصفر إلى مستوى اختبار الاختراق والدفاع خلال ١٢ أسبوعاً، بتركيز ٧٥٪ على التطبيق العملي داخل مختبر معزول وقانوني. فلسفة المعسكر: لا تتعلّم الهجوم لتخترق، بل لتفهم كيف يفكّر المهاجم فتبني دفاعاً لا يُخترق.</p>
+
+  <div class="kpi">
+    <div class="k"><div class="v">١٢</div><div class="l">أسبوعاً مكثّفاً</div></div>
+    <div class="k"><div class="v">٧٥٪</div><div class="l">تطبيق عملي</div></div>
+    <div class="k"><div class="v">١٠</div><div class="l">عائلات ثغرات</div></div>
+    <div class="k"><div class="v">٤</div><div class="l">محطات لكل ثغرة</div></div>
+    <div class="k"><div class="v">٣</div><div class="l">محطات في الاختبار</div></div>
+  </div>
+
+  <h3>المحطات الأربع — طريقة التفكير في كل ثغرة</h3>
+  <p class="lead">كل موضوع في المعسكر، وكل ثغرة في الدليل، تمشي على نفس المسار. المتدرب يعيش دور المهاجم ثم المدافع ثم كاتب التقرير في كل مرة:</p>
+  <div class="flow">
+    <div class="stg s1"><div class="n">المحطة ١</div><div class="t">🔍 ابحث</div><div class="d">كيف تكتشف الثغرة: الاستطلاع، رسم سطح الهجوم، الفحص الآلي واليدوي.</div></div>
+    <div class="stg s2"><div class="n">المحطة ٢</div><div class="t">⚔️ اهجم</div><div class="d">تستغل الثغرة في المختبر، تثبت وجودها بدليل عملي (PoC).</div></div>
+    <div class="stg s3"><div class="n">المحطة ٣</div><div class="t">🛡️ دافع</div><div class="d">ترقّع الثغرة وتكتب الكود الآمن وتضع الضوابط الوقائية.</div></div>
+    <div class="stg s4"><div class="n">المحطة ٤</div><div class="t">📝 وثّق</div><div class="d">تكتب تقريراً فنياً: الوصف، الخطورة، الإثبات، التوصية.</div></div>
+  </div>
+
+  <div class="legal">
+    <h3>⚠️ الميثاق الأخلاقي والقانوني — يُوقّعه كل متدرب قبل البدء</h3>
+    <ul>
+      <li>كل التطبيق العملي يتم <b>حصرياً</b> على مختبر المعهد المعزول، وعلى أنظمة مصممة للتدريب (DVWA، OWASP Juice Shop، Metasploitable)، أو أنظمة يملكها المتدرب أو لديه تصريح مكتوب لاختبارها.</li>
+      <li>يُمنع منعاً باتاً توجيه أي أداة أو هجوم نحو موقع أو شبكة أو جهاز أو كاميرا حقيقية لا يملك المتدرب تصريحاً صريحاً باختبارها — ولو كان "للتجربة".</li>
+      <li>الوصول غير المصرّح به لأنظمة الغير جريمة يُعاقب عليها نظام مكافحة الجرائم المعلوماتية في المملكة، ومخالفة هذا الميثاق تعني الفصل الفوري من المعسكر والمساءلة النظامية.</li>
+      <li>السيناريوهات التي تحاكي "شركة" أو "جهة حكومية" أو "كاميرات" هي بيئات وهمية مبنية داخل المختبر فقط، لا علاقة لها بأي جهة حقيقية.</li>
+      <li>الهدف من تعلّم أساليب الهجوم هو الدفاع وكتابة الكود الآمن واكتشاف الثغرات قبل المهاجمين — لا غير.</li>
+    </ul>
+  </div>
+
+  <div class="grid g3">
+    <div class="card"><h3 style="margin-top:0">لمن هذا المعسكر؟</h3><ul><li>مبتدئون جادّون يريدون دخول المجال من الصفر</li><li>مطوّرون يريدون كتابة كود آمن</li><li>مسؤولو أنظمة وشبكات</li><li>من يستهدف شهادات مثل eJPT / Security+ / PNPT لاحقاً</li></ul></div>
+    <div class="card"><h3 style="margin-top:0">متطلبات القبول</h3><ul><li>إلمام أساسي بالحاسب والإنترنت</li><li>جهاز 8GB رام على الأقل (16GB مفضّل)</li><li>الالتزام بـ ١٥–٢٠ ساعة أسبوعياً</li><li>إنجليزية قرائية تقنية بسيطة</li></ul></div>
+    <div class="card"><h3 style="margin-top:0">مخرجات المتدرب</h3><ul><li>يبني مختبراً ويختبر اختراق تطبيق كامل</li><li>يكتشف ويستغل ويرقّع ١٠ عائلات ثغرات</li><li>يكتب تقرير اختبار اختراق احترافي</li><li>يجتاز اختباراً عملياً بثلاث محطات</li></ul></div>
+  </div>
+</section>
+
+<!-- ============ CURRICULUM ============ -->
+<section class="tab" id="curr">
+  <h2 class="sec"><span class="ic">📚</span> المنهج التفصيلي — ١٢ أسبوعاً</h2>
+  <p class="lead">ثلاث مراحل: التأسيس، ثم الهجوم على التطبيقات والأنظمة، ثم الدفاع والمشروع الختامي. كل أسبوع موزّع بين نظري وتطبيقي، والنسبة الكلية ٧٥٪ تطبيق. الشريط الأزرق = نظري، الأخضر = تطبيقي.</p>
+
+  <h3>المرحلة الأولى — التأسيس (أسابيع ١–٣)</h3>
+
+  <details class="wk" open><summary><span class="num">١</span><span class="ti">مدخل الأمن السيبراني وبناء المختبر<small>مبادئ الأمن (CIA)، أنواع المهاجمين، أخلاقيات الاختبار، تثبيت بيئة المختبر</small></span><span class="pill b ph">تطبيقي ٧٠٪</span></summary>
+    <div class="body">
+      <div class="split"><span class="bar t" style="width:30%"></span><span class="bar p" style="width:70%"></span></div>
+      <b>نظري:</b> مثلث CIA (سرية/سلامة/توافر)، سطح الهجوم، أنواع المهاجمين (Script Kiddie → APT)، إطار العمل (مثل Cyber Kill Chain)، الفرق بين Red / Blue / Purple Team، الميثاق القانوني.
+      <br><b>تطبيقي:</b> تثبيت VirtualBox، إنشاء شبكة داخلية معزولة (Host-Only)، تنصيب Kali Linux وMetasploitable2 وDVWA وJuice Shop، أخذ Snapshots، التأكد أن المختبر مقطوع عن الإنترنت الخارجي.
+      <div class="note">مخرج الأسبوع: مختبر يعمل بالكامل + لقطة أولى يُرجع لها عند أي عطل.</div>
+    </div>
+  </details>
+
+  <details class="wk"><summary><span class="num">٢</span><span class="ti">لينكس والشبكات<small>سطر أوامر لينكس، نظام الملفات والصلاحيات، أساسيات TCP/IP وOSI، المنافذ والخدمات</small></span><span class="pill b ph">تطبيقي ٧٥٪</span></summary>
+    <div class="body">
+      <div class="split"><span class="bar t" style="width:25%"></span><span class="bar p" style="width:75%"></span></div>
+      <b>نظري:</b> طبقات OSI وTCP/IP، كيف تمشي الحزمة، عنونة IP وSubnetting مبسّط، المنافذ الشهيرة (22/80/443/445...)، بروتوكولات (HTTP/DNS/SMB).
+      <br><b>تطبيقي:</b> ٥٠ أمر لينكس أساسي، إدارة المستخدمين والصلاحيات (chmod/chown)، <span class="tool">ip a</span> <span class="tool">netstat</span> <span class="tool">tcpdump</span>، قراءة حركة الشبكة في <span class="tool">Wireshark</span> داخل المختبر.
+    </div>
+  </details>
+
+  <details class="wk"><summary><span class="num">٣</span><span class="ti">الويب من الداخل + البرمجة النصية<small>HTTP/HTTPS، DNS، إعداد Burp Suite، أساسيات Python وBash للأتمتة</small></span><span class="pill b ph">تطبيقي ٧٥٪</span></summary>
+    <div class="body">
+      <div class="split"><span class="bar t" style="width:25%"></span><span class="bar p" style="width:75%"></span></div>
+      <b>نظري:</b> دورة حياة طلب HTTP، الرؤوس (Headers)، الكوكيز والجلسات، أكواد الحالة، الفرق بين GET/POST، أساسيات TLS.
+      <br><b>تطبيقي:</b> اعتراض وتعديل الطلبات بـ <span class="tool">Burp Suite</span> على Juice Shop، كتابة سكربت Python يفحص منافذ، سكربت Bash يؤتمت الاستطلاع.
+    </div>
+  </details>
+
+  <h3>المرحلة الثانية — الهجوم على التطبيقات والأنظمة (أسابيع ٤–٩)</h3>
+
+  <details class="wk"><summary><span class="num">٤</span><span class="ti">الاستطلاع وجمع المعلومات<small>OSINT، الفحص، التعداد، رسم سطح الهجوم</small></span><span class="pill b ph">تطبيقي ٨٠٪</span></summary>
+    <div class="body"><div class="split"><span class="bar t" style="width:20%"></span><span class="bar p" style="width:80%"></span></div>
+      <b>تطبيقي:</b> <span class="tool">nmap</span> (فحص المنافذ والخدمات والإصدارات)، <span class="tool">whatweb</span> <span class="tool">gobuster</span> <span class="tool">nikto</span> على أهداف المختبر، تعداد SMB/HTTP، بناء خريطة سطح الهجوم للهدف.
+    </div>
+  </details>
+
+  <details class="wk"><summary><span class="num">٥</span><span class="ti">ثغرات الحقن — SQL وCommand Injection<small>حقن قواعد البيانات وحقن أوامر النظام: بحث، استغلال، ترقيع</small></span><span class="pill r ph">تطبيقي ٨٠٪</span></summary>
+    <div class="body"><div class="split"><span class="bar t" style="width:20%"></span><span class="bar p" style="width:80%"></span></div>
+      <b>تطبيقي:</b> اكتشاف واستغلال SQLi على DVWA بمستويات low→high، تجاوز تسجيل الدخول، استخراج بيانات، <span class="tool">sqlmap</span> آلياً، ثم حقن الأوامر، ثم <b>ترقيع كل منها</b> وإعادة الاختبار للتأكد أن الترقيع نجح.
+    </div>
+  </details>
+
+  <details class="wk"><summary><span class="num">٦</span><span class="ti">XSS وCSRF<small>البرمجة عبر المواقع وتزوير الطلب: سرقة الجلسات والدفاع عنها</small></span><span class="pill r ph">تطبيقي ٨٠٪</span></summary>
+    <div class="body"><div class="split"><span class="bar t" style="width:20%"></span><span class="bar p" style="width:80%"></span></div>
+      <b>تطبيقي:</b> XSS المخزّن والمنعكس وDOM على DVWA/Juice Shop، محاكاة سرقة كوكي داخل المختبر، بناء هجوم CSRF، ثم الدفاع بـ CSP والترميز ورموز CSRF.
+    </div>
+  </details>
+
+  <details class="wk"><summary><span class="num">٧</span><span class="ti">المصادقة والصلاحيات ورفع الملفات<small>كسر المصادقة، IDOR، تجاوز الصلاحيات، رفع الملفات الخبيثة</small></span><span class="pill r ph">تطبيقي ٨٠٪</span></summary>
+    <div class="body"><div class="split"><span class="bar t" style="width:20%"></span><span class="bar p" style="width:80%"></span></div>
+      <b>تطبيقي:</b> تخمين كلمات المرور بـ <span class="tool">hydra</span> على خدمة المختبر، اختبار إدارة الجلسات، استغلال IDOR بتغيير المعرّفات، رفع ملف خبيث وتجاوز الفلاتر، ثم الدفاع الكامل.
+    </div>
+  </details>
+
+  <details class="wk"><summary><span class="num">٨</span><span class="ti">ثغرات متقدمة في التطبيقات<small>SSRF، XXE، كشف البيانات الحساسة، سوء الإعداد الأمني</small></span><span class="pill r ph">تطبيقي ٧٥٪</span></summary>
+    <div class="body"><div class="split"><span class="bar t" style="width:25%"></span><span class="bar p" style="width:75%"></span></div>
+      <b>تطبيقي:</b> استغلال SSRF للوصول لخدمات داخلية في المختبر، حقن XXE، اكتشاف أسرار مكشوفة وإعدادات افتراضية خاطئة، ثم التحصين (Hardening).
+    </div>
+  </details>
+
+  <details class="wk"><summary><span class="num">٩</span><span class="ti">اختراق الشبكات والأنظمة<small>Metasploit، تصعيد الصلاحيات، ما بعد الاستغلال داخل المختبر</small></span><span class="pill r ph">تطبيقي ٨٠٪</span></summary>
+    <div class="body"><div class="split"><span class="bar t" style="width:20%"></span><span class="bar p" style="width:80%"></span></div>
+      <b>تطبيقي:</b> استغلال خدمة قديمة على Metasploitable بـ <span class="tool">Metasploit</span>، مفاهيم تصعيد الصلاحيات في لينكس، جمع الأدلة، ثم التحصين: تحديث، إغلاق منافذ، أقل صلاحية.
+    </div>
+  </details>
+
+  <h3>المرحلة الثالثة — الدفاع والمشروع الختامي (أسابيع ١٠–١٢)</h3>
+
+  <details class="wk"><summary><span class="num">١٠</span><span class="ti">مواضيع متخصّصة (محاكاة مختبرية)<small>Active Directory، أمن الشبكات اللاسلكية، أمن إنترنت الأشياء/الكاميرات، مقدمة تحليل البرمجيات الخبيثة</small></span><span class="pill gold ph">تطبيقي ٧٠٪</span></summary>
+    <div class="body"><div class="split"><span class="bar t" style="width:30%"></span><span class="bar p" style="width:70%"></span></div>
+      <b>تطبيقي داخل المختبر فقط:</b> مختبر Active Directory مصغّر ومفاهيم مهاجمته والدفاع عنه، أساسيات أمن الواي فاي ومخاطر الإعداد الافتراضي، سيناريو وهمي لجهاز IoT/كاميرا بكلمة مرور افتراضية وكيف تُحصّن، مقدمة دفاعية في تحليل عيّنة خبيثة داخل بيئة معزولة.
+      <div class="note">كل ما سبق على أجهزة وهمية بالمختبر — لا يُوجَّه لأي جهاز أو كاميرا أو شبكة حقيقية.</div>
+    </div>
+  </details>
+
+  <details class="wk"><summary><span class="num">١١</span><span class="ti">الفريق الأزرق والدفاع<small>التحصين، التسجيل والمراقبة، SIEM، الاستجابة للحوادث، الكود الآمن</small></span><span class="pill g ph">تطبيقي ٧٠٪</span></summary>
+    <div class="body"><div class="split"><span class="bar t" style="width:30%"></span><span class="bar p" style="width:70%"></span></div>
+      <b>تطبيقي:</b> تحصين خادم لينكس وتطبيق ويب، إعداد السجلات ومراقبتها، مفاهيم SIEM واكتشاف هجمات الأسبوع ٥–٩ من السجلات، دورة الاستجابة للحوادث، مبادئ كتابة الكود الآمن ومراجعته.
+    </div>
+  </details>
+
+  <details class="wk"><summary><span class="num">١٢</span><span class="ti">المشروع الختامي والاختبار<small>شبكة شركة وهمية كاملة: اختراق + تحصين + تقرير فني + الاختبار النهائي</small></span><span class="pill gold ph">تطبيقي ٩٠٪</span></summary>
+    <div class="body"><div class="split"><span class="bar t" style="width:10%"></span><span class="bar p" style="width:90%"></span></div>
+      <b>تطبيقي:</b> يُسلَّم المتدرب "شبكة شركة الأسس الوهمية" داخل المختبر — عدة أجهزة وتطبيق ويب وثغرات متنوعة. يخترقها، يوثّق، يحصّنها، ويكتب تقرير اختبار اختراق كامل، ثم يؤدي الاختبار النهائي بمحطاته الثلاث.
+    </div>
+  </details>
+</section>
+
+<!-- ============ LAB ============ -->
+<section class="tab" id="lab">
+  <h2 class="sec"><span class="ic">🧪</span> بناء المختبر القانوني المعزول</h2>
+  <p class="lead">قبل أي هجوم، المتدرب يبني بيئة مغلقة لا تتصل بالإنترنت الخارجي ولا بشبكة المعهد الحقيقية. كل التدريب يحدث هنا فقط.</p>
+
+  <div class="legal"><h3>🔒 قاعدة العزل الذهبية</h3><p>شبكة المختبر تُضبط على وضع <b>Host-Only / Internal</b> — لا NAT ولا Bridged أثناء التمارين الهجومية. بهذا تبقى الأدوات والهجمات حبيسة المختبر ولا يمكن أن تصل لأي نظام خارجي ولو بالخطأ.</p></div>
+
+  <div class="grid g2">
+    <div class="card"><h3 style="margin-top:0">🖥️ البنية</h3>
+      <table><tr><th>المكوّن</th><th>الدور</th></tr>
+      <tr><td>VirtualBox / VMware</td><td>برنامج الأجهزة الافتراضية</td></tr>
+      <tr><td>Kali Linux</td><td>جهاز المهاجم (الأدوات)</td></tr>
+      <tr><td>Metasploitable 2</td><td>هدف أنظمة/شبكات مقصود الضعف</td></tr>
+      <tr><td>DVWA</td><td>هدف ثغرات ويب بمستويات</td></tr>
+      <tr><td>OWASP Juice Shop</td><td>تطبيق ويب حديث للتمارين</td></tr>
+      <tr><td>Windows + AD (اختياري)</td><td>مختبر دومين مصغّر</td></tr>
+      </table>
+    </div>
+    <div class="card"><h3 style="margin-top:0">🧰 صندوق الأدوات</h3>
+      <div>
+      <span class="tool">nmap</span><span class="tool">Burp Suite</span><span class="tool">Wireshark</span><span class="tool">sqlmap</span><span class="tool">gobuster</span><span class="tool">nikto</span><span class="tool">hydra</span><span class="tool">Metasploit</span><span class="tool">John/Hashcat</span><span class="tool">ffuf</span><span class="tool">netcat</span><span class="tool">Python3</span>
+      </div>
+      <h3>منصّات تدريب قانونية خارجية</h3>
+      <div><span class="tool">TryHackMe</span><span class="tool">HackTheBox</span><span class="tool">PortSwigger Academy</span><span class="tool">PentesterLab</span><span class="tool">VulnHub</span></div>
+      <div class="note">هذه المنصّات تمنحك أهدافاً مصرّحاً بمهاجمتها رسمياً — بديل آمن وقانوني تماماً.</div>
+    </div>
+  </div>
+
+  <div class="card"><h3 style="margin-top:0">✅ قائمة تحقق قبل أول هجوم</h3>
+    <ul class="chk">
+      <li>الأجهزة الافتراضية على شبكة Host-Only معزولة</li>
+      <li>أخذت Snapshot لكل جهاز بعد التنصيب</li>
+      <li>تأكدت أن الأهداف لا تُفتح من خارج المختبر</li>
+      <li>وقّعت الميثاق الأخلاقي وفهمت حدوده النظامية</li>
+      <li>تعرف عنوان IP لكل جهاز وتصل بينها (ping داخلي فقط)</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ METHODOLOGY ============ -->
+<section class="tab" id="method">
+  <h2 class="sec"><span class="ic">🔍</span> منهجية البحث عن الثغرة</h2>
+  <p class="lead">قبل أي استغلال، لازم تعرف كيف تبحث. المهاجم المحترف لا يجرّب عشوائياً — يتبع منهجية منظّمة تبدأ بفهم الهدف وتنتهي بإثبات الثغرة. هذي هي الدورة التي تتكرر في كل تمرين:</p>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3 style="margin-top:0"><span class="pill b">١</span> الاستطلاع — افهم الهدف</h3>
+      <p>اجمع كل ما يمكن عن الهدف: الخدمات، الإصدارات، التقنيات، نقاط الدخول.</p>
+      <ul><li>استطلاع سلبي (OSINT) دون لمس الهدف</li><li>استطلاع فعّال: فحص المنافذ والخدمات بـ <span class="tool">nmap</span></li><li>تحديد التقنيات: <span class="tool">whatweb</span> والرؤوس</li></ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0"><span class="pill b">٢</span> رسم سطح الهجوم</h3>
+      <p>حدّد كل نقطة يستقبل فيها التطبيق مدخلاً من المستخدم — فهذه أبواب الثغرات.</p>
+      <ul><li>كل حقل إدخال، رابط بمعاملات، رأس، كوكي، رفع ملف</li><li>اكتشاف المسارات المخفية: <span class="tool">gobuster</span> <span class="tool">ffuf</span></li><li>ارسم خريطة: نقطة الإدخال ← أين تُستخدم</li></ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0"><span class="pill b">٣</span> الفحص الآلي</h3>
+      <p>شغّل الماسحات لتصطاد الثمار المنخفضة بسرعة — لكن لا تعتمد عليها وحدها.</p>
+      <ul><li><span class="tool">Burp Scanner</span> <span class="tool">nikto</span> <span class="tool">nmap --script vuln</span></li><li>صنّف النتائج وتخلّص من الإيجابيات الكاذبة</li></ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0"><span class="pill b">٤</span> الفحص اليدوي</h3>
+      <p>هنا يتفوّق المحترف: تختبر كل نقطة إدخال يدوياً بمدخلات اختبارية وتراقب السلوك.</p>
+      <ul><li>أدخل محارف خاصة (<span class="mono">' " &lt; &gt; ;</span>) وراقب الأخطاء والتغيّرات</li><li>قارن الاستجابة الطبيعية بالشاذة</li><li>فكّر: أين يثق التطبيق بالمدخل دون تحقّق؟</li></ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0"><span class="pill r">٥</span> التحقق وإثبات المفهوم</h3>
+      <p>حوّل الشك إلى يقين بدليل عملي (PoC) يُظهر الأثر بوضوح — دون إحداث ضرر زائد.</p>
+      <ul><li>أصغر payload يثبت الثغرة</li><li>التقط صورة/استجابة كدليل</li><li>قدّر الخطورة (CVSS مبسّط): الأثر × سهولة الاستغلال</li></ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0"><span class="pill gold">٦</span> التوثيق</h3>
+      <p>وثّق كل خطوة أولاً بأول لتبني عليها التقرير الفني لاحقاً.</p>
+      <ul><li>سجّل: الهدف، الخطوة، المدخل، النتيجة، الوقت</li><li>احفظ الأدلة منظّمة لكل ثغرة</li></ul>
+    </div>
+  </div>
+
+  <div class="note">القاعدة: <b>كل ثغرة في الدليل التالي تمشي على هذي المنهجية</b> — تبدأ بـ «كيف تبحث عنها» ثم الهجوم ثم الدفاع ثم التقرير.</div>
+</section>
+
+<!-- ============ VULNS ============ -->
+<section class="tab" id="vulns">
+  <h2 class="sec"><span class="ic">🐞</span> دليل الثغرات — بحث · هجوم · دفاع · تقرير</h2>
+  <p class="lead">عشر عائلات ثغرات، كل واحدة بأربع محطات بألوانها: <span class="pill b">أزرق = كيف تبحث</span> <span class="pill r">أحمر = الهجوم</span> <span class="pill g">أخضر = الدفاع</span> <span class="pill gold">ذهبي = التقرير</span>. كل الأمثلة على المختبر القانوني فقط.</p>
+  <div id="vulnlist"></div>
+</section>
+
+<!-- ============ PRACTICE LAB ============ -->
+<section class="tab" id="practice">
+  <h2 class="sec"><span class="ic">🎯</span> المختبر التطبيقي — تدرّب على مواقع محاكاة</h2>
+  <p class="lead">مواقع وهمية تحسّها حقيقية، كل واحد فيه ثغرة. مهمتك تكتشفها وتستغلها. تورّطت أو ما عرفت؟ اضغط <b>«تورطت؟ ساعدني»</b> ويشرح لك المشكلة والثغرة والحل. كل شي محاكاة داخل متصفحك — لا يتصل بأي خادم حقيقي.</p>
+  <div class="legal"><h3>🧪 محاكاة تعليمية آمنة</h3><p>هذي المواقع مزيّفة بالكامل وتعمل داخل صفحتك فقط. الهدف تتعلّم كيف تفكّر وتكتشف — ثم تنقل المهارة لمختبرك القانوني المعزول، لا لأي موقع حقيقي.</p></div>
+  <div id="challist"></div>
+</section>
+
+<!-- ============ EXAM ============ -->
+<section class="tab" id="exam">
+  <h2 class="sec"><span class="ic">🎓</span> الاختبار النهائي الاحترافي</h2>
+  <p class="lead">اختبار عملي على "شبكة شركة الأسس الوهمية" داخل المختبر. لا ينجح المتدرب إلا باجتياز المحطات الثلاث العملية. درجة النجاح ٧٠٪ ولا بد من ألا تقل أي محطة إلزامية عن حدّها الأدنى. المدة: ٨ ساعات (أو يومان).</p>
+
+  <div class="kpi">
+    <div class="k"><div class="v">١٥٪</div><div class="l">نظري</div></div>
+    <div class="k"><div class="v">٣٥٪</div><div class="l">محطة الاختراق</div></div>
+    <div class="k"><div class="v">٢٥٪</div><div class="l">محطة الدفاع</div></div>
+    <div class="k"><div class="v">٢٥٪</div><div class="l">التقرير الفني</div></div>
+  </div>
+
+  <div class="exbox ex0"><div class="exhead"><div class="num">٠</div><div><b>الجزء النظري</b><small>يُحل أونلاين قبل الجزء العملي</small></div><div class="pts">١٥ درجة</div></div>
+    <div class="exbody">
+      <ol>
+        <li>اشرح مثلث CIA واذكر مثالاً على انتهاك كل ضلع.</li>
+        <li>ما الفرق بين الثغرة والاستغلال والحمولة (payload)؟</li>
+        <li>رتّب مراحل منهجية البحث عن الثغرة الست بالترتيب الصحيح.</li>
+        <li>لماذا يُعدّ مبدأ "أقل صلاحية" دفاعاً جوهرياً؟ اذكر تطبيقين عمليين.</li>
+        <li>ما الفرق بين XSS المخزّن والمنعكس وDOM؟ وأيّها أخطر ولماذا؟</li>
+        <li>اذكر ثلاث طرق للدفاع عن حقن SQL، ورتّبها من الأقوى للأضعف.</li>
+        <li>متى يكون الفحص الآلي كافياً ومتى يجب الفحص اليدوي؟</li>
+        <li>ما الإجراءات النظامية والأخلاقية قبل اختبار اختراق أي نظام؟</li>
+      </ol>
+      <span class="pill gold">شرط النجاح في هذا الجزء: ٩ من ١٥</span>
+    </div>
+  </div>
+
+  <div class="exbox ex1"><div class="exhead"><div class="num">١</div><div><b>المحطة الأولى — اهجم واخترق ⚔️</b><small>إلزامية · الحد الأدنى ٢٠ من ٣٥</small></div><div class="pts">٣٥ درجة</div></div>
+    <div class="exbody">
+      <p>أمامك خادم تطبيق ويب + خادم خدمات داخل المختبر. المطلوب اختراقهما وإثبات ذلك:</p>
+      <ul>
+        <li><b>استطلاع (٥):</b> افحص الهدفين، اكتشف المنافذ والخدمات والتقنيات، سلّم خريطة سطح الهجوم.</li>
+        <li><b>استغلال تطبيق الويب (١٥):</b> اكتشف واستغل ثغرتين مختلفتين على الأقل (مثل حقن + تجاوز صلاحيات)، واحصل على بيانات لا يُفترض الوصول إليها.</li>
+        <li><b>استغلال الخدمة (١٠):</b> استغل خدمة ضعيفة على الخادم الثاني للحصول على وصول، ووثّق مسار الوصول.</li>
+        <li><b>إثبات المفهوم (٥):</b> لكل ثغرة، قدّم أصغر PoC + لقطة دليل + تصنيف خطورة.</li>
+      </ul>
+      <div class="note">يُقيَّم المتدرب على المنهجية والأدلة، لا على عدد الثغرات فقط. إحداث ضرر غير ضروري يخصم درجات.</div>
+    </div>
+  </div>
+
+  <div class="exbox ex2"><div class="exhead"><div class="num">٢</div><div><b>المحطة الثانية — دافع ورقّع 🛡️</b><small>إلزامية · الحد الأدنى ١٥ من ٢٥</small></div><div class="pts">٢٥ درجة</div></div>
+    <div class="exbody">
+      <p>خذ الثغرات التي وجدتها في المحطة الأولى، وأنت الآن المدافع:</p>
+      <ul>
+        <li><b>الترقيع (١٢):</b> أصلح كل ثغرة في الكود/الإعداد (كود آمن، تحقق من المدخلات، صلاحيات، إعداد صحيح)، ثم أعد الاختبار وأثبت فشل الهجوم بعد الترقيع.</li>
+        <li><b>التحصين الدفاعي (٨):</b> طبّق ضوابط وقائية عامة: جدار تطبيقات، رؤوس أمان، تحديثات، أقل صلاحية، تسجيل ومراقبة.</li>
+        <li><b>كشف من السجلات (٥):</b> من سجلات الخادم، حدّد أثر الهجوم الذي نفّذته أنت في المحطة الأولى، واكتب قاعدة اكتشاف.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="exbox ex3"><div class="exhead"><div class="num">٣</div><div><b>المحطة الثالثة — التقرير الفني 📝</b><small>إلزامية · الحد الأدنى ١٥ من ٢٥</small></div><div class="pts">٢٥ درجة</div></div>
+    <div class="exbody">
+      <p>اكتب تقرير اختبار اختراق احترافياً كاملاً يغطّي ما نفّذته، باستخدام القالب في تبويب «قالب التقرير». يُقيَّم على:</p>
+      <ul>
+        <li><b>الملخص التنفيذي (٥):</b> مفهوم لغير التقني، يوضّح المخاطر وأثرها على العمل.</li>
+        <li><b>التفاصيل الفنية لكل ثغرة (١٠):</b> الوصف، الخطورة، خطوات إعادة الإنتاج، الدليل.</li>
+        <li><b>التوصيات والمعالجة (٦):</b> توصية عملية قابلة للتنفيذ لكل ثغرة مع الأولوية.</li>
+        <li><b>الاحترافية والوضوح (٤):</b> التنسيق، الدقة، خلوّه من المبالغة، عدم كشف أسرار زائدة.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card"><h3 style="margin-top:0">📊 معيار التقدير (Rubric)</h3>
+    <table class="rubric">
+      <tr><th>التقدير</th><th>الدرجة</th><th>الوصف</th></tr>
+      <tr><td>متميّز</td><td>٩٠–١٠٠</td><td>اخترق ورقّع ووثّق بمنهجية احترافية، تقرير جاهز للتسليم لعميل حقيقي</td></tr>
+      <tr><td>متقدّم</td><td>٨٠–٨٩</td><td>أنجز المحطات الثلاث بكفاءة مع ملاحظات بسيطة</td></tr>
+      <tr><td>مجتاز</td><td>٧٠–٧٩</td><td>اجتاز الحدود الدنيا للمحطات الثلاث</td></tr>
+      <tr><td>غير مجتاز</td><td>&lt; ٧٠</td><td>أو سقط في إحدى المحطات الإلزامية تحت حدّها الأدنى</td></tr>
+    </table>
+    <div class="legal" style="margin-top:14px"><h3>شرط أخلاقي للاجتياز</h3><p>أي تجاوز للمختبر أو استهداف نظام حقيقي أثناء الاختبار = رسوب فوري ومساءلة، مهما كانت الدرجة الفنية.</p></div>
+  </div>
+</section>
+
+<!-- ============ REPORT TEMPLATE ============ -->
+<section class="tab" id="report">
+  <h2 class="sec"><span class="ic">📄</span> قالب التقرير الفني</h2>
+  <p class="lead">هذا القالب يستخدمه المتدرب في كل تمرين وفي المحطة الثالثة من الاختبار. التقرير الاحترافي يُكتب لجمهورين: الإدارة (الملخص التنفيذي) والفريق التقني (التفاصيل).</p>
+  <button class="print" onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
+
+  <div class="card">
+    <h3 style="margin-top:0">١. صفحة الغلاف</h3>
+    <ul><li>اسم الجهة ونطاق الاختبار (Scope) والأنظمة المشمولة</li><li>نوع الاختبار (Black/Grey/White Box)، التواريخ، اسم المختبِر</li><li>تصنيف سرية الوثيقة</li></ul>
+
+    <h3>٢. الملخص التنفيذي</h3>
+    <ul><li>بلغة غير تقنية: ما الذي وُجد، وما خطورته على العمل</li><li>جدول عدد الثغرات حسب الخطورة (حرجة/عالية/متوسطة/منخفضة)</li><li>توصية عامة بأولويات المعالجة</li></ul>
+
+    <h3>٣. النطاق والمنهجية</h3>
+    <ul><li>الأنظمة المختبَرة وما استُثني</li><li>المنهجية المتّبعة (مثل OWASP/PTES) والأدوات</li><li>فترة الاختبار والقيود</li></ul>
+
+    <h3>٤. النتائج التفصيلية — بطاقة لكل ثغرة</h3>
+    <table>
+      <tr><th>الحقل</th><th>المحتوى</th></tr>
+      <tr><td>المعرّف</td><td>VULN-001</td></tr>
+      <tr><td>العنوان</td><td>اسم الثغرة ومكانها</td></tr>
+      <tr><td>الخطورة</td><td>حرجة / عالية / متوسطة / منخفضة + درجة CVSS</td></tr>
+      <tr><td>الوصف</td><td>ما هي الثغرة وسبب وجودها</td></tr>
+      <tr><td>الأثر</td><td>ماذا يستطيع المهاجم فعله</td></tr>
+      <tr><td>خطوات إعادة الإنتاج</td><td>مرقّمة، بحيث يعيدها أي فني</td></tr>
+      <tr><td>الدليل (PoC)</td><td>لقطات/استجابات/طلبات</td></tr>
+      <tr><td>التوصية</td><td>كيف تُرقّع، بخطوات عملية</td></tr>
+      <tr><td>المراجع</td><td>OWASP / CWE ذات الصلة</td></tr>
+    </table>
+
+    <h3>٥. ملخص المعالجة</h3>
+    <ul><li>جدول: الثغرة ← الأولوية ← المسؤول ← الحالة</li><li>توصيات استراتيجية لرفع النضج الأمني</li></ul>
+
+    <h3>٦. الملاحق</h3>
+    <ul><li>المخرجات الكاملة للأدوات، سجلّ زمني للأنشطة، المصطلحات</li></ul>
+
+    <div class="note"><b>آداب كتابة التقرير:</b> لا تبالغ في الخطورة، لا تكشف أسراراً أكثر من اللازم لإثبات الثغرة، صِغ التوصية بإيجابية (كيف نُصلح) لا بلوم، واجعل كل بند قابلاً للتنفيذ.</div>
+  </div>
+</section>
+
+<div class="foot">إعداد: Khalid Alhussaini · 21 أكتوبر 2026 · معهد أسس التقنية والقانون العالي للتدريب · كل التطبيق على مختبر معزول قانوني فقط</div>
+</main>
+
+<script>
+/* tabs */
+document.querySelectorAll('#tabnav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#tabnav button').forEach(x=>x.classList.toggle('on',x===b));
+  document.querySelectorAll('section.tab').forEach(s=>s.classList.toggle('on',s.id===b.dataset.t));
+  window.scrollTo(0,0);
+});
+function dark(){const d=document.documentElement;const on=d.getAttribute('data-theme')==='dark';d.setAttribute('data-theme',on?'light':'dark');document.getElementById('tgl').textContent=on?'🌙 ليلي':'☀️ نهاري';}
+
+/* vulnerabilities data */
+const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const VULNS=[
+ {ic:"💉",name:"حقن SQL",en:"SQL Injection",
+  find:["نقاط البحث: أي حقل أو معامل يُبنى منه استعلام قاعدة بيانات (تسجيل دخول، بحث، مُعرّف منتج).","اختبار يدوي: أدخل علامة اقتباس مفردة <span class='mono'>'</span> وراقب ظهور خطأ قاعدة بيانات أو تغيّر السلوك.","مؤشرات: رسالة خطأ SQL، فرق في الاستجابة بين <span class='mono'>' OR 1=1</span> و<span class='mono'>' OR 1=2</span>.","آلياً للتأكيد: <span class='tool'>sqlmap -u URL --batch</span> على هدف المختبر."],
+  atk:{t:"التطبيق يبني الاستعلام بدمج مدخل المستخدم نصياً، فيُحقن المهاجم جملة SQL تغيّر منطق الاستعلام.",
+   bad:["<span class='c'>// كود مصاب — المدخل يُدمج مباشرة</span>","query = <b>\"SELECT * FROM users WHERE user='\" + input + \"'\"</b>;","","<span class='c'># المهاجم يُدخل في خانة اسم المستخدم:</span>","<b>' OR '1'='1' -- </b>","","<span class='c'># الاستعلام الناتج يتجاوز كلمة المرور:</span>","SELECT * FROM users WHERE user='' OR '1'='1' -- '"],
+   steps:["في DVWA صفحة SQL Injection أدخل <span class='mono'>1' OR '1'='1</span> واعرض كل السجلات.","استخرج الأعمدة بـ <span class='mono'>UNION SELECT</span>.","التقط استجابة تُظهر بيانات مستخدمين كدليل PoC."]},
+  def:{t:"لا تبنِ الاستعلام نصياً أبداً. استخدم الاستعلامات المُعاملة (Prepared Statements) التي تفصل الكود عن البيانات.",
+   good:["<span class='c'>// كود آمن — استعلام مُعامَل</span>","stmt = db.prepare(<b>\"SELECT * FROM users WHERE user=?\"</b>);","stmt.bind(1, input);   <span class='c'>// المدخل بيانات لا كود</span>","stmt.execute();"],
+   list:["استعلامات مُعاملة / ORM في كل الوصول للبيانات","تحقّق من نوع المدخل وطوله (قائمة بيضاء)","أقل صلاحية لحساب قاعدة البيانات","إخفاء رسائل الأخطاء التفصيلية عن المستخدم","جدار تطبيقات ويب كطبقة إضافية"]},
+  rep:{sev:"حرجة",cvss:"9.8",cwe:"CWE-89",impact:"تجاوز المصادقة، قراءة/تعديل/حذف كامل قاعدة البيانات، وربما تنفيذ أوامر على الخادم."}},
+
+ {ic:"🩻",name:"البرمجة عبر المواقع (XSS)",en:"Cross-Site Scripting",
+  find:["نقاط البحث: أي مكان يَعرض فيه التطبيق مدخلاً من المستخدم (تعليقات، بحث، ملف شخصي).","اختبار يدوي: أدخل <span class='mono'>&lt;b&gt;test&lt;/b&gt;</span> — إذا ظهر عريضاً فالتطبيق لا يرمّز المخرجات.","جرّب حمولة اختبار غير ضارة وراقب تنفيذها.","افحص الثلاثة: المخزّن، المنعكس، DOM."],
+  atk:{t:"التطبيق يعرض مدخل المستخدم في الصفحة دون ترميز، فيُنفّذ كود جافاسكربت في متصفح الضحية.",
+   bad:["<span class='c'>// مخرَج غير مرمّز في الصفحة</span>","page.write(<b>\"مرحباً \" + name</b>);","","<span class='c'># المهاجم يُدخل:</span>","<b>&lt;script&gt;/* كود يسرق الكوكي */&lt;/script&gt;</b>"],
+   steps:["في DVWA XSS (Stored) أدخل حمولة اختبار تُظهر تنبيهاً.","حمّل الصفحة بحساب آخر في المختبر وشاهد تنفيذها — إثبات أثر سرقة الجلسة.","وثّق أن الكوكي كان قابلاً للقراءة من السكربت."]},
+  def:{t:"رمّز المخرجات حسب السياق، وفعّل سياسة أمان المحتوى (CSP)، وأعلِم الكوكيز بـ HttpOnly.",
+   good:["<span class='c'>// ترميز المخرجات حسب السياق</span>","page.write(\"مرحباً \" + <b>htmlEncode(name)</b>);","","<span class='c'># رؤوس دفاعية</span>","Content-Security-Policy: default-src 'self'","Set-Cookie: session=...; <b>HttpOnly; Secure</b>"],
+   list:["ترميز المخرجات (HTML/JS/URL) حسب موضعها","سياسة CSP تمنع السكربتات غير الموثوقة","HttpOnly للكوكيز يمنع قراءتها بالسكربت","تحقّق من المدخلات بقائمة بيضاء","استخدم أطر تعرض البيانات بأمان افتراضياً"]},
+  rep:{sev:"عالية",cvss:"7.4",cwe:"CWE-79",impact:"سرقة الجلسات، تنفيذ إجراءات بالنيابة عن الضحية، تشويه الصفحة، توجيه لمواقع خبيثة."}},
+
+ {ic:"⌨️",name:"حقن الأوامر",en:"Command Injection",
+  find:["نقاط البحث: ميزات تنفّذ أوامر نظام (ping، تحويل ملفات، أدوات شبكة).","اختبار يدوي: ألحق <span class='mono'>; id</span> أو <span class='mono'>| whoami</span> بالمدخل وراقب مخرجات أمر النظام.","مؤشر: ظهور ناتج أمر لا علاقة له بالوظيفة الأصلية."],
+  atk:{t:"التطبيق يمرّر مدخل المستخدم إلى أمر نظام (shell)، فيُلحق المهاجم أوامر إضافية.",
+   bad:["<span class='c'>// مدخل يُمرّر لأمر النظام مباشرة</span>","system(<b>\"ping -c 1 \" + host</b>);","","<span class='c'># المهاجم يُدخل في خانة العنوان:</span>","<b>127.0.0.1; cat /etc/passwd</b>"],
+   steps:["في DVWA Command Injection أدخل <span class='mono'>127.0.0.1; id</span>.","شاهد ناتج أمر النظام كدليل على تنفيذ أوامر عشوائية داخل المختبر.","وثّق الأثر دون تخريب."]},
+  def:{t:"تجنّب استدعاء الـ shell. استخدم دوال آمنة تمرّر المعاملات كمصفوفة، وتحقّق بقائمة بيضاء صارمة.",
+   good:["<span class='c'>// بلا shell — معاملات منفصلة + تحقق</span>","if(!<b>isValidIP(host)</b>) reject();","exec(\"ping\", [<b>\"-c\",\"1\",host</b>]);  <span class='c'>// لا دمج نصي</span>"],
+   list:["استخدم واجهات برمجية بدل تنفيذ أوامر نظام","مرّر المعاملات كمصفوفة لا كنص مدموج","قائمة بيضاء صارمة للمدخلات المسموحة","أقل صلاحية لعملية التطبيق","عزل العمليات (sandbox)"]},
+  rep:{sev:"حرجة",cvss:"9.8",cwe:"CWE-78",impact:"تنفيذ أوامر كاملة على الخادم، سيطرة كاملة، حركة جانبية داخل الشبكة."}},
+
+ {ic:"🔑",name:"كسر المصادقة والجلسات",en:"Broken Authentication",
+  find:["نقاط البحث: نماذج الدخول، استعادة كلمة المرور، إدارة الجلسة والكوكيز.","اختبار: جرّب كلمات مرور ضعيفة، تحقّق من غياب تحديد المحاولات، افحص عشوائية معرّف الجلسة.","راقب: هل يتغيّر معرّف الجلسة بعد الدخول؟ هل ينتهي؟"],
+  atk:{t:"ضعف سياسات كلمات المرور وغياب تحديد المحاولات يسمح بتخمين الحسابات؛ وضعف إدارة الجلسة يسمح بسرقتها.",
+   bad:["<span class='c'># لا حدّ لمحاولات الدخول — تخمين مفتوح</span>","<b>hydra -l admin -P wordlist.txt</b> target http-post-form ...","","<span class='c'># معرّف جلسة متوقّع أو ثابت بعد الدخول</span>","session_id = <b>user_id + timestamp</b>  // قابل للتخمين"],
+   steps:["على خدمة المختبر، شغّل تخمينًا بكلمات مرور شائعة ضد حساب تجريبي.","أثبت الدخول بحساب ضعيف.","اعرض أن معرّف الجلسة لم يتغيّر بعد المصادقة (تثبيت الجلسة)."]},
+  def:{t:"سياسات قوية، تحديد المحاولات، تحقّق ثنائي، وإدارة جلسات سليمة.",
+   good:["<span class='c'># ضوابط دفاعية</span>","- حدّ المحاولات + تأخير تصاعدي + CAPTCHA","- تخزين كلمات المرور بـ <b>bcrypt/argon2</b>","- <b>تجديد معرّف الجلسة بعد الدخول</b> + انتهاء + Secure/HttpOnly","- تحقّق ثنائي (MFA)"],
+   list:["سياسة كلمات مرور قوية + منع المسرّبة","تحديد المحاولات والقفل المؤقت","تجزئة قوية للكلمات (bcrypt/argon2)","تجديد الجلسة بعد الدخول وانتهاؤها","التحقّق الثنائي للحسابات الحساسة"]},
+  rep:{sev:"عالية",cvss:"8.1",cwe:"CWE-287",impact:"الاستيلاء على الحسابات بما فيها الإدارية، انتحال الهوية، الوصول لبيانات المستخدمين."}},
+
+ {ic:"🚪",name:"تجاوز الصلاحيات وIDOR",en:"Broken Access Control",
+  find:["نقاط البحث: أي رابط/طلب يحوي معرّفاً (<span class='mono'>?id=123</span>) أو وظيفة إدارية.","اختبار: غيّر المعرّف لقيمة تخص مستخدماً آخر وراقب هل تصل لبياناته.","جرّب الوصول لمسارات إدارية بحساب عادي."],
+  atk:{t:"التطبيق يتحقّق من هوية المستخدم لكنه لا يتحقّق من صلاحيته للوصول للمورد المطلوب.",
+   bad:["<span class='c'># المستخدم ١٠ يطلب فاتورة غيره بتغيير الرقم</span>","GET /invoice?id=<b>1007</b>   <span class='c'>// بلا تحقق ملكية</span>","","<span class='c'># أو وصول لمسار إداري بحساب عادي</span>","GET /admin/users   <span class='c'>// بلا تحقق دور</span>"],
+   steps:["في تطبيق المختبر، سجّل كمستخدم عادي.","غيّر معرّف المورد في الطلب للوصول لبيانات مستخدم آخر (IDOR).","أثبت الوصول لمسار إداري دون صلاحية."]},
+  def:{t:"تحقّق من الصلاحية على الخادم لكل طلب، ومنع افتراضي (deny by default)، واربط المورد بمالكه.",
+   good:["<span class='c'># تحقق ملكية/دور على الخادم لكل طلب</span>","inv = getInvoice(id);","if(inv.owner != <b>currentUser.id</b>) deny(403);","if(path.startsWith('/admin') &amp;&amp; !user.isAdmin) deny(403);"],
+   list:["تحقّق الصلاحية على الخادم لكل مورد ووظيفة","منع افتراضي ثم السماح للمصرّح فقط","اربط كل مورد بمالكه وتحقّق منه","لا تعتمد على إخفاء الروابط (أمن بالغموض)","سجّل محاولات الوصول المرفوضة"]},
+  rep:{sev:"عالية",cvss:"8.2",cwe:"CWE-639 / CWE-284",impact:"الوصول لبيانات ووظائف مستخدمين آخرين أو الإدارة، تسريب أو تعديل واسع."}},
+
+ {ic:"🎭",name:"تزوير الطلب (CSRF)",en:"Cross-Site Request Forgery",
+  find:["نقاط البحث: الإجراءات الحسّاسة التي تُنفّذ بطلب (تغيير بريد/كلمة مرور، تحويل).","اختبار: هل يقبل الإجراء طلباً دون رمز CSRF؟ هل يعتمد فقط على الكوكي؟","ابنِ صفحة اختبار تُرسل الطلب وراقب تنفيذه."],
+  atk:{t:"المتصفح يرسل كوكي الجلسة تلقائياً، فيخدع المهاجمُ الضحيةَ لإرسال طلب حسّاس دون علمه.",
+   bad:["<span class='c'># الإجراء يعتمد على الكوكي فقط بلا رمز CSRF</span>","&lt;form action='/changeEmail' method='POST'&gt;","  &lt;input name='email' value='<b>attacker@evil.test</b>'&gt;","&lt;/form&gt;  <span class='c'>// يُرسل تلقائياً من صفحة المهاجم</span>"],
+   steps:["في DVWA CSRF، ابنِ صفحة في المختبر تُرسل طلب تغيير كلمة المرور.","افتحها بجلسة الضحية داخل المختبر.","أثبت تغيّر كلمة المرور دون تفاعل الضحية."]},
+  def:{t:"رمز CSRF فريد لكل جلسة/طلب، وخاصية SameSite للكوكي، وتأكيد للإجراءات الحسّاسة.",
+   good:["<span class='c'># رمز CSRF يُتحقّق منه على الخادم</span>","&lt;input type=hidden name=csrf value='<b>r7Kp..unique</b>'&gt;","if(req.csrf != session.csrf) deny();","Set-Cookie: session=...; <b>SameSite=Strict</b>"],
+   list:["رمز CSRF فريد وغير متوقّع لكل جلسة","SameSite=Strict/Lax للكوكيز","تأكيد (كلمة مرور/MFA) للإجراءات الحرجة","تحقّق من الرأس Origin/Referer","لا تستخدم GET لتغيير الحالة"]},
+  rep:{sev:"متوسطة",cvss:"6.5",cwe:"CWE-352",impact:"تنفيذ إجراءات حسّاسة بالنيابة عن الضحية: تغيير بيانات، تحويلات، تصعيد صلاحيات."}},
+
+ {ic:"📤",name:"رفع الملفات الخبيثة",en:"Unrestricted File Upload",
+  find:["نقاط البحث: أي ميزة رفع (صورة ملف شخصي، مرفقات، مستندات).","اختبار: جرّب رفع ملف بامتداد تنفيذي، أو تلاعب بالامتداد ونوع المحتوى.","راقب: أين يُحفظ الملف؟ هل يمكن الوصول إليه وتنفيذه؟"],
+  atk:{t:"التطبيق يقبل ملفات دون تحقّق كافٍ، فيُرفع ملف تنفيذي يُشغّله الخادم.",
+   bad:["<span class='c'># فحص الامتداد فقط وقابل للخداع</span>","if(name.endsWith('.jpg')) save(file);","","<span class='c'># المهاجم يرفع: shell.php%00.jpg أو يزوّر النوع</span>","<b>webshell.php</b>  ← يُحفظ في مجلد يُنفّذ منه"],
+   steps:["في DVWA File Upload ارفع ملفاً نصياً باسم ممتدّ وتجاوز الفلتر البسيط.","أثبت أن الملف أصبح قابلاً للوصول/التنفيذ في المختبر.","وثّق المسار دون استخدامه للتخريب."]},
+  def:{t:"تحقّق من النوع الحقيقي، أعد تسمية الملف، احفظه خارج جذر الويب، وامنع تنفيذه.",
+   good:["<span class='c'># تحقق متعدد الطبقات</span>","- قائمة بيضاء للأنواع + فحص المحتوى الحقيقي (magic bytes)","- <b>إعادة تسمية عشوائية</b> + تخزين خارج webroot","- منع التنفيذ في مجلد الرفع + حدّ الحجم","- فحص بمضاد فيروسات"],
+   list:["قائمة بيضاء للأنواع وفحص المحتوى الفعلي","إعادة تسمية الملف وتخزينه خارج جذر الويب","منع التنفيذ في مجلد الرفع","حدّ الحجم والأبعاد وفحص بمضاد فيروسات","تقديم الملفات عبر وسيط لا رابط مباشر"]},
+  rep:{sev:"حرجة",cvss:"9.1",cwe:"CWE-434",impact:"رفع webshell والسيطرة على الخادم، أو تخزين محتوى خبيث يُقدّم للمستخدمين."}},
+
+ {ic:"🛰️",name:"تزوير طلب الخادم (SSRF)",en:"Server-Side Request Forgery",
+  find:["نقاط البحث: ميزات تجلب موارد من رابط يحدّده المستخدم (معاينة رابط، جلب صورة من URL، webhook).","اختبار: وجّه الرابط لعنوان داخلي (<span class='mono'>127.0.0.1</span> أو خدمة داخلية بالمختبر) وراقب الاستجابة.","مؤشر: الخادم يجلب موارد ما كان يُفترض وصوله لها."],
+  atk:{t:"التطبيق يجلب رابطاً يحدّده المستخدم دون قيود، فيجبره المهاجم على طلب خدمات داخلية.",
+   bad:["<span class='c'># الخادم يجلب أي رابط يعطيه المستخدم</span>","fetch(<b>req.query.url</b>);","","<span class='c'># المهاجم يوجّهه لخدمة داخلية في المختبر</span>","url=<b>http://127.0.0.1:8080/internal</b>"],
+   steps:["في هدف SSRF بالمختبر، اجعل الخادم يطلب خدمة داخلية غير مكشوفة.","اعرض الاستجابة الداخلية كدليل.","وثّق أن الخدمة الداخلية أصبحت قابلة للوصول عبر الخادم."]},
+  def:{t:"قائمة بيضاء للوجهات، منع العناوين الداخلية، والتحقّق بعد حلّ DNS.",
+   good:["<span class='c'># قيود صارمة على الوجهة</span>","if(!<b>allowlist.includes(host)</b>) deny();","block(<b>127.0.0.0/8, 10/8, 169.254/16, ::1</b>);","<span class='c'># تحقق بعد DNS resolution لمنع الالتفاف</span>"],
+   list:["قائمة بيضاء للنطاقات/العناوين المسموحة","حظر الشبكات الداخلية وعناوين الـ metadata","تحقّق بعد حلّ DNS (منع DNS rebinding)","عزل شبكي للخدمة الجالبة","لا تُرجع الاستجابة الخام للمستخدم"]},
+  rep:{sev:"عالية",cvss:"8.6",cwe:"CWE-918",impact:"الوصول لخدمات داخلية وبيانات حسّاسة، مسح الشبكة الداخلية، وربما السيطرة."}},
+
+ {ic:"🗝️",name:"كشف البيانات والتشفير الضعيف",en:"Sensitive Data / Crypto Failures",
+  find:["نقاط البحث: نقل البيانات (HTTP بلا TLS)، تخزين كلمات المرور، أسرار في الكود/الإعداد.","اختبار: افحص هل البيانات الحسّاسة تُنقل أو تُخزَّن بلا تشفير، وابحث عن أسرار مكشوفة.","راقب: رؤوس أمان ناقصة، شهادات ضعيفة."],
+  atk:{t:"بيانات حسّاسة تُنقل أو تُخزَّن دون تشفير سليم، أو أسرار مكتوبة في أماكن مكشوفة.",
+   bad:["<span class='c'># كلمات مرور بنص صريح أو تجزئة ضعيفة</span>","store(user.pw)   <span class='c'>// أو MD5 بلا salt</span>","","<span class='c'># أسرار مكشوفة في الكود/المستودع</span>","API_KEY = <b>\"sk_live_...hardcoded\"</b>","","<span class='c'># نقل عبر HTTP بلا TLS</span>"],
+   steps:["في المختبر، اعترض حركة HTTP والتقط بيانات تُرسل بلا تشفير.","أظهر تجزئة ضعيفة أو سرًّا مكشوفاً في إعداد تجريبي.","وثّق الأثر."]},
+  def:{t:"شفّر أثناء النقل (TLS) وأثناء التخزين، وجزّئ كلمات المرور بخوارزميات قوية، وأدِر الأسرار بأمان.",
+   good:["<span class='c'># ممارسات التشفير السليمة</span>","- <b>TLS</b> لكل الاتصالات + HSTS","- كلمات المرور بـ <b>argon2/bcrypt + salt</b>","- تشفير البيانات الحسّاسة في التخزين","- الأسرار في <b>vault/متغيرات بيئة</b> لا في الكود"],
+   list:["TLS إلزامي + HSTS ورؤوس الأمان","تجزئة قوية للكلمات بملح","تشفير البيانات الحسّاسة عند التخزين","إدارة أسرار مركزية وتدوير المفاتيح","تقليل جمع البيانات الحسّاسة أصلاً"]},
+  rep:{sev:"عالية",cvss:"7.5",cwe:"CWE-311 / CWE-327",impact:"تسريب بيانات المستخدمين والاعتمادات، انتهاك الخصوصية والأنظمة."}},
+
+ {ic:"⚙️",name:"سوء الإعداد الأمني",en:"Security Misconfiguration",
+  find:["نقاط البحث: إعدادات افتراضية، حسابات افتراضية، خدمات/منافذ مفتوحة، رسائل أخطاء تفصيلية، مجلدات مكشوفة.","اختبار: <span class='tool'>nmap</span> للخدمات، <span class='tool'>nikto</span> للويب، جرّب لوحات ومسارات افتراضية.","مؤشر: صفحات إدارة مكشوفة، نسخ تجريبية، رؤوس أمان ناقصة."],
+  atk:{t:"أنظمة بإعدادات افتراضية أو خدمات زائدة أو تحديثات ناقصة تفتح أبواباً سهلة للمهاجم.",
+   bad:["<span class='c'># أمثلة شائعة</span>","- لوحة إدارة بكلمة مرور افتراضية admin/admin","- أخطاء تكشف مسارات وإصدارات ومكتبات","- خدمات ومنافذ غير مستخدمة مفتوحة","- برمجيات قديمة بثغرات معروفة (CVE)"],
+   steps:["في المختبر افحص الهدف بـ nmap/nikto واكتشف خدمة/لوحة افتراضية.","ادخل بحساب افتراضي أو استغل إصداراً قديماً معروفاً.","وثّق سبب الإعداد الخاطئ."]},
+  def:{t:"تحصين منهجي: أزل الافتراضي والزائد، حدّث باستمرار، وأخفِ التفاصيل.",
+   good:["<span class='c'># قائمة التحصين (Hardening)</span>","- غيّر كل الاعتمادات الافتراضية","- أغلق الخدمات والمنافذ غير اللازمة","- حدّث النظام والمكتبات دورياً","- أخفِ تفاصيل الأخطاء + فعّل رؤوس الأمان","- مراجعة إعداد آلية (benchmarks)"],
+   list:["إزالة الحسابات والخدمات والصفحات الافتراضية","تحديث منتظم وإدارة الثغرات المعروفة","تقليل سطح الهجوم (أقل ما يلزم)","رؤوس أمان + إخفاء الإصدارات والأخطاء","فحص إعداد دوري ومعايير تحصين"]},
+  rep:{sev:"متوسطة",cvss:"7.3",cwe:"CWE-16",impact:"اختراق سهل عبر إعدادات أو حسابات افتراضية أو برمجيات قديمة معروفة الثغرات."}},
+];
+
+function stage(cls,dot,title,body){return `<div class="stage ${cls}"><h4><span class="dot">${dot}</span>${title}</h4>${body}</div>`;}
+function pre(cls,lines){return `<pre class="${cls}">${lines.join("\n")}</pre>`;}
+function ul(items){return "<ul>"+items.map(i=>`<li>${i}</li>`).join("")+"</ul>";}
+
+document.getElementById('vulnlist').innerHTML = VULNS.map((v,i)=>`
+<details class="vuln">
+  <summary><span class="vn">${v.ic}</span><span class="vt"><b>${v.name}</b><small>${v.en}</small></span>
+    <span class="pill ${v.rep.sev==='حرجة'?'r':v.rep.sev==='عالية'?'r':'gold'}">${v.rep.sev}</span>
+    <span class="chev">▾</span></summary>
+  <div class="vbody">
+    ${stage('find','🔍','المحطة ١ — كيف تبحث عنها', ul(v.find))}
+    ${stage('atk','⚔️','المحطة ٢ — الهجوم والاستغلال',
+       `<p>${v.atk.t}</p><div class="tag">Vulnerable</div>${pre('bad',v.atk.bad)}
+        <b>خطوات الاستغلال في المختبر:</b>${ul(v.atk.steps)}`)}
+    ${stage('def','🛡️','المحطة ٣ — الدفاع والترقيع',
+       `<p>${v.def.t}</p><div class="tag">Secure</div>${pre('good',v.def.good)}
+        <b>ضوابط الدفاع:</b>${ul(v.def.list)}`)}
+    ${stage('rep','📝','المحطة ٤ — التقرير الفني',
+       `<table>
+          <tr><th>الحقل</th><th>القيمة</th></tr>
+          <tr><td>الخطورة</td><td>${v.rep.sev} · CVSS ${v.rep.cvss}</td></tr>
+          <tr><td>التصنيف</td><td>${v.rep.cwe}</td></tr>
+          <tr><td>الأثر على العمل</td><td>${v.rep.impact}</td></tr>
+          <tr><td>التوصية</td><td>طبّق ضوابط المحطة ٣، ثم أعد الاختبار للتأكد من فشل الهجوم.</td></tr>
+        </table>`)}
+  </div>
+</details>`).join("");
+
+
+/* ---------- practice challenges (pure client-side simulation) ---------- */
+const norm = x => (x||"").toLowerCase().replace(/\s+/g,"");
+function help(p,v,f){return `<div class="hp p"><div class="t">🔴 ما المشكلة؟</div>${p}</div><div class="hp v"><div class="t">🐞 ما الثغرة؟</div>${v}</div><div class="hp f"><div class="t">🟢 ما الحل؟</div>${f}</div>`;}
+const bar=(url)=>`<div class="fakebar"><span class="dots"><i style="background:#ec6a5e"></i><i style="background:#f4bf4f"></i><i style="background:#61c454"></i></span><span class="url">🔒 ${url}</span></div>`;
+
+const CHAL=[
+{id:"c_sql",lvl:1,lvlt:"مبتدئ",title:"بوابة دخول شركة",url:"https://portal.acme-corp.test/login",
+ mission:"ادخل كـ admin بدون أن تعرف كلمة المرور.",
+ site:`<div class="site corp"><div class="brand"><div class="lg">A</div><div><h4>شركة أكمي</h4><div style="font-size:12px;color:#6b7785">بوابة الموظفين</div></div></div>
+   <label>اسم المستخدم</label><input type="text" id="sqlu" placeholder="username" autocomplete="off">
+   <label>كلمة المرور</label><input type="password" id="sqlp" placeholder="password" autocomplete="off">
+   <button class="sbtn" id="sqlgo">تسجيل الدخول</button>
+   <div class="invlbl">💡 جرّب تكتب في خانة المستخدم:</div>
+   <div class="inv" data-fill="sqlu">' OR '1'='1' -- </div></div>`,
+ bind:(root)=>{
+   root.querySelector("#sqlgo").onclick=()=>{
+     const u=norm(root.querySelector("#sqlu").value);
+     const inj=/'or'1'='1|'or1=1|'--|'or''='/.test(u);
+     res("c_sql", inj
+       ?["ok","🚨 دخلت كـ <b>admin</b> بدون كلمة مرور صحيحة! تجاوزت المصادقة بحقن SQL."]
+       :["no","✅ فشل الدخول — بيانات غير صحيحة. (هذا هو السلوك الطبيعي الآمن)"]);
+   };},
+ help:help(
+   "نموذج الدخول يبني استعلام قاعدة البيانات بدمج ما تكتبه مباشرة في نص الاستعلام، فيثق بمدخلك كأنه كود.",
+   "<b>حقن SQL (SQL Injection).</b> حقنك <code>' OR '1'='1' --</code> جعل شرط التحقق صحيحاً دائماً وألغى فحص كلمة المرور بعلامة التعليق <code>--</code>.",
+   "استخدم <b>الاستعلامات المُعاملة (Prepared Statements)</b> التي تفصل الكود عن البيانات، وتحقّق من المدخلات، وأعطِ حساب قاعدة البيانات أقل صلاحية.")},
+
+{id:"c_xss",lvl:1,lvlt:"مبتدئ",title:"دفتر زوّار",url:"https://blog.sunrise-news.test/guestbook",
+ mission:"اجعل الصفحة تنفّذ كوداً من تعليقك (محاكاة سرقة جلسة).",
+ site:`<div class="site"><h4>📝 دفتر الزوّار</h4><div style="font-size:13px;color:#6b7785;margin-bottom:8px">اكتب تعليقك وسيظهر للجميع مباشرة:</div>
+   <input type="text" id="xssi" placeholder="اكتب تعليقك..." autocomplete="off">
+   <button class="sbtn" id="xssgo">نشر التعليق</button>
+   <div class="invlbl">💡 جرّب تكتب وسم يحتوي كوداً:</div>
+   <div class="inv" data-fill="xssi">&lt;img src=x onerror=steal()&gt;</div>
+   <div id="xsswall" style="margin-top:12px"></div></div>`,
+ bind:(root)=>{
+   root.querySelector("#xssgo").onclick=()=>{
+     const v=root.querySelector("#xssi").value, bad=/<\s*(script|img|svg|iframe)|onerror|onload|javascript:/i.test(v);
+     root.querySelector("#xsswall").innerHTML=`<div style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px">زائر: ${esc(v)}</div>`;
+     res("c_xss", bad
+       ?["ok","🚨 نُفّذ الكود في متصفح كل من يفتح الصفحة! (محاكاة) — أمكن سرقة الكوكي والجلسة."]
+       :["no","✅ ظهر تعليقك كنص عادي بلا تنفيذ — هذا السلوك الآمن."]);
+   };},
+ help:help(
+   "التطبيق يعرض تعليقك في الصفحة كما هو دون ترميز، فإذا كتبت وسم HTML/جافاسكربت يُنفَّذ في متصفح كل زائر.",
+   "<b>البرمجة عبر المواقع المخزّنة (Stored XSS).</b> كودك حُفظ وعُرض لكل زائر، فيُنفَّذ عندهم ويمكنه سرقة كوكي الجلسة.",
+   "<b>رمّز المخرجات</b> حسب السياق (HTML encode)، فعّل سياسة أمان المحتوى <code>CSP</code>، واجعل كوكي الجلسة <code>HttpOnly</code> حتى لا يقرأه السكربت.")},
+
+{id:"c_idor",lvl:2,lvlt:"متوسط",title:"عرض الفاتورة",url:"https://shop.golden-store.test/invoice?id=1001",
+ mission:"أنت صاحب الفاتورة 1001. حاول تشوف فاتورة عميل آخر.",
+ site:`<div class="site"><h4>🧾 متجر جولدن — فاتورتك</h4>
+   <div style="font-size:12px;color:#6b7785">الرابط الحالي:</div>
+   <div class="fakebar" style="margin:6px 0"><span class="url">/invoice?id=<input type="text" id="idorv" value="1001" style="width:70px;padding:2px 6px;border:1px solid #bbb;border-radius:5px;direction:ltr"></span></div>
+   <button class="sbtn" id="idorgo">عرض الفاتورة</button>
+   <div class="invlbl">💡 غيّر الرقم لرقم فاتورة غيرك، مثلاً 1002</div>
+   <div id="idorout" style="margin-top:12px"></div></div>`,
+ bind:(root)=>{
+   const DB={"1001":["أنت — خالد","٥٥٠ ر.س · باقة تدريب"],"1002":["سارة القحطاني","٣٬٢٠٠ ر.س · دبلوم القانون · جوال 05xxxx002"],"1003":["شركة النخبة","١٨٬٠٠٠ ر.س · عقد تدريب موظفين"]};
+   root.querySelector("#idorgo").onclick=()=>{
+     const id=root.querySelector("#idorv").value.trim(), rec=DB[id];
+     root.querySelector("#idorout").innerHTML=rec?`<div style="border:1px solid var(--line);border-radius:8px;padding:10px 12px"><b>فاتورة ${esc(id)}</b><br>العميل: ${esc(rec[0])}<br>${esc(rec[1])}</div>`:`<div class="muted">لا توجد فاتورة بهذا الرقم.</div>`;
+     res("c_idor", (rec&&id!=="1001")
+       ?["ok","🚨 وصلت لبيانات عميل آخر خاصة بدون تصريح! هذا تجاوز صلاحيات."]
+       :(id==="1001"?["nu","هذي فاتورتك أنت. جرّب رقم ثاني مثل 1002."]:["no","✅ لا نتيجة."]));
+   };},
+ help:help(
+   "الصفحة تعرض الفاتورة حسب الرقم في الرابط، وتتحقق أنك مسجّل دخول — لكنها <b>لا</b> تتحقق أن الفاتورة تخصّك أنت.",
+   "<b>تجاوز الصلاحيات / IDOR.</b> بتغيير المعرّف في الرابط وصلت لمورد يملكه غيرك لأن الخادم لم يربط المورد بمالكه.",
+   "تحقّق من <b>ملكية المورد على الخادم</b> لكل طلب: إذا كان <code>invoice.owner != currentUser</code> ارفض بـ 403. ومبدأ المنع الافتراضي ثم السماح للمصرّح فقط.")},
+
+{id:"c_up",lvl:3,lvlt:"محترف",title:"رفع صورة الملف الشخصي",url:"https://app.cloud-desk.test/profile/upload",
+ mission:"ارفع ملفاً تنفيذياً (webshell) متجاوزاً فلتر الموقع.",
+ site:`<div class="site"><h4>☁️ كلاود ديسك — صورتك الشخصية</h4>
+   <div style="font-size:13px;color:#6b7785;margin-bottom:6px">المسموح: صور بامتداد <b>.jpg</b> فقط.</div>
+   <label>اسم الملف الذي سترفعه</label><input type="text" id="upn" placeholder="photo.jpg" autocomplete="off">
+   <button class="sbtn" id="upgo">رفع</button>
+   <div class="invlbl">💡 جرّب تخدع الفلتر الذي يفحص نهاية الاسم فقط:</div>
+   <div class="inv" data-fill="upn">shell.php.jpg</div>
+   <div class="inv" data-fill="upn">shell.php%00.jpg</div></div>`,
+ bind:(root)=>{
+   root.querySelector("#upgo").onclick=()=>{
+     const n=(root.querySelector("#upn").value||"").trim().toLowerCase();
+     const passesFilter=/\.jpg$/.test(n)||n.includes("%00");
+     const isCode=/\.(php|phtml|jsp|asp|aspx|exe|sh)(\.|%00|$)/.test(n);
+     res("c_up", (passesFilter&&isCode)
+       ?["ok","🚨 تجاوزت الفلتر ورُفع ملف تنفيذي! أمكن تشغيل webshell والسيطرة على الخادم."]
+       :(isCode?["no","✅ رفض الفلتر الملف التنفيذي."]:["nu","رُفعت صورة عادية. جرّب تخدع الفلتر بملف تنفيذي."]));
+   };},
+ help:help(
+   "الموقع يتحقق من <b>نهاية اسم الملف فقط</b> (<code>.jpg</code>)، وهذا فحص ضعيف يسهل خداعه بأسماء مركّبة أو بايت فارغ <code>%00</code>.",
+   "<b>رفع ملفات خبيثة (Unrestricted File Upload).</b> رفعت ملف <code>.php</code> تنفيذياً، وإذا خُزّن في مجلد يُنفَّذ منه أمكن تشغيله (webshell).",
+   "تحقّق من <b>المحتوى الحقيقي</b> (magic bytes) لا الامتداد، أعد <b>تسمية الملف عشوائياً</b>، خزّنه <b>خارج جذر الويب</b>، امنع التنفيذ في مجلد الرفع، وافحصه بمضاد فيروسات.")}
+];
+function res(id,[cls,html]){const el=document.getElementById("res_"+id);if(el)el.innerHTML=`<div class="box ${cls}">${html}</div>`;}
+const cl=document.getElementById("challist");
+if(cl){cl.innerHTML=CHAL.map(c=>`<div class="chal" id="chal_${c.id}">
+  <div class="head"><span class="lvl b${c.lvl}">${c.lvlt}</span><span class="ct">${c.title}</span></div>
+  <div class="mission">🎯 مهمتك: ${c.mission}</div>
+  ${bar(c.url)}
+  ${c.site}
+  <div class="res" id="res_${c.id}"></div>
+  <button class="helpbtn" data-h="${c.id}">🆘 تورطت؟ ساعدني</button>
+  <div class="help" id="help_${c.id}" hidden>${c.help}</div>
+</div>`).join("");
+ CHAL.forEach(c=>{const root=document.getElementById("chal_"+c.id);c.bind(root);
+   root.querySelectorAll("[data-fill]").forEach(x=>x.onclick=()=>{const t=root.querySelector("#"+x.dataset.fill);if(t){t.value=x.textContent.trim();t.focus();}});
+   root.querySelector("[data-h]").onclick=e=>{const h=document.getElementById("help_"+c.id);h.hidden=!h.hidden;e.target.innerHTML=h.hidden?"🆘 تورطت؟ ساعدني":"✖ إخفاء المساعدة";};
+ });}
+
+</script>
+</body>
+</html>
