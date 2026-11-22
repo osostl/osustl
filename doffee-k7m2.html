@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="كوفي دوفي">
 <meta name="theme-color" content="#5a3721">
 <title>كاشير كوفي دوفي</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
   --bg:#f5efe6; --card:#fff; --ink:#2b1d14; --mut:#8a7565; --line:#eadfce;
@@ -43,10 +43,11 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px;white-space:nowrap}
 .brand .cup{width:40px;height:40px;border-radius:12px;background:var(--gold);display:grid;place-items:center;font-size:22px}
 .brand small{display:block;font-size:11px;font-weight:500;opacity:.8;margin-top:-3px}
-.nav{display:flex;gap:6px;margin-inline-start:12px;overflow-x:auto}
+.nav{display:flex;gap:6px;margin-inline-start:12px;overflow-x:auto;min-width:0;flex:1 1 auto;scrollbar-width:none}
 .nav button{min-height:44px;padding:6px 14px;border-radius:12px;color:#f3e4d2;font-weight:600;white-space:nowrap}
 .nav button.on{background:rgba(255,255,255,.16);color:#fff}
-.who{margin-inline-start:auto;display:flex;align-items:center;gap:8px;font-size:14px;white-space:nowrap}
+.who{margin-inline-start:auto;display:flex;align-items:center;gap:6px;font-size:14px;white-space:nowrap;flex:0 0 auto}
+.top .btn.sm{padding:6px 10px}
 .who .pill{background:rgba(255,255,255,.14);padding:6px 12px;border-radius:30px}
 .top .btn{min-height:40px;background:rgba(255,255,255,.12);border-color:transparent;color:#fff}
 
@@ -222,6 +223,17 @@ table.t tr.click:active{background:var(--bg)}
   .who .pill.sh{display:none}
   .mi{grid-template-columns:1fr 1fr}
 }
+
+/* বাংলা worker mode + photos + guide */
+.bn{font-family:"Noto Sans Bengali","IBM Plex Sans Arabic",sans-serif;font-weight:700}
+.ar2{display:block;font-size:.72em;color:var(--mut);font-weight:500;line-height:1.2}
+.bn2{display:block;font-family:"Noto Sans Bengali",sans-serif;font-size:.78em;color:var(--mut)}
+.opt.sm2{min-height:40px;padding:4px 10px;font-size:14px}
+.item .ph{width:100%;height:78px;object-fit:cover;border-radius:12px;margin-bottom:4px}
+.guide{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.gcard{background:#fff;border:1.5px solid var(--line);border-radius:16px;overflow:hidden;display:flex;flex-direction:column}
+.gcard .gph{width:100%;height:150px;object-fit:cover}.gcard .ic{font-size:64px;text-align:center;padding:16px 0;background:var(--bg)}
+.gcard .gtx{padding:10px 12px}.gcard .gtx b.bn{font-size:19px;display:block}.gcard .gr{font-size:14px;margin-top:6px;font-family:"Noto Sans Bengali","IBM Plex Sans Arabic",sans-serif}
 
 </style>
 </head>
@@ -1513,13 +1525,25 @@ const LS = {
 /* orders and shifts in IndexedDB (big, grows daily); falls back to localStorage if IndexedDB is blocked */
 const DB = {
   db: null, mem: false,
-  open(){ return new Promise(res => { try { const r = indexedDB.open("coffeedoffee", 1);
-      r.onupgradeneeded = () => { const d = r.result; d.createObjectStore("orders", {keyPath: "id"}).createIndex("day", "day"); d.createObjectStore("shifts", {keyPath: "id"}); };
+  SYNC: ["orders", "shifts", "expenses", "customers", "photos"],
+  open(){ return new Promise(res => { try { const r = indexedDB.open("coffeedoffee", 3);
+      r.onupgradeneeded = () => { const d = r.result, has = n => d.objectStoreNames.contains(n);
+        if (!has("orders")) d.createObjectStore("orders", {keyPath: "id"}).createIndex("day", "day");
+        if (!has("shifts")) d.createObjectStore("shifts", {keyPath: "id"});
+        if (!has("expenses")) d.createObjectStore("expenses", {keyPath: "id"}).createIndex("day", "day");
+        if (!has("customers")) d.createObjectStore("customers", {keyPath: "id"});
+        if (!has("outbox")) d.createObjectStore("outbox", {keyPath: "k"});
+        if (!has("photos")) d.createObjectStore("photos", {keyPath: "id"}); };
       r.onsuccess = () => { DB.db = r.result; res(); }; r.onerror = () => { DB.mem = true; res(); };
     } catch (e) { DB.mem = true; res(); } }); },
   _ls(s){ return LS.get("cd_" + s, []); },
-  put(s, v){ if (DB.mem) { const a = DB._ls(s).filter(x => x.id !== v.id); a.push(v); LS.set("cd_" + s, a); return Promise.resolve(v); }
-    return new Promise((res, rej) => { const t = DB.db.transaction(s, "readwrite"); t.objectStore(s).put(v); t.oncomplete = () => res(v); t.onerror = () => rej(t.error); }); },
+  put(s, v, nosync){ if (DB.mem) { const a = DB._ls(s).filter(x => x.id !== v.id); a.push(v); LS.set("cd_" + s, a); return Promise.resolve(v); }
+    const q = !nosync && DB.SYNC.includes(s) && (typeof CL !== "undefined") && CL.linked();
+    return new Promise((res, rej) => { const t = DB.db.transaction(q ? [s, "outbox"] : s, "readwrite"); t.objectStore(s).put(v);
+      if (q) t.objectStore("outbox").put({k: s + "/" + v.id, data: v, t: Date.now()});
+      t.oncomplete = () => { res(v); if (q) CL.kick(); }; t.onerror = () => rej(t.error); }); },
+  queue(k, data){ if (DB.mem || !DB.db) return Promise.resolve(); return new Promise(res => { const t = DB.db.transaction("outbox", "readwrite"); t.objectStore("outbox").put({k, data, t: Date.now()}); t.oncomplete = () => { res(); CL.kick(); }; t.onerror = () => res(); }); },
+  del(s, k){ if (DB.mem) return Promise.resolve(); return new Promise(res => { const t = DB.db.transaction(s, "readwrite"); t.objectStore(s).delete(k); t.oncomplete = () => res(); t.onerror = () => res(); }); },
   get(s, id){ if (DB.mem) return Promise.resolve(DB._ls(s).find(x => x.id === id)); return new Promise(res => { const r = DB.db.transaction(s).objectStore(s).get(id); r.onsuccess = () => res(r.result); r.onerror = () => res(null); }); },
   all(s){ if (DB.mem) return Promise.resolve(DB._ls(s)); return new Promise(res => { const r = DB.db.transaction(s).objectStore(s).getAll(); r.onsuccess = () => res(r.result || []); r.onerror = () => res([]); }); },
   days(from, to){ if (DB.mem) return Promise.resolve(DB._ls("orders").filter(o => o.day >= from && o.day <= to));
@@ -1558,13 +1582,13 @@ function seed(){
   };
 }
 let CFG = LS.get("cd_cfg", null) || seed();
-function saveCfg(){ LS.set("cd_cfg", CFG); }
+function saveCfg(){ LS.set("cd_cfg", CFG); if ((typeof CL !== "undefined")) CL.cfgChanged(); }
 if (!CFG.settings.printer) { CFG.settings.printer = seed().settings.printer; saveCfg(); }
 
 /* ---------------- session ---------------- */
 let USER = null, VIEW = "pos", CAT = null, Q = "";
 let CART = newCart();
-function newCart(){ return {lines: [], type: "local", disc: null, cust: ""}; }
+function newCart(){ return {lines: [], type: "local", disc: null, cust: "", phone: "", custName: "", osos: null, reward: null, canReward: false}; }
 const isMgr = () => USER && USER.role === "manager";
 const SH = () => CFG.shift;   // open shift object or null
 const cur = () => "ر.س";
@@ -1572,11 +1596,12 @@ const cur = () => "ر.س";
 /* ---------------- money math ---------------- */
 function lineUnit(item, size, opts){ return r2((size ? size.p : item.price) + opts.reduce((a, o) => a + o.p, 0)); }
 function totals(c = CART){
-  const sub = r2(c.lines.reduce((a, l) => a + l.unit * l.qty, 0));
-  let disc = 0; if (c.disc) disc = c.disc.type === "pct" ? r2(sub * c.disc.v / 100) : Math.min(sub, r2(c.disc.v));
+  const sub = r2(c.lines.reduce((a, l) => a + l.unit * l.qty, 0)), rew = c.reward ? Math.min(sub, r2(c.reward.amt)) : 0, base = r2(sub - rew);
+  let disc = 0; if (c.disc) disc = c.disc.type === "pct" ? r2(base * c.disc.v / 100) : Math.min(base, r2(c.disc.v));
+  disc = r2(disc + rew);
   const total = r2(sub - disc), V = CFG.settings.vat;
   const vat = V.on ? r2(total - total / (1 + V.rate / 100)) : 0;   // menu prices include VAT
-  return {sub, disc, total, vat, net: r2(total - vat), count: c.lines.reduce((a, l) => a + l.qty, 0)};
+  return {sub, disc, rew, total, vat, net: r2(total - vat), count: c.lines.reduce((a, l) => a + l.qty, 0)};
 }
 
 /* ---------------- app shell ---------------- */
@@ -1592,11 +1617,14 @@ function topHTML(){
   const N = [["pos", "💵 البيع"], ["orders", "🧾 الطلبات"], ["reports", "📊 التقارير"], ...(isMgr() ? [["settings", "⚙️ الإعدادات"]] : [])];
   return `<header class="top"><div class="brand"><div class="cup">☕</div><div>${esc(CFG.settings.name)}<small>${esc(CFG.settings.branch)}</small></div></div>
     <nav class="nav">${SH() ? N.map(([k, t]) => `<button data-nav="${k}" class="${VIEW === k ? "on" : ""}">${t}</button>`).join("") : ""}</nav>
-    <div class="who">${SH() ? `<span class="pill sh">🕐 وردية مفتوحة ${timeOf(new Date(SH().openAt))}</span><button class="btn sm" data-nav="close">إغلاق الوردية</button>` : ""}<span class="pill">👤 ${esc(USER.name)}</span><button class="btn sm" id="lock">🔒 قفل</button></div></header>`;
+    <div class="who"><button class="btn sm ${isBN() ? "gold" : ""}" id="langb" title="বাংলা / عربي">${isBN() ? "ع" : "বাং"}</button><button class="btn sm" id="guideb" title="دليل المشروبات">📖</button>${SH() ? `<button class="btn sm" id="rdyb" title="قائمة التحضير">🔔</button><button class="btn sm" id="expb" title="مصروف من الدرج">💸</button>${(typeof CL !== "undefined") ? CL.pill() : ""}<button class="btn sm" data-nav="close" title="فُتحت ${timeOf(new Date(SH().openAt))}">إغلاق الوردية</button>` : ""}<span class="pill">👤 ${esc(USER.name)}</span><button class="btn sm" id="lock" title="قفل">🔒</button></div></header>`;
 }
 function bindTop(){
   $$("[data-nav]").forEach(b => b.onclick = () => { VIEW = b.dataset.nav; render(); });
   $("#lock").onclick = () => { USER = null; VIEW = "pos"; render(); };
+  $("#langb").onclick = toggleLang; $("#guideb").onclick = guideModal;
+  if ($("#rdyb")) { $("#rdyb").onclick = readyModal; $("#expb").onclick = expenseModal; updateBadges(); }
+  if ((typeof CL !== "undefined")) CL.bindPill();
 }
 
 /* ---------------- login with PIN ---------------- */
@@ -1652,32 +1680,36 @@ function bindOpenShift(){
 function posHTML(){
   if (!CAT || !CFG.cats.find(c => c.id === CAT)) CAT = (CFG.cats[0] || {}).id;
   return `<div class="pos"><section class="menu">
-      <div class="cats">${CFG.cats.map(c => `<button class="chip ${c.id === CAT && !Q ? "on" : ""}" data-cat="${c.id}">${c.icon || ""} ${esc(c.name)}</button>`).join("")}</div>
+      <div class="cats">${CFG.cats.map(c => `<button class="chip ${c.id === CAT && !Q ? "on" : ""}" data-cat="${c.id}">${c.icon || ""} ${L2(c, c.name)}</button>`).join("")}</div>
       <div class="search"><input id="q" placeholder="ابحث عن صنف…" value="${esc(Q)}"><span>🔍</span></div>
       <div class="grid" id="grid">${gridHTML()}</div></section>
     <aside class="cart" id="cart">${cartHTML()}</aside></div>`;
 }
 function gridHTML(){
-  const L = CFG.items.filter(i => Q ? i.name.includes(Q) : i.cat === CAT);
+  const L = CFG.items.filter(i => Q ? (i.name.includes(Q) || bnOf(i, i.name).includes(Q)) : i.cat === CAT);
   if (!L.length) return `<div class="empty" style="grid-column:1/-1"><div class="big">🔍</div>ما فيه أصناف${Q ? " بهذا الاسم" : " في هذا القسم — أضفها من الإعدادات"}</div>`;
   return L.map(i => { const p = i.sizes.length ? `${m2(Math.min(...i.sizes.map(s => s.p)))} <small>${cur()} +</small>` : `${m2(i.price)} <small>${cur()}</small>`;
-    return `<button class="item ${i.active ? "" : "off"}" data-item="${i.id}" ${i.active ? "" : "disabled"}><span class="ic">${i.icon || "☕"}</span><span class="nm">${esc(i.name)}</span><span class="pr num">${p}</span></button>`; }).join("");
+    return `<button class="item ${i.active ? "" : "off"}" data-item="${i.id}" ${i.active ? "" : "disabled"}>${pic(i)}<span class="nm">${L2(i, i.name)}</span><span class="pr num">${p}</span></button>`; }).join("");
 }
 function cartHTML(){
   const t = totals(), no = nextNo(true);
   return `<div class="cart-h"><b>طلب #${no}</b><div class="seg"><button data-type="local" class="${CART.type === "local" ? "on" : ""}">🪑 محلي</button><button data-type="takeaway" class="${CART.type === "takeaway" ? "on" : ""}">🛍️ سفري</button></div></div>
-    <div class="lines">${CART.lines.length ? CART.lines.map((l, i) => `<div class="line"><div class="info"><b>${esc(l.name)}${l.size ? ` · ${esc(l.size)}` : ""}</b>${l.opts.length || l.note ? `<small>${esc(l.opts.map(o => o.n).join("، "))}${l.note ? ` · 📝 ${esc(l.note)}` : ""}</small>` : ""}<small class="num">${m2(l.unit)} × ${l.qty}</small></div>
+    <div class="lines">${CART.lines.length ? CART.lines.map((l, i) => `<div class="line"><div class="info"><b>${L2(CFG.items.find(x => x.id === l.itemId), l.name)}${l.size ? ` · ${L2(null, l.size)}` : ""}</b>${l.opts.length || l.note ? `<small>${esc(l.opts.map(o => o.n).join("، "))}${l.note ? ` · 📝 ${esc(l.note)}` : ""}</small>` : ""}<small class="num">${m2(l.unit)} × ${l.qty}</small></div>
         <div class="qty"><button data-dec="${i}">−</button><span class="num">${l.qty}</span><button data-inc="${i}">+</button></div><div class="lp num">${m2(l.unit * l.qty)}</div></div>`).join("")
       : `<div class="empty"><div class="big">🧾</div>اضغط على الأصناف لإضافتها للطلب</div>`}</div>
-    <div class="cust"><input id="cust" placeholder="اسم العميل (للنداء) — اختياري" value="${esc(CART.cust)}"></div>
+    <div class="cust"><input id="cust" placeholder="اسم العميل (للنداء) — اختياري" value="${esc(CART.cust)}">
+      <div class="row" style="margin-top:6px;gap:6px">${CFG.loyalty.on ? `<button class="btn sm ${CART.phone ? "gold" : ""}" id="loyb">📱 ${CART.phone ? esc(CART.phone) : "بطاقة ولاء"}</button>` : ""}
+        <button class="btn sm ${CART.osos ? "gold" : ""}" id="ososb">🎓 ${CART.osos ? "متدرب " + esc(CART.osos.num) : "متدرب أسس"}</button>
+        ${CART.canReward ? `<button class="btn sm ${CART.reward ? "ok" : "gold"}" id="rewb">${CART.reward ? "🎁 المكافأة مطبّقة" : "🎁 استخدم المشروب المجاني"}</button>` : ""}</div></div>
     <div class="totals"><div class="r"><span>المجموع (${t.count} صنف)</span><span class="num">${m2(t.sub)}</span></div>
-      ${t.disc ? `<div class="r" style="color:var(--red)"><span>الخصم ${CART.disc.type === "pct" ? `(${CART.disc.v}٪)` : ""}</span><span class="num">-${m2(t.disc)}</span></div>` : ""}
+      ${t.rew ? `<div class="r" style="color:var(--green)"><span>🎁 مشروب مجاني (ولاء)</span><span class="num">-${m2(t.rew)}</span></div>` : ""}
+      ${t.disc - t.rew ? `<div class="r" style="color:var(--red)"><span>${CART.disc && CART.disc.osos ? "🎓 خصم متدرب أسس" : "الخصم"} ${CART.disc && CART.disc.type === "pct" ? `(${CART.disc.v}٪)` : ""}</span><span class="num">-${m2(t.disc - t.rew)}</span></div>` : ""}
       ${CFG.settings.vat.on ? `<div class="r"><span>منها ضريبة ${CFG.settings.vat.rate}٪</span><span class="num">${m2(t.vat)}</span></div>` : ""}
       <div class="r big"><span>الإجمالي</span><span class="num">${m2(t.total)} ${cur()}</span></div></div>
     <div class="acts"><button class="btn" id="disc">🏷️ خصم</button><button class="btn" id="hold">⏸️ ${CFG.held.length ? `معلّق (${CFG.held.length})` : "تعليق"}</button><button class="btn" id="clr">🗑️ مسح</button>
       <button class="btn ok pay" id="pay" ${CART.lines.length ? "" : "disabled"}>💳 الدفع · <span class="num">${m2(t.total)}</span></button></div>`;
 }
-function refreshCart(){ $("#cart").innerHTML = cartHTML(); bindCart(); }
+function refreshCart(){ if (CART.reward) { const v = rewardValue(); if (!v) CART.reward = null; else CART.reward.amt = r2(v); } $("#cart").innerHTML = cartHTML(); bindCart(); }
 function bindPos(){
   $$("[data-cat]").forEach(b => b.onclick = () => { CAT = b.dataset.cat; Q = ""; render(); });
   const q = $("#q"); q.oninput = () => { Q = q.value.trim(); $("#grid").innerHTML = gridHTML(); bindGrid(); $$("[data-cat]").forEach(b => b.classList.toggle("on", !Q && b.dataset.cat === CAT)); };
@@ -1689,6 +1721,7 @@ function bindCart(){
   $$("[data-inc]").forEach(b => b.onclick = () => { CART.lines[+b.dataset.inc].qty++; refreshCart(); });
   $$("[data-dec]").forEach(b => b.onclick = () => { const l = CART.lines[+b.dataset.dec]; l.qty--; if (l.qty <= 0) CART.lines.splice(+b.dataset.dec, 1); refreshCart(); });
   const c = $("#cust"); if (c) c.oninput = () => CART.cust = c.value.slice(0, 40);
+  if ($("#loyb")) $("#loyb").onclick = custModal; $("#ososb").onclick = ososModal; if ($("#rewb")) $("#rewb").onclick = toggleReward;
   $("#clr").onclick = async () => { if (!CART.lines.length) return; if (await confirmBox("تمسح الطلب الحالي؟", "مسح", 1)) { CART = newCart(); refreshCart(); } };
   $("#disc").onclick = discountModal;
   $("#hold").onclick = holdModal;
@@ -1707,15 +1740,17 @@ function itemModal(it){
   const opts = () => groups.flatMap(g => (st.sel[g.id] || []).map(i => g.choices[i]).filter(Boolean)).filter(o => !(o.p === 0 && /عادي/.test(o.n)));
   const draw = () => {
     const price = lineUnit(it, st.size, opts()) * st.qty;
-    ov.querySelector(".modal").innerHTML = `<div class="mh"><b>${it.icon || ""} ${esc(it.name)}</b><button class="x" data-close>×</button></div><div class="mb">
-      ${it.sizes.length ? `<div class="grp"><h4>الحجم</h4><div class="opts">${it.sizes.map((s, i) => `<button class="opt ${st.size === s ? "on" : ""}" data-sz="${i}">${esc(s.n)} <small class="num">${m2(s.p)}</small></button>`).join("")}</div></div>` : ""}
-      ${groups.map(g => `<div class="grp"><h4>${esc(g.name)}${g.multi ? " (اختر أكثر من واحد)" : ""}</h4><div class="opts">${g.choices.map((c, i) => `<button class="opt ${(st.sel[g.id] || []).includes(i) ? "on" : ""}" data-g="${g.id}" data-i="${i}">${esc(c.n)}${c.p ? ` <small class="num">+${m2(c.p)}</small>` : ""}</button>`).join("")}</div></div>`).join("")}
-      <div class="grp"><h4>ملاحظة للباريستا</h4><input class="f" style="width:100%;min-height:46px;border-radius:12px;border:1.5px solid var(--line);padding:8px 12px" id="inote" placeholder="مثال: ثلج خفيف، حار جداً…" value="${esc(st.note)}"></div>
+    ov.querySelector(".modal").innerHTML = `<div class="mh"><b>${it.icon || ""} ${L2(it, it.name)}</b><button class="x" data-close>×</button></div><div class="mb">
+      ${it.sizes.length ? `<div class="grp"><h4>الحجم</h4><div class="opts">${it.sizes.map((s, i) => `<button class="opt ${st.size === s ? "on" : ""}" data-sz="${i}">${L2(s, s.n)} <small class="num">${m2(s.p)}</small></button>`).join("")}</div></div>` : ""}
+      ${groups.map(g => `<div class="grp"><h4>${L2(g, g.name)}${g.multi ? " (اختر أكثر من واحد)" : ""}</h4><div class="opts">${g.choices.map((c, i) => `<button class="opt ${(st.sel[g.id] || []).includes(i) ? "on" : ""}" data-g="${g.id}" data-i="${i}">${L2(c, c.n)}${c.p ? ` <small class="num">+${m2(c.p)}</small>` : ""}</button>`).join("")}</div></div>`).join("")}
+      <div class="grp"><h4>ملاحظة للباريستا</h4><input class="f" style="width:100%;min-height:46px;border-radius:12px;border:1.5px solid var(--line);padding:8px 12px" id="inote" placeholder="مثال: ثلج خفيف، حار جداً…" value="${esc(st.note)}">
+        <div class="opts" style="margin-top:8px">${NOTES.map(([a, b], k) => `<button class="opt sm2" data-nq="${k}">${esc(a)}<small class="bn2">${esc(b)}</small></button>`).join("")}</div></div>
       <div class="row" style="justify-content:space-between"><div class="qty"><button id="iqm">−</button><span class="num" style="font-size:20px">${st.qty}</span><button id="iqp">+</button></div><b class="num" style="font-size:24px;color:var(--brown)">${m2(price)} ${cur()}</b></div></div>
       <div class="mf"><button class="btn" data-close>إلغاء</button><button class="btn ok" id="iadd">➕ أضف للطلب</button></div>`;
     ov.querySelectorAll("[data-sz]").forEach(b => b.onclick = () => { st.size = it.sizes[+b.dataset.sz]; draw(); });
     ov.querySelectorAll("[data-g]").forEach(b => b.onclick = () => { const g = groups.find(x => x.id === b.dataset.g), i = +b.dataset.i, a = st.sel[g.id]; if (g.multi) { const k = a.indexOf(i); k >= 0 ? a.splice(k, 1) : a.push(i); } else st.sel[g.id] = [i]; draw(); });
     ov.querySelector("#inote").oninput = e => st.note = e.target.value.slice(0, 60);
+    ov.querySelectorAll("[data-nq]").forEach(b => b.onclick = () => { const a = NOTES[+b.dataset.nq][0]; const parts = st.note.split(/[،,]\s*/).filter(Boolean); const k = parts.indexOf(a); k >= 0 ? parts.splice(k, 1) : parts.push(a); st.note = parts.join("، ").slice(0, 60); draw(); });
     ov.querySelector("#iqm").onclick = () => { if (st.qty > 1) st.qty--; draw(); };
     ov.querySelector("#iqp").onclick = () => { st.qty++; draw(); };
     ov.querySelector("#iadd").onclick = () => { closeModal(ov); addLine(it, st.size, opts(), st.qty, st.note.trim()); };
@@ -1775,8 +1810,10 @@ async function saveOrder(pay){
   const t = totals(), now = new Date(), no = nextNo(false);
   const o = {id: "o_" + uid(), serial: `CD-${dayOf(now).replace(/-/g, "")}-${pad(CFG.serial, 4)}`, no, day: dayOf(now), at: now.toISOString(), user: USER.id, userName: USER.name, shift: SH().id,
     type: CART.type, cust: CART.cust.trim(), lines: CART.lines.map(({key, ...l}) => l), sub: t.sub, disc: t.disc, discNote: CART.disc ? (CART.disc.type === "pct" ? CART.disc.v + "%" : "مبلغ") + " · " + CART.disc.by : "",
-    total: t.total, vat: t.vat, vatRate: CFG.settings.vat.on ? CFG.settings.vat.rate : 0, pay, status: "paid"};
-  await DB.put("orders", o); CART = newCart(); return o;
+    total: t.total, vat: t.vat, vatRate: CFG.settings.vat.on ? CFG.settings.vat.rate : 0, pay, status: "paid", ready: false,
+    phone: CART.phone || "", custName: CART.custName || "", osos: CART.osos || null, reward: CART.reward ? {amt: t.rew} : null, reqId: CART.reqId || ""};
+  if (o.osos && CART.disc && CART.disc.osos) o.discNote = (CART.disc.offer ? "عرض: " + CART.disc.offer + " · " : "") + "متدرب أسس " + o.osos.num;
+  await DB.put("orders", o, true); CART = newCart(); await FX.afterOrder(o); if (o.reqId) FX.reqPaid(o); return o;
 }
 function afterPay(o){
   refreshCart();
@@ -1803,25 +1840,31 @@ function receiptHTML(o){
     ${V ? `<div style="font-weight:800;margin-top:4px">فاتورة ضريبية مبسطة</div><div>الرقم الضريبي: <span class="num">${esc(S.vat.number)}</span></div>` : `<div style="font-weight:800;margin-top:4px">إيصال بيع</div>`}</div>
     <div class="hr"></div><table><tr><td>رقم الطلب</td><td class="p"><b style="font-size:16px">#${o.no}</b></td></tr><tr><td>الفاتورة</td><td class="p num">${o.serial}</td></tr><tr><td>التاريخ</td><td class="p num">${fmtDT(o.at)}</td></tr><tr><td>النوع</td><td class="p">${o.type === "takeaway" ? "سفري" : "محلي"}</td></tr>${o.cust ? `<tr><td>العميل</td><td class="p">${esc(o.cust)}</td></tr>` : ""}<tr><td>الكاشير</td><td class="p">${esc(o.userName)}</td></tr></table>
     <div class="hr"></div><table>${o.lines.map(l => `<tr><td>${l.qty} × ${esc(l.name)}${l.size ? ` (${esc(l.size)})` : ""}${l.opts.length ? `<div class="o">${esc(l.opts.map(x => x.n).join("، "))}</div>` : ""}${l.note ? `<div class="o">📝 ${esc(l.note)}</div>` : ""}</td><td class="p num">${m2(l.unit * l.qty)}</td></tr>`).join("")}</table>
-    <div class="hr"></div><table><tr><td>المجموع</td><td class="p num">${m2(o.sub)}</td></tr>${o.disc ? `<tr><td>الخصم</td><td class="p num">-${m2(o.disc)}</td></tr>` : ""}
+    <div class="hr"></div><table><tr><td>المجموع</td><td class="p num">${m2(o.sub)}</td></tr>${o.disc ? `<tr><td>${o.reward ? "الخصم (منه مشروب مجاني)" : "الخصم"}</td><td class="p num">-${m2(o.disc)}</td></tr>` : ""}
     ${V ? `<tr><td>الإجمالي بدون الضريبة</td><td class="p num">${m2(o.total - o.vat)}</td></tr><tr><td>ضريبة القيمة المضافة ${o.vatRate}٪</td><td class="p num">${m2(o.vat)}</td></tr>` : ""}
     <tr class="tot"><td>الإجمالي${V ? " شامل الضريبة" : ""}</td><td class="p num">${m2(o.total)} ر.س</td></tr>
     <tr><td>الدفع</td><td class="p">${PAYN[o.pay.method]}${o.pay.method === "split" ? ` (كاش <span class="num">${m2(o.pay.cash)}</span> + شبكة <span class="num">${m2(o.pay.card)}</span>)` : ""}</td></tr>
     ${o.pay.method === "cash" ? `<tr><td>المستلم</td><td class="p num">${m2(o.pay.recv)}</td></tr><tr><td>الباقي</td><td class="p num">${m2(o.pay.change)}</td></tr>` : ""}</table>
+    ${o.osos ? `<div class="hr"></div><div class="c">🎓 متدرب معهد أسس · <span class="num">${esc(o.osos.num)}</span></div>` : ""}
+    ${o.loyalty ? `<div class="hr"></div><div class="c">بطاقة الولاء: <b class="num">${o.loyalty.after} / ${CFG.loyalty.need}</b> ختم${o.loyalty.after >= CFG.loyalty.need ? "<br><b>🎁 مشروبك الجاي علينا!</b>" : ""}</div>` : ""}
     ${o.status === "void" ? `<div class="hr"></div><div class="c" style="font-weight:800;font-size:16px">*** ملغي ***</div>` : ""}
     ${V ? `<div class="qr">${qrSVG(zatcaQR(o))}</div>` : ""}
     <div class="hr"></div><div class="c">${esc(S.footer)}</div></div>`;
 }
 function ticketHTML(o){
-  return `<div class="rcpt ${CFG.settings.paper === 58 ? "w58" : ""}"><div class="c" style="font-weight:700">تذكرة تحضير — ${o.type === "takeaway" ? "🛍️ سفري" : "🪑 محلي"}</div><div class="big num">#${o.no}</div>${o.cust ? `<div class="c" style="font-size:17px;font-weight:800">${esc(o.cust)}</div>` : ""}<div class="c num">${timeOf(new Date(o.at))}</div>
-    <div class="hr"></div>${o.lines.map(l => `<div style="font-size:16px;font-weight:800;margin-top:6px">${l.qty} × ${esc(l.name)}${l.size ? ` — ${esc(l.size)}` : ""}</div>${l.opts.length ? `<div style="font-size:14px">• ${esc(l.opts.map(x => x.n).join(" • "))}</div>` : ""}${l.note ? `<div style="font-size:14px;font-weight:700">📝 ${esc(l.note)}</div>` : ""}`).join("")}<div class="hr"></div></div>`;
+  const it = l => CFG.items.find(x => x.id === l.itemId), gch = l => { const i = it(l); return i ? i.groups.map(g => CFG.groups.find(y => y.id === g)).filter(Boolean).flatMap(g => g.choices) : []; };
+  const bnOn = CFG.settings.ticketBN !== false;
+  return `<div class="rcpt ${CFG.settings.paper === 58 ? "w58" : ""}"><div class="c" style="font-weight:700">تذكرة تحضير — ${o.type === "takeaway" ? "🛍️ سفري" : "🪑 محلي"}${bnOn ? `<br>${BN["تذكرة تحضير"]} — ${o.type === "takeaway" ? BN["سفري"] : BN["محلي"]}` : ""}</div><div class="big num">#${o.no}</div>${o.cust ? `<div class="c" style="font-size:17px;font-weight:800">${esc(o.cust)}</div>` : ""}${o.osos ? `<div class="c">🎓 متدرب <span class="num">${esc(o.osos.num)}</span></div>` : ""}<div class="c num">${timeOf(new Date(o.at))}</div>
+    <div class="hr"></div>${o.lines.map(l => { const bn = bnOn && bnOf(it(l), l.name), sb = bnOn && l.size && bnOf(null, l.size), ob = bnOn && l.opts.map(x => bnOf(gch(l).find(c => c.n === x.n), x.n)).filter(Boolean), nb = bnOn && bnNote(l.note);
+      return `<div style="font-size:16px;font-weight:800;margin-top:6px">${l.qty} × ${esc(l.name)}${l.size ? ` — ${esc(l.size)}` : ""}</div>${bn ? `<div style="font-size:16px;font-weight:700">${l.qty} × ${esc(bn)}${sb ? ` — ${esc(sb)}` : ""}</div>` : ""}${l.opts.length ? `<div style="font-size:14px">• ${esc(l.opts.map(x => x.n).join(" • "))}</div>${ob && ob.length ? `<div style="font-size:14px">• ${esc(ob.join(" • "))}</div>` : ""}` : ""}${l.note ? `<div style="font-size:14px;font-weight:700">📝 ${esc(l.note)}${nb ? ` · ${esc(nb)}` : ""}</div>` : ""}`; }).join("")}<div class="hr"></div></div>`;
 }
 function sysPrint(html){ const p = $("#print"); p.innerHTML = html; setTimeout(() => { try { window.print(); } catch (e) { toast("ما قدرت أطبع — تأكد من الطابعة", 1); } }, 60); }
 let PQ = Promise.resolve();   // network prints go one after another
 function printDoc(html, opt = {}){
   const P = CFG.settings.printer || {};
-  if (P.mode !== "epson" || !P.ip) return sysPrint(html);
-  PQ = PQ.then(() => EP.print(html, {drawer: opt.drawer && P.drawer})).then(() => opt.quiet || toast("🖨️ انطبع")).catch(e => { toast("⚠️ " + EP.why(e) + " — بفتح نافذة الطباعة العادية", 1); sysPrint(html); });
+  const D = P.mode === "epson" && P.ip ? EP : (P.mode === "usb" || P.mode === "rawbt") ? ESC : null;
+  if (!D) return sysPrint(html);
+  PQ = PQ.then(() => D.print(html, {drawer: opt.drawer && P.drawer})).then(() => opt.quiet || P.mode === "rawbt" || toast("🖨️ انطبع")).catch(e => { toast("⚠️ " + D.why(e), 1); });
   return PQ;
 }
 function qrSVG(text){
@@ -1855,8 +1898,8 @@ const EP = {
         if (cs["border" + k + "Style"] === "dashed" || cs["border" + k + "Style"] === "dotted") { for (let x = x0; x < x1; x += 12) g.fillRect(x, yy, 7, Math.max(2, bw * S)); } else g.fillRect(x0, yy, x1 - x0, Math.max(2, bw * S)); } }); });
     // QR codes (svg paths from qrSVG)
     box.querySelectorAll("svg").forEach(sv => { const R = sv.getBoundingClientRect(), vb = (sv.getAttribute("viewBox") || "").split(/\s+/).map(Number); if (vb.length < 4) return;
-      const k = R.width / vb[2] * S, ox = (R.left - B.left) * S - vb[0] * k, oy = (R.top - B.top) * S - vb[1] * k, p = sv.querySelector("path"); if (!p) return;
-      (p.getAttribute("d").match(/M\d+ \d+/g) || []).forEach(m => { const [c, r] = m.slice(1).split(" ").map(Number); g.fillRect(Math.floor(ox + c * k), Math.floor(oy + r * k), Math.ceil(k), Math.ceil(k)); }); });
+      const k = Math.max(2, Math.floor(R.width * S / vb[2])), pad = Math.floor((R.width * S - k * vb[2]) / 2), ox = Math.round((R.left - B.left) * S) + pad - vb[0] * k, oy = Math.round((R.top - B.top) * S) + pad - vb[1] * k, p = sv.querySelector("path"); if (!p) return;
+      (p.getAttribute("d").match(/M\d+ \d+/g) || []).forEach(m => { const [c, r] = m.slice(1).split(" ").map(Number); g.fillRect(ox + c * k, oy + r * k, k, k); }); });
     // text, word by word at the browser's own layout positions (keeps Arabic shaping & RTL)
     const tw = document.createTreeWalker(box, NodeFilter.SHOW_TEXT); let n;
     while ((n = tw.nextNode())) { const t = n.nodeValue; if (!t.trim()) continue; const cs = getComputedStyle(n.parentElement);
@@ -1890,6 +1933,644 @@ const EP = {
 };
 
 /* =====================================================================
+   طابعات ESC/POS (رواء، CityPOS، Xprinter، وأغلب الطابعات الحرارية)
+   الإيصال يُرسم صورة (العربي سليم) ويُحوّل لأوامر ESC/POS
+   طرق الإرسال: ① USB مباشر من المتصفح (WebUSB — كروم)  ② تطبيق RawBT (أي أندرويد: USB/بلوتوث/واي فاي)
+   ===================================================================== */
+const ESC = {
+  /* raster → ESC/POS bytes */
+  async bytes(html, opt = {}){
+    const R = await EP.raster(html), bpr = R.w / 8, bin = atob(R.b64), out = [];
+    const push = (...a) => a.forEach(x => typeof x === "number" ? out.push(x) : out.push(...x));
+    push([0x1B, 0x40]);                                     // ESC @  init
+    if (opt.drawer) push([0x1B, 0x70, 0, 25, 250]);         // ESC p  open cash drawer (pin 2)
+    for (let y0 = 0; y0 < R.h; y0 += 128) {                  // GS v 0 in bands (small printer buffers)
+      const h = Math.min(128, R.h - y0);
+      push([0x1D, 0x76, 0x30, 0, bpr & 255, bpr >> 8, h & 255, h >> 8]);
+      for (let i = y0 * bpr; i < (y0 + h) * bpr; i++) out.push(bin.charCodeAt(i));
+    }
+    push([0x1B, 0x64, 4], [0x1D, 0x56, 66, 0]);              // feed 4 lines · partial cut
+    return new Uint8Array(out);
+  },
+  b64(u8){ let s = ""; for (let i = 0; i < u8.length; i += 8192) s += String.fromCharCode.apply(null, u8.subarray(i, i + 8192)); return btoa(s); },
+
+  /* ---------- ① WebUSB ---------- */
+  usbOK: () => !!(navigator.usb && navigator.usb.requestDevice),
+  dev: null, ep: null,
+  async pick(){                                              // must run from a button tap
+    if (!this.usbOK()) throw new Error("NOUSB");
+    const d = await navigator.usb.requestDevice({filters: []}); await this.attach(d);
+    CFG.settings.printer.usbName = (d.manufacturerName || "") + " " + (d.productName || "") || "USB"; saveCfg(); return CFG.settings.printer.usbName;
+  },
+  async attach(d){
+    if (!d.opened) await d.open();
+    if (d.configuration === null) await d.selectConfiguration(1);
+    const ifs = d.configuration.interfaces, alts = ifs.map(i => ({i, a: i.alternates[0]}));
+    const hit = alts.find(x => x.a.interfaceClass === 7 && x.a.endpoints.some(e => e.direction === "out")) || alts.find(x => x.a.endpoints.some(e => e.direction === "out" && e.type === "bulk"));
+    if (!hit) throw new Error("NOEP");
+    try { await d.claimInterface(hit.i.interfaceNumber); } catch (e) { throw new Error("BUSY"); }
+    this.dev = d; this.ep = hit.a.endpoints.find(e => e.direction === "out").endpointNumber;
+  },
+  async usbSend(u8){
+    if (!this.dev || !this.dev.opened) { const L = this.usbOK() ? await navigator.usb.getDevices() : []; if (!L.length) throw new Error("NOPAIR"); await this.attach(L[0]); }
+    for (let i = 0; i < u8.length; i += 16384) { const r = await this.dev.transferOut(this.ep, u8.subarray(i, i + 16384)); if (r.status !== "ok") throw new Error("USB " + r.status); }
+  },
+
+  /* ---------- ② RawBT bridge app ---------- */
+  rawbt(u8){
+    const url = "intent:base64," + this.b64(u8) + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+    window.location.href = url;
+  },
+
+  async print(html, opt = {}){
+    const u8 = await this.bytes(html, opt), P = CFG.settings.printer;
+    if (P.mode === "rawbt") return this.rawbt(u8);
+    return this.usbSend(u8);
+  },
+  why(e){ const m = String(e && e.message || e);
+    if (m === "NOUSB") return "هذا المتصفح ما يدعم الطباعة بالـ USB — استخدم Chrome أو اختر طريقة تطبيق RawBT";
+    if (m === "NOPAIR") return "ما فيه طابعة USB مربوطة — من الإعدادات اضغط «ربط الطابعة»";
+    if (m === "BUSY") return "الطابعة مشغولة بتطبيق ثاني — سكّر التطبيق أو افصل الكيبل وركّبه";
+    if (m === "NOEP") return "الجهاز اللي اخترته مو طابعة";
+    if (/NotFoundError|No device selected/i.test(m)) return "ما اخترت طابعة";
+    return "ما وصلت للطابعة — تأكد من الكيبل والتشغيل (" + m + ")"; }
+};
+
+/* =====================================================================
+   বাংলা — واجهة العامل بالبنغالي + دليل المشروبات بالصور + الملاحظات الجاهزة
+   ===================================================================== */
+const BN = {
+  // menu
+  "إسبريسو": "এসপ্রেসো", "أمريكانو": "আমেরিকানো", "لاتيه": "লাটে", "كابتشينو": "ক্যাপুচিনো", "فلات وايت": "ফ্ল্যাট হোয়াইট", "سبانش لاتيه": "স্প্যানিশ লাটে",
+  "قهوة اليوم V60": "আজকের কফি (V60)", "قهوة سعودية": "সৌদি কফি", "آيس لاتيه": "আইস লাটে", "آيس سبانش لاتيه": "আইস স্প্যানিশ লাটে", "آيس أمريكانو": "আইস আমেরিকানো",
+  "كولد برو": "কোল্ড ব্রু", "آيس موكا": "আইস মোকা", "شاي أحمر": "লাল চা", "شاي كرك": "কারাক চা", "شاي أخضر": "সবুজ চা", "هوت شوكلت": "হট চকলেট", "ماتشا لاتيه": "মাচা লাটে",
+  "موهيتو": "মোহিতো", "عصير برتقال": "কমলার জুস", "ليمون نعناع": "লেবু-পুদিনা", "مياه": "পানি", "كوكيز": "কুকিজ", "كرواسون": "ক্রোয়াসাঁ", "تشيز كيك": "চিজকেক", "براونيز": "ব্রাউনি", "سان سباستيان": "সান সেবাস্টিয়ান চিজকেক",
+  // categories
+  "قهوة حارة": "গরম কফি", "قهوة باردة": "ঠান্ডা কফি", "شاي ومشروبات": "চা ও পানীয়", "منعشات": "ঠান্ডা পানীয়", "حلا ومخبوزات": "মিষ্টি ও বেকারি",
+  // sizes
+  "صغير": "ছোট", "وسط": "মাঝারি", "كبير": "বড়",
+  // add-ons
+  "نوع الحليب": "দুধের ধরন", "حليب عادي": "সাধারণ দুধ", "قليل الدسم": "কম ফ্যাটের দুধ", "شوفان": "ওট দুধ", "لوز": "বাদাম দুধ", "جوز الهند": "নারকেল দুধ",
+  "إضافات": "অতিরিক্ত", "شوت إسبريسو إضافي": "অতিরিক্ত এসপ্রেসো শট", "سيرب فانيلا": "ভ্যানিলা সিরাপ", "سيرب كراميل": "ক্যারামেল সিরাপ", "سيرب بندق": "হ্যাজেলনাট সিরাপ", "كريمة": "ক্রিম",
+  "السكر": "চিনি", "سكر عادي": "সাধারণ চিনি", "سكر خفيف": "কম চিনি", "بدون سكر": "চিনি ছাড়া",
+  // stock
+  "بن إسبريسو": "এসপ্রেসো বিন", "حليب": "দুধ", "حليب شوفان": "ওট দুধ", "حليب لوز": "বাদাম দুধ", "أكواب حارة": "গরম কাপ", "أكواب باردة": "ঠান্ডা কাপ",
+  // units & labels
+  "جم": "গ্রাম", "مل": "মি.লি.", "حبة": "টি", "كيلو": "কেজি", "لتر": "লিটার", "علبة": "বাক্স",
+  "محلي": "এখানে খাবে", "سفري": "পার্সেল", "تذكرة تحضير": "তৈরির টিকিট"
+};
+/* ready-made notes: the cashier taps Arabic, the barista reads Bengali */
+const NOTES = [["ثلج خفيف", "কম বরফ"], ["بدون ثلج", "বরফ ছাড়া"], ["ثلج زيادة", "বেশি বরফ"], ["حار جداً", "খুব গরম"], ["دافئ مو حار", "হালকা গরম"], ["بدون سكر", "চিনি ছাড়া"],
+  ["سكر زيادة", "বেশি চিনি"], ["قوي (شوت زيادة)", "কড়া (বেশি শট)"], ["خفيف", "হালকা"], ["حليب زيادة", "বেশি দুধ"], ["بدون رغوة", "ফেনা ছাড়া"], ["رغوة زيادة", "বেশি ফেনা"],
+  ["كوب كبير", "বড় কাপ"], ["مع غطاء", "ঢাকনা সহ"], ["سخّنه", "গরম করে দাও"], ["قطّعه", "কেটে দাও"], ["مستعجل", "তাড়াতাড়ি"]];
+NOTES.forEach(([a, b]) => BN[a] = BN[a] || b);
+const bnOf = (obj, ar) => (obj && obj.bn) || BN[String(ar || "").trim()] || "";
+const bnNote = t => String(t || "").split(/[،,]\s*/).map(p => BN[p.trim()] || "").filter(Boolean).join(" · ");
+let LANG = LS.get("cd_lang", "ar");
+const isBN = () => LANG === "bn";
+function toggleLang(){ LANG = isBN() ? "ar" : "bn"; LS.set("cd_lang", LANG); render(); }
+
+/* bilingual label: Bengali big + Arabic small when the worker mode is on */
+function L2(obj, ar){ const b = isBN() && bnOf(obj, ar); return b ? `<span class="bn">${esc(b)}</span><small class="ar2">${esc(ar)}</small>` : esc(ar); }
+
+/* ---------- photos (taken on the tablet, kept on the device and in the cloud backup) ---------- */
+const PHOTOS = {};
+async function loadPhotos(){ try { (await DB.all("photos")).forEach(p => PHOTOS[p.id] = p.data); } catch (e) {} }
+function pickPhoto(itemId, done){
+  const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.setAttribute("capture", "environment");
+  inp.onchange = () => { const f = inp.files[0]; if (!f) return; const img = new Image(), url = URL.createObjectURL(f);
+    img.onload = async () => { const s = Math.min(1, 480 / Math.max(img.width, img.height)), cv = document.createElement("canvas"); cv.width = Math.round(img.width * s); cv.height = Math.round(img.height * s);
+      cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url); const data = cv.toDataURL("image/jpeg", .72);
+      PHOTOS[itemId] = data; await DB.put("photos", {id: itemId, data}); toast("📷 انحفظت الصورة"); done && done(); };
+    img.onerror = () => toast("الصورة ما انفتحت", 1); img.src = url; };
+  inp.click();
+}
+const pic = (it, cls) => PHOTOS[it.id] ? `<img class="${cls || "ph"}" src="${PHOTOS[it.id]}" alt="">` : `<span class="ic">${it.icon || "☕"}</span>`;
+
+/* ---------- drinks guide: photo + Arabic + Bengali + how much of each ingredient ---------- */
+function guideModal(){
+  let cat = (CFG.cats[0] || {}).id;
+  const ov = modal("", null, true);
+  const recipeTxt = (rec) => (rec || []).filter(r => r.q > 0).map(r => { const s = stockOf(r.s); return s ? `${esc(bnOf(s, s.name) || s.name)} <b class="num">${fmtQ(r.q)}</b> ${esc(BN[s.unit] || s.unit)}` : ""; }).filter(Boolean).join(" · ");
+  const draw = () => {
+    ov.querySelector(".modal").innerHTML = `<div class="mh"><b>📖 দোকানের মেনু গাইড · دليل المشروبات</b><button class="x" data-close>×</button></div><div class="mb">
+      <div class="cats" style="margin-bottom:10px">${CFG.cats.map(c => `<button class="chip ${c.id === cat ? "on" : ""}" data-gc="${c.id}">${c.icon || ""} ${esc(bnOf(c, c.name) || c.name)}</button>`).join("")}</div>
+      <div class="guide">${CFG.items.filter(i => i.cat === cat).map(it => `<div class="gcard">${pic(it, "gph")}<div class="gtx"><b class="bn">${esc(bnOf(it, it.name) || "—")}</b><div>${esc(it.name)}</div>
+        ${it.recipe ? (it.sizes.length ? it.sizes.map((s, k) => it.recipe[k] && it.recipe[k].length ? `<div class="gr"><span class="tag">${esc(bnOf(s, s.n) || s.n)}</span> ${recipeTxt(it.recipe[k])}</div>` : "").join("") : `<div class="gr">${recipeTxt(it.recipe["*"])}</div>`) : ""}
+        ${isMgr() ? `<button class="btn sm" data-gp="${it.id}" style="margin-top:6px">📷 ${PHOTOS[it.id] ? "غيّر الصورة" : "صوّر المشروب"}</button>` : ""}</div></div>`).join("") || `<div class="empty">—</div>`}</div></div>`;
+    ov.querySelectorAll("[data-gc]").forEach(b => b.onclick = () => { cat = b.dataset.gc; draw(); });
+    ov.querySelectorAll("[data-gp]").forEach(b => b.onclick = () => pickPhoto(b.dataset.gp, draw));
+  };
+  draw();
+}
+
+/* =====================================================================
+   إضافات: مصروفات الدرج · بطاقة الولاء · خصم متدربي أسس · المخزون والوصفات · قائمة التحضير
+   ===================================================================== */
+const FX = {};
+const normPhone = s => { let d = String(s || "").replace(/[^\d]/g, ""); if (/^9665\d{8}$/.test(d)) d = "0" + d.slice(3); if (/^5\d{8}$/.test(d)) d = "0" + d; return /^05\d{8}$/.test(d) ? d : ""; };
+const normNum = s => String(s || "").replace(/[^\d]/g, "").slice(0, 12);
+
+/* ---------- defaults / migration (keeps an existing setup intact) ---------- */
+function migrate(){
+  let ch = false;
+  if (!CFG.loyalty) { CFG.loyalty = {on: true, need: 10, cats: ["hot", "cold", "tea"], maxFree: 0}; ch = true; }
+  if (!CFG.osos) { CFG.osos = {on: true, pct: 15, needNum: true}; ch = true; }
+  if (!CFG.stock) {
+    const S = (name, unit, qty, min) => ({id: "s_" + uid(), name, unit, qty, min});
+    const beans = S("بن إسبريسو", "جم", 2000, 500), milk = S("حليب", "مل", 10000, 2000), oat = S("حليب شوفان", "مل", 2000, 500), almond = S("حليب لوز", "مل", 2000, 500),
+      hcup = S("أكواب حارة", "حبة", 200, 50), ccup = S("أكواب باردة", "حبة", 200, 50);
+    CFG.stock = [beans, milk, oat, almond, hcup, ccup];
+    const R = (a, b) => [{s: a, q: b}];
+    const sized = (fn) => ({0: fn(0), 1: fn(1), 2: fn(2), "*": fn(1)});
+    const hotMilk = [180, 240, 300], coldMilk = [150, 200, 250];
+    CFG.items.forEach(i => {
+      const n = i.name, hot = i.cat === "hot" || i.cat === "tea";
+      if (/^(لاتيه|كابتشينو|فلات وايت|سبانش لاتيه)$/.test(n)) i.recipe = sized(k => [{s: beans.id, q: 18}, {s: milk.id, q: hotMilk[k]}, {s: hcup.id, q: 1}]);
+      else if (/^آيس (لاتيه|سبانش لاتيه|موكا)$/.test(n)) i.recipe = sized(k => [{s: beans.id, q: 18}, {s: milk.id, q: coldMilk[k]}, {s: ccup.id, q: 1}]);
+      else if (n === "أمريكانو") i.recipe = sized(k => [{s: beans.id, q: k === 2 ? 27 : 18}, {s: hcup.id, q: 1}]);
+      else if (n === "آيس أمريكانو") i.recipe = sized(k => [{s: beans.id, q: k === 2 ? 27 : 18}, {s: ccup.id, q: 1}]);
+      else if (n === "إسبريسو") i.recipe = {"*": R(beans.id, 18)};
+      else if (n === "ماتشا لاتيه" || n === "هوت شوكلت") i.recipe = sized(k => [{s: milk.id, q: hotMilk[k]}, {s: hcup.id, q: 1}]);
+      else if (hot && i.cat !== "sweet") i.recipe = {"*": R(hcup.id, 1)};
+      else if (i.cat === "cold" || i.cat === "fresh" && n !== "مياه") i.recipe = {"*": R(ccup.id, 1)};
+    });
+    const g = CFG.groups.find(x => x.id === "milk"); if (g) g.choices.forEach(c => { if (c.n === "شوفان") c.recipe = [{s: oat.id, q: 200}, {s: milk.id, q: -200}]; if (c.n === "لوز") c.recipe = [{s: almond.id, q: 200}, {s: milk.id, q: -200}]; });
+    const e = CFG.groups.find(x => x.id === "extra"); if (e) e.choices.forEach(c => { if (/شوت/.test(c.n)) c.recipe = [{s: beans.id, q: 18}]; });
+    CFG.invlog = []; ch = true;
+  }
+  if (!CFG.invlog) { CFG.invlog = []; ch = true; }
+  if (ch) saveCfg();
+}
+
+/* ======================= 1) drawer expenses ======================= */
+const EXPC = ["مشتريات (حليب، بن، أكواب)", "مواد تنظيف", "صيانة", "توصيل", "أخرى"];
+function expenseModal(){
+  if (!SH()) return toast("افتح الوردية أول", 1);
+  let cat = EXPC[0];
+  const ov = modal(`<div class="mh"><b>💸 مصروف من الدرج</b><button class="x" data-close>×</button></div><div class="mb">
+    <p style="color:var(--mut);margin-bottom:10px">سجّل أي فلوس تطلع من درج الكاش، عشان إغلاق الوردية يطلع مضبوط.</p>
+    <label class="f"><span>المبلغ (${cur()})</span><input class="bigin num" id="xa" inputmode="decimal" placeholder="0.00"></label>
+    <div class="grp"><h4>النوع</h4><div class="opts">${EXPC.map((c, i) => `<button class="opt ${i ? "" : "on"}" data-xc="${i}">${c}</button>`).join("")}</div></div>
+    <label class="f"><span>التفاصيل</span><input id="xr" placeholder="مثال: ٦ كراتين حليب من البقالة"></label></div>
+    <div class="mf"><button class="btn" data-close>رجوع</button><button class="btn warn" id="xok">تسجيل المصروف</button></div>`);
+  ov.querySelectorAll("[data-xc]").forEach(b => b.onclick = () => { cat = EXPC[+b.dataset.xc]; ov.querySelectorAll("[data-xc]").forEach(x => x.classList.toggle("on", x === b)); });
+  setTimeout(() => ov.querySelector("#xa").focus(), 50);
+  ov.querySelector("#xok").onclick = async () => {
+    const a = r2(parseFloat(ov.querySelector("#xa").value)), why = ov.querySelector("#xr").value.trim();
+    if (!(a > 0)) return toast("اكتب مبلغ صحيح", 1); if (why.length < 2) return toast("اكتب التفاصيل", 1);
+    if (a > (CFG.settings.expMax || 200) && !(await askManager(`مصروف ${m2(a)} ${cur()} أكبر من الحد — يحتاج موافقة المدير`))) return;
+    const now = new Date(), x = {id: "x_" + uid(), day: dayOf(now), at: now.toISOString(), shift: SH().id, user: USER.id, userName: USER.name, amount: a, cat, reason: why, status: "ok"};
+    await DB.put("expenses", x); closeModal(ov); toast(`💸 انسجّل مصروف ${m2(a)} ${cur()}`); FX.dayChanged(x.day); if (VIEW === "close") closeShiftPage();
+  };
+}
+FX.shiftExpenses = async sh => (await DB.all("expenses")).filter(x => x.shift === sh.id && x.status === "ok");
+FX.expDays = async (from, to) => (await DB.all("expenses")).filter(x => x.day >= from && x.day <= to && x.status === "ok");
+
+/* ======================= 2) loyalty + Asas trainees ======================= */
+const loyQual = l => CFG.loyalty.cats.includes(l.cat);
+function custModal(){
+  const L = CFG.loyalty;
+  const ov = modal(`<div class="mh"><b>📱 عميل بطاقة الولاء</b><button class="x" data-close>×</button></div><div class="mb">
+    <label class="f"><span>رقم جوال العميل</span><input class="bigin num" id="cph" inputmode="tel" placeholder="05xxxxxxxx" value="${esc(CART.phone || "")}"></label><div id="cinfo"></div></div>
+    <div class="mf">${CART.phone ? `<button class="btn" id="cdel">إزالة العميل</button>` : ""}<button class="btn" data-close>رجوع</button><button class="btn pri" id="cok">ربط بالطلب</button></div>`);
+  const inp = ov.querySelector("#cph"); setTimeout(() => inp.focus(), 50);
+  const show = async () => { const p = normPhone(inp.value), box = ov.querySelector("#cinfo"); if (!p) return box.innerHTML = "";
+    const c = await DB.get("customers", p);
+    box.innerHTML = c ? `<div class="note green">⭐ ${esc(c.name || "عميل")} · زار <b class="num">${c.visits}</b> مرة<br>الأختام: <b class="num">${c.stamps} / ${L.need}</b>${c.stamps >= L.need ? " — <b>🎁 له مشروب مجاني!</b>" : ""}</div><label class="f"><span>اسم العميل (اختياري)</span><input id="cnm" value="${esc(c.name || "")}"></label>`
+      : `<div class="note">عميل جديد — راح ننشئ له بطاقة بعد الدفع.</div><label class="f"><span>اسم العميل (اختياري)</span><input id="cnm"></label>`; };
+  inp.oninput = show; show();
+  const d = ov.querySelector("#cdel"); if (d) d.onclick = () => { CART.phone = ""; CART.reward = null; closeModal(ov); refreshCart(); };
+  ov.querySelector("#cok").onclick = async () => { const p = normPhone(inp.value); if (!p) return toast("رقم جوال غير صحيح — مثال 0551234567", 1);
+    const nm = (ov.querySelector("#cnm") || {}).value || ""; CART.phone = p; CART.custName = nm.trim();
+    if (!CART.cust && nm.trim()) CART.cust = nm.trim();
+    const c = await DB.get("customers", p); CART.reward = null; CART.canReward = !!(c && L.on && c.stamps >= L.need);
+    closeModal(ov); refreshCart(); };
+}
+function rewardValue(){
+  const L = CFG.loyalty, q = CART.lines.filter(loyQual); if (!q.length) return 0;
+  const v = Math.max(...q.map(l => l.unit)); return L.maxFree > 0 ? Math.min(v, L.maxFree) : v;
+}
+function toggleReward(){
+  if (CART.reward) CART.reward = null;
+  else { const v = rewardValue(); if (!v) return toast("أضف مشروب من الأقسام المشمولة بالولاء أول", 1); CART.reward = {amt: r2(v)}; }
+  refreshCart();
+}
+function ososModal(){
+  const O = CFG.osos;
+  const ov = modal(`<div class="mh"><b>🎓 طلب متدرب معهد أسس</b><button class="x" data-close>×</button></div><div class="mb">
+    <p style="color:var(--mut)">اطلب من المتدرب بطاقته واكتب <b>الرقم التدريبي</b> المكتوب فيها.${O.on ? ` ينطبق خصم <b>${O.pct}٪</b>.` : ""}</p>
+    <label class="f"><span>الرقم التدريبي</span><input class="bigin num" id="onum" inputmode="numeric" value="${esc((CART.osos || {}).num || "")}"></label>
+    ${CL.activeOffers().filter(x => x.pct > 0).map(x => `<button class="btn gold" style="width:100%;margin-bottom:8px" data-off="${x.id}">🎁 ${esc(x.title)} — خصم ${x.pct}٪</button>`).join("")}
+    <div class="note" style="font-size:13.5px">🔔 لما يجهز طلبه تقدر ترسل له إشعار «طلبك جاهز» على جواله من قائمة التحضير (إذا مفعّل الإشعارات في بوابة المعهد).</div></div>
+    <div class="mf">${CART.osos ? `<button class="btn" id="odel">إلغاء</button>` : ""}<button class="btn" data-close>رجوع</button><button class="btn pri" id="ook">تطبيق</button></div>`);
+  const i = ov.querySelector("#onum"); setTimeout(() => i.focus(), 50);
+  const d = ov.querySelector("#odel"); if (d) d.onclick = () => { if (CART.disc && CART.disc.osos) CART.disc = null; CART.osos = null; closeModal(ov); refreshCart(); };
+  ov.querySelectorAll("[data-off]").forEach(b => b.onclick = () => { const n = normNum(i.value); if (O.needNum && n.length < 4) return toast("اكتب الرقم التدريبي كامل", 1);
+    const x = CL.activeOffers().find(y => y.id === b.dataset.off); CART.osos = {num: n}; CART.disc = {type: "pct", v: x.pct, by: "عرض أسس", osos: true, offer: x.title}; closeModal(ov); refreshCart(); });
+  ov.querySelector("#ook").onclick = () => { const n = normNum(i.value); if (O.needNum && n.length < 4) return toast("اكتب الرقم التدريبي كامل", 1);
+    CART.osos = {num: n}; if (O.on && O.pct > 0) CART.disc = {type: "pct", v: O.pct, by: "متدرب أسس", osos: true};
+    closeModal(ov); refreshCart(); };
+}
+FX.loyaltyAfter = async o => {
+  if (!o.phone || !CFG.loyalty.on) return;
+  const c = (await DB.get("customers", o.phone)) || {id: o.phone, phone: o.phone, name: "", stamps: 0, visits: 0, spent: 0, rewards: 0, first: o.at};
+  const earned = Math.max(0, o.lines.filter(loyQual).reduce((a, l) => a + l.qty, 0) - (o.reward ? 1 : 0));
+  if (o.custName) c.name = o.custName;
+  c.stamps = Math.max(0, c.stamps + earned - (o.reward ? CFG.loyalty.need : 0)); c.visits++; c.spent = r2(c.spent + o.total); if (o.reward) c.rewards++; c.last = o.at;
+  o.loyalty = {earned, used: o.reward ? CFG.loyalty.need : 0, after: c.stamps};
+  await DB.put("customers", c);
+};
+FX.loyaltyVoid = async o => {
+  if (!o.loyalty) return; const c = await DB.get("customers", o.phone); if (!c) return;
+  c.stamps = Math.max(0, c.stamps - o.loyalty.earned + o.loyalty.used); c.visits = Math.max(0, c.visits - 1); c.spent = r2(c.spent - o.total); if (o.reward) c.rewards = Math.max(0, c.rewards - 1);
+  await DB.put("customers", c);
+};
+
+/* ======================= 3) inventory ======================= */
+const stockOf = id => CFG.stock.find(s => s.id === id);
+function usageOf(lines){
+  const use = {}, add = (s, q) => { if (stockOf(s)) use[s] = r2((use[s] || 0) + q); };
+  lines.forEach(l => { const it = CFG.items.find(i => i.id === l.itemId); if (!it || !it.recipe) return;
+    const k = it.sizes.findIndex(s => s.n === l.size), rec = it.recipe[k >= 0 ? k : "*"] || it.recipe["*"] || [];
+    rec.forEach(r => add(r.s, r.q * l.qty));
+    const gs = it.groups.map(g => CFG.groups.find(x => x.id === g)).filter(Boolean);
+    l.opts.forEach(o => { const ch = gs.flatMap(g => g.choices).find(c => c.n === o.n); (ch && ch.recipe || []).forEach(r => add(r.s, r.q * l.qty)); }); });
+  return use;
+}
+function applyUse(use, sign){ Object.entries(use).forEach(([s, q]) => { const st = stockOf(s); if (st) st.qty = r2(st.qty - sign * q); }); saveCfg(); }
+const lowStock = () => CFG.stock.filter(s => s.min > 0 && s.qty <= s.min);
+function invLog(e){ CFG.invlog.unshift({at: new Date().toISOString(), by: USER ? USER.name : "", ...e}); CFG.invlog = CFG.invlog.slice(0, 300); }
+
+function setStock(){
+  const L = CFG.stock, low = lowStock();
+  $("#sbody").innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">📦 المخزون</h3><div class="row"><button class="btn ok sm" id="nst">+ مادة جديدة</button><button class="btn sm" id="rcp">🧪 وصفات الأصناف</button></div></div>
+    <p style="color:var(--mut);margin:6px 0 10px">كل صنف ينباع ينقص من المخزون حسب وصفته تلقائياً. «توريد» لما تشتري، و«جرد» لما تعدّ الموجود فعلياً.</p>
+    ${low.length ? `<div class="note red" style="margin-bottom:10px">⚠️ قرّب يخلص: ${low.map(s => `<b>${esc(s.name)}</b>`).join("، ")}</div>` : ""}
+    <table class="t"><tr><th>المادة</th><th>الموجود</th><th>حد التنبيه</th><th></th></tr>${L.map(s => `<tr><td><b>${esc(s.name)}</b></td><td class="num" style="color:${s.qty <= s.min ? "var(--red)" : "inherit"};font-weight:700">${fmtQ(s.qty)} ${esc(s.unit)}</td><td class="num">${fmtQ(s.min)}</td>
+      <td style="white-space:nowrap"><button class="btn sm ok" data-in="${s.id}">+ توريد</button> <button class="btn sm" data-cnt="${s.id}">جرد</button> <button class="btn sm" data-es="${s.id}">✏️</button></td></tr>`).join("") || `<tr><td colspan="4" class="empty">أضف أول مادة</td></tr>`}</table></div>
+    <div class="card"><h3>🕘 آخر الحركات</h3><table class="t">${CFG.invlog.slice(0, 25).map(e => `<tr><td class="num">${fmtDT(e.at)}</td><td>${esc(e.t)}</td><td>${esc((stockOf(e.s) || {name: "—"}).name)}</td><td class="num">${e.q > 0 ? "+" : ""}${fmtQ(e.q)}</td><td>${esc(e.by)}</td></tr>`).join("") || `<tr><td class="empty">—</td></tr>`}</table></div>`;
+  $("#nst").onclick = () => stockEditor({id: "s_" + uid(), name: "", unit: "حبة", qty: 0, min: 0}, true);
+  $("#rcp").onclick = recipesModal;
+  $$("[data-es]").forEach(b => b.onclick = () => stockEditor({...stockOf(b.dataset.es)}, false));
+  $$("[data-in]").forEach(b => b.onclick = () => qtyBox(stockOf(b.dataset.in), "in"));
+  $$("[data-cnt]").forEach(b => b.onclick = () => qtyBox(stockOf(b.dataset.cnt), "count"));
+}
+const fmtQ = q => Number.isInteger(q) ? String(q) : r2(q).toString();
+function qtyBox(s, mode){
+  const ov = modal(`<div class="mh"><b>${mode === "in" ? "➕ توريد" : "📋 جرد"} · ${esc(s.name)}</b><button class="x" data-close>×</button></div><div class="mb">
+    <p style="color:var(--mut)">الموجود حسب النظام: <b class="num">${fmtQ(s.qty)} ${esc(s.unit)}</b></p>
+    <label class="f"><span>${mode === "in" ? "الكمية اللي وصلت" : "الكمية الموجودة فعلياً بعد العدّ"} (${esc(s.unit)})</span><input class="bigin num" id="qv" inputmode="decimal"></label>
+    ${mode === "in" ? `<label class="f"><span>التكلفة (اختياري)</span><input class="num" id="qc" inputmode="decimal"></label>` : ""}</div>
+    <div class="mf"><button class="btn" data-close>رجوع</button><button class="btn pri" id="qok">حفظ</button></div>`);
+  setTimeout(() => ov.querySelector("#qv").focus(), 50);
+  ov.querySelector("#qok").onclick = () => { const v = r2(parseFloat(ov.querySelector("#qv").value)); if (isNaN(v) || v < 0 || (mode === "in" && v === 0)) return toast("اكتب كمية صحيحة", 1);
+    const d = mode === "in" ? v : r2(v - s.qty); s.qty = mode === "in" ? r2(s.qty + v) : v;
+    invLog({t: mode === "in" ? "توريد" : "جرد (فرق)", s: s.id, q: d, cost: mode === "in" ? r2(parseFloat((ov.querySelector("#qc") || {}).value) || 0) : 0}); saveCfg(); closeModal(ov); toast("✅ انحفظ"); setStock(); };
+}
+function stockEditor(s, isNew){
+  const ov = modal(`<div class="mh"><b>${isNew ? "مادة جديدة" : "تعديل " + esc(s.name)}</b><button class="x" data-close>×</button></div><div class="mb">
+    <label class="f"><span>الاسم</span><input id="sn" value="${esc(s.name)}" placeholder="مثال: سيرب كراميل"></label>
+    <label class="f"><span>الوحدة</span><select id="su">${["جم", "مل", "حبة", "كيلو", "لتر", "علبة"].map(u => `<option ${u === s.unit ? "selected" : ""}>${u}</option>`).join("")}</select></label>
+    ${isNew ? `<label class="f"><span>الكمية الموجودة الحين</span><input class="num" id="sq" inputmode="decimal" value="0"></label>` : ""}
+    <label class="f"><span>نبّهني إذا نزل عن</span><input class="num" id="sm" inputmode="decimal" value="${s.min}"></label></div>
+    <div class="mf">${isNew ? "" : `<button class="btn warn" id="sdel">🗑️</button>`}<button class="btn" data-close>رجوع</button><button class="btn pri" id="sok">حفظ</button></div>`);
+  const dl = ov.querySelector("#sdel"); if (dl) dl.onclick = async () => { if (!(await confirmBox(`تحذف «${esc(s.name)}»؟ ينشال من كل الوصفات.`, "حذف", 1))) return;
+    CFG.stock = CFG.stock.filter(x => x.id !== s.id); CFG.items.forEach(i => i.recipe && Object.keys(i.recipe).forEach(k => i.recipe[k] = i.recipe[k].filter(r => r.s !== s.id)));
+    CFG.groups.forEach(g => g.choices.forEach(c => c.recipe && (c.recipe = c.recipe.filter(r => r.s !== s.id)))); saveCfg(); closeModal(ov); setStock(); };
+  ov.querySelector("#sok").onclick = () => { const n = ov.querySelector("#sn").value.trim(); if (!n) return toast("اكتب الاسم", 1);
+    s.name = n; s.unit = ov.querySelector("#su").value; s.min = r2(parseFloat(ov.querySelector("#sm").value) || 0);
+    if (isNew) { s.qty = r2(parseFloat(ov.querySelector("#sq").value) || 0); CFG.stock.push(s); } else Object.assign(stockOf(s.id), s);
+    saveCfg(); closeModal(ov); setStock(); };
+}
+/* recipe editor: one list per size (or one for items without sizes), plus add-on choices (negative = replaces) */
+function recipesModal(){
+  let sel = CFG.items[0] ? "i:" + CFG.items[0].id : "";
+  const ov = modal("", null, true);
+  const rows = (rec, key) => `${(rec || []).map((r, j) => `<div class="row" style="margin-bottom:6px"><select data-rs="${key}|${j}" class="grow" style="min-height:42px;border-radius:10px;border:1.5px solid var(--line)">${CFG.stock.map(s => `<option value="${s.id}" ${s.id === r.s ? "selected" : ""}>${esc(s.name)} (${esc(s.unit)})</option>`).join("")}</select><input data-rq="${key}|${j}" class="num" inputmode="decimal" value="${r.q}" style="width:90px;min-height:42px;border-radius:10px;border:1.5px solid var(--line);padding:4px 8px"><button class="btn sm" data-rd="${key}|${j}">✕</button></div>`).join("")}<button class="btn sm" data-ra="${key}">+ مكوّن</button>`;
+  const draw = () => {
+    const [t, id] = sel.split(":"), it = t === "i" && CFG.items.find(i => i.id === id), ch = t === "c" && (() => { const [g, k] = id.split("~"); return CFG.groups.find(x => x.id === g).choices[+k]; })();
+    if (it && !it.recipe) it.recipe = {};
+    const keys = it ? (it.sizes.length ? it.sizes.map((s, k) => [String(k), s.n]) : [["*", "الكمية لكل حبة"]]) : [];
+    ov.querySelector(".modal").innerHTML = `<div class="mh"><b>🧪 وصفات الأصناف (كم ينقص من المخزون)</b><button class="x" data-close>×</button></div><div class="mb">
+      <label class="f"><span>اختر الصنف أو الإضافة</span><select id="rsel">${CFG.cats.map(c => `<optgroup label="${esc(c.name)}">${CFG.items.filter(i => i.cat === c.id).map(i => `<option value="i:${i.id}" ${sel === "i:" + i.id ? "selected" : ""}>${esc(i.name)}${i.recipe && Object.values(i.recipe).some(a => a.length) ? " ✓" : ""}</option>`).join("")}</optgroup>`).join("")}
+        ${CFG.groups.map(g => `<optgroup label="إضافات: ${esc(g.name)}">${g.choices.map((c, k) => `<option value="c:${g.id}~${k}" ${sel === `c:${g.id}~${k}` ? "selected" : ""}>${esc(c.n)}${c.recipe && c.recipe.length ? " ✓" : ""}</option>`).join("")}</optgroup>`).join("")}</select></label>
+      ${!CFG.stock.length ? `<div class="empty">أضف مواد للمخزون أول</div>` : it ? keys.map(([k, n]) => `<div class="grp"><h4>${esc(n)}</h4>${rows(it.recipe[k], k)}</div>`).join("") : ch ? `<div class="grp"><h4>${esc(ch.n)}</h4><p style="color:var(--mut);font-size:13.5px;margin-bottom:8px">للبدائل اكتب رقم بالسالب للي ينشال (مثال: شوفان +200 حليب شوفان و −200 حليب)</p>${rows(ch.recipe, "c")}</div>` : ""}</div>
+      <div class="mf"><button class="btn pri" data-close>تم ✓</button></div>`;
+    const target = k => it ? (it.recipe[k] = it.recipe[k] || []) : (ch.recipe = ch.recipe || []);
+    ov.querySelector("#rsel").onchange = e => { sel = e.target.value; draw(); };
+    ov.querySelectorAll("[data-ra]").forEach(b => b.onclick = () => { target(b.dataset.ra).push({s: CFG.stock[0].id, q: 1}); saveCfg(); draw(); });
+    ov.querySelectorAll("[data-rd]").forEach(b => b.onclick = () => { const [k, j] = b.dataset.rd.split("|"); target(k).splice(+j, 1); saveCfg(); draw(); });
+    ov.querySelectorAll("[data-rs]").forEach(x => x.onchange = () => { const [k, j] = x.dataset.rs.split("|"); target(k)[+j].s = x.value; saveCfg(); });
+    ov.querySelectorAll("[data-rq]").forEach(x => x.onchange = () => { const [k, j] = x.dataset.rq.split("|"), v = parseFloat(x.value); if (isNaN(v)) return toast("رقم غير صحيح", 1); target(k)[+j].q = r2(v); saveCfg(); });
+  };
+  draw();
+}
+
+/* ======================= 4) prep queue + "your order is ready" ======================= */
+async function readyModal(){
+  const L = (await DB.days(dayOf(), dayOf())).filter(o => o.status === "paid" && !o.ready).sort((a, b) => a.at.localeCompare(b.at));
+  const ov = modal(`<div class="mh"><b>🔔 قائمة التحضير (${L.length})</b><button class="x" data-close>×</button></div><div class="mb">
+    ${L.length ? L.map(o => `<div class="line"><div class="info"><b>#${o.no}${o.cust ? " · " + esc(o.cust) : ""} ${o.osos ? `<span class="tag g">🎓 ${esc(o.osos.num)}</span>` : ""}</b><small>${timeOf(new Date(o.at))} · ${esc(o.lines.map(l => `${l.qty}× ${l.name}${l.size ? " " + l.size : ""}`).join("، "))}</small></div>
+      <button class="btn ok sm" data-rdy="${o.id}">${o.osos ? "✅ جاهز + 🔔 إشعار" : "✅ جاهز"}</button></div>`).join("") : `<div class="empty"><div class="big">✅</div>كل الطلبات جاهزة</div>`}</div>`);
+  ov.querySelectorAll("[data-rdy]").forEach(b => b.onclick = async () => {
+    b.disabled = true; const o = await DB.get("orders", b.dataset.rdy); o.ready = true; o.readyAt = new Date().toISOString(); await DB.put("orders", o);
+    if (o.osos && o.osos.num) { const r = await CL.notify("coffeeReady", o.id); toast(r.ok ? (r.sent ? `🔔 وصل إشعار للمتدرب ${o.osos.num}` : `المتدرب ${o.osos.num} ما فعّل الإشعارات في البوابة — ناده باسمه`) : "⚠️ " + r.why, !(r.ok && r.sent)); }
+    else toast(`✅ طلب #${o.no} جاهز`);
+    closeModal(ov); readyModal(); updateBadges();
+  });
+}
+async function updateBadges(){
+  const b = $("#rdyb"); if (!b || !DB.db && !DB.mem) return;
+  const n = (await DB.days(dayOf(), dayOf())).filter(o => o.status === "paid" && !o.ready).length; b.textContent = n ? `🔔 ${n}` : "🔔";
+  b.classList.toggle("gold", n > 0);
+}
+
+/* ======================= hooks used by the core ======================= */
+FX.afterOrder = async o => { await FX.loyaltyAfter(o); o.use = usageOf(o.lines); applyUse(o.use, 1); if (o.use && Object.keys(o.use).length) {} await DB.put("orders", o); FX.dayChanged(o.day); updateBadges();
+  const low = lowStock(); if (low.length && isMgr()) toast("⚠️ قرّب يخلص: " + low.map(s => s.name).join("، "), 1); };
+FX.afterVoid = async o => { await FX.loyaltyVoid(o); if (o.use) { applyUse(o.use, -1); invLog({t: "إرجاع (طلب ملغي #" + o.no + ")", s: Object.keys(o.use)[0] || "", q: 0}); } await DB.put("orders", o); FX.dayChanged(o.day); };
+FX.dayChanged = day => { if ((typeof CL !== "undefined")) CL.dayChanged(day); };
+
+/* =====================================================================
+   السحابة: نسخ احتياطي تلقائي (Firebase مشروع البوابة) · لوحة المالك · طلبات المتدربين المسبقة · الإشعارات
+   الكاشير يشتغل كامل بدون نت — كل شي يتخزن في «صندوق الإرسال» ويطلع للسحابة أول ما يرجع النت
+   ===================================================================== */
+const FBC = {apiKey: "AIzaSyDUGYkRQq3-IGlA0mFFrB7ON8r5tD1J_7E", authDomain: "osostl-attendance.firebaseapp.com", projectId: "osostl-attendance",
+  storageBucket: "osostl-attendance.firebasestorage.app", messagingSenderId: "285186323376", appId: "1:285186323376:web:83958618d20bcab673dc75"};
+const FBV = "10.12.2", ADMIN_EMAIL = "admin@osostl.local";
+const CL = {
+  M: null, app: null, auth: null, db: null, busy: false, err: "", last: LS.get("cd_lastsync", ""), pending: 0, reqs: [], seen: new Set(), unsub: null, site: null, timers: {},
+  linked: () => !!LS.get("cd_cloud", null),
+  async load(){
+    if (this.M) return this.M;
+    if (window.__FB_MOCK) return (this.M = window.__FB_MOCK);   // test harness only
+    const b = `https://www.gstatic.com/firebasejs/${FBV}/`;
+    const [a, u, f] = await Promise.all([import(b + "firebase-app.js"), import(b + "firebase-auth.js"), import(b + "firebase-firestore.js")]);
+    return (this.M = {...a, ...u, ...f});
+  },
+  appFor(name){ const M = this.M; return M.getApps().find(a => a.name === name) || M.initializeApp(FBC, name); },
+
+  /* ---------- start (device) ---------- */
+  async start(){
+    if (!this.linked()) return; this.loop();
+    addEventListener("online", () => this.kick());
+    try { await this.signIn(); this.listenReqs(); this.kick(); } catch (e) { this.err = "offline"; this.paint(); }
+  },
+  async signIn(){
+    const M = await this.load(), C = LS.get("cd_cloud", null); if (!C) throw new Error("NOLINK");
+    if (!this.app) { this.app = this.appFor("coffee"); this.auth = M.getAuth(this.app); this.db = M.getFirestore(this.app); await this.auth.authStateReady(); }
+    if (!this.auth.currentUser) await M.signInWithEmailAndPassword(this.auth, C.email, C.pass);
+    return this.auth.currentUser;
+  },
+  loop(){ clearInterval(this.timers.loop); this.timers.loop = setInterval(() => this.kick(), 30000); },
+  kick(){ clearTimeout(this.timers.kick); this.timers.kick = setTimeout(() => this.flush().catch(() => {}), 1200); },
+
+  /* ---------- outbox → Firestore ---------- */
+  pathOf(k){ const [s, ...r] = k.split("/"), id = r.join("/"); return s === "pub" ? ["coffeePub", id] : ["coffee", "data", s, id]; },
+  async flush(){
+    if (!this.linked() || this.busy || DB.mem || !DB.db) return; this.busy = true;
+    try {
+      const box = await DB.all("outbox"); this.pending = box.length; this.paint();
+      if (!box.length) { this.err = ""; return this.paint(); }
+      if (!navigator.onLine) { this.err = "offline"; return this.paint(); }
+      await this.signIn(); const M = this.M;
+      for (let i = 0; i < box.length; i += 300) {
+        const part = box.slice(i, i + 300), b = M.writeBatch(this.db);
+        part.forEach(e => b.set(M.doc(this.db, ...this.pathOf(e.k)), JSON.parse(JSON.stringify(e.data))));
+        await b.commit();
+        await new Promise(res => { const t = DB.db.transaction("outbox", "readwrite"), st = t.objectStore("outbox");
+          part.forEach(e => { const g = st.get(e.k); g.onsuccess = () => { if (g.result && g.result.t === e.t) st.delete(e.k); }; }); t.oncomplete = res; t.onerror = res; });
+      }
+      this.last = new Date().toISOString(); LS.set("cd_lastsync", this.last); this.err = ""; this.pending = (await DB.all("outbox")).length;
+      const pn = LS.get("cd_pendnotify", []); if (pn.length) { LS.set("cd_pendnotify", []); for (const [k, id] of pn) await this.notify(k, id, true); }
+    } catch (e) { this.err = /permission/i.test(e && e.code || e && e.message || "") ? "perm" : "offline"; console.warn(e); }
+    finally { this.busy = false; this.paint(); }
+  },
+  async waitFlush(){ for (let i = 0; i < 20 && this.busy; i++) await new Promise(r => setTimeout(r, 300)); await this.flush(); return this.pending === 0; },
+
+  /* ---------- what gets uploaded ---------- */
+  dayChanged(day){ if (!this.linked()) return; clearTimeout(this.timers["d" + day]); this.timers["d" + day] = setTimeout(async () => DB.queue("days/" + day, await this.agg(day)), 1500); },
+  cfgChanged(){ if (!this.linked()) return; clearTimeout(this.timers.cfg); this.timers.cfg = setTimeout(() => {
+    DB.queue("cfg/main", {...CFG, held: [], savedAt: new Date().toISOString()}); DB.queue("pub/menu", this.menuPub()); }, 3000); },
+  menuPub(){ const S = CFG.settings, P = CFG.preorder || {};
+    return {open: !!P.on, name: S.name, branch: S.branch, osos: CFG.osos.on ? CFG.osos.pct : 0, cats: CFG.cats, groups: CFG.groups.map(g => ({id: g.id, name: g.name, multi: g.multi, choices: g.choices.map(c => ({n: c.n, p: c.p}))})),
+      items: CFG.items.filter(i => i.active).map(i => ({id: i.id, cat: i.cat, icon: i.icon, name: i.name, price: i.price, sizes: i.sizes, groups: i.groups})), at: new Date().toISOString()}; },
+  async agg(day){
+    const all = await DB.days(day, day), L = all.filter(o => o.status !== "void"), V = all.filter(o => o.status === "void"), X = await FX.expDays(day, day);
+    const s = (arr, f) => r2(arr.reduce((a, o) => a + f(o), 0)), hours = Array(24).fill(0), items = {}, cats = {}, users = {};
+    L.forEach(o => { hours[new Date(o.at).getHours()] = r2(hours[new Date(o.at).getHours()] + o.total); users[o.userName] = r2((users[o.userName] || 0) + o.total);
+      const f = o.sub ? o.total / o.sub : 1; o.lines.forEach(l => { const k = l.name + (l.size ? " · " + l.size : ""); items[k] = items[k] || {q: 0, v: 0}; items[k].q += l.qty; items[k].v = r2(items[k].v + l.unit * l.qty * f);
+        const c = (CFG.cats.find(x => x.id === l.cat) || {name: "أخرى"}).name; cats[c] = r2((cats[c] || 0) + l.unit * l.qty * f); }); });
+    const top = Object.fromEntries(Object.entries(items).sort((a, b) => b[1].v - a[1].v).slice(0, 40));
+    const O = L.filter(o => o.osos);
+    return {day, sales: s(L, o => o.total), count: L.length, cash: s(L, o => o.pay.cash), card: s(L, o => o.pay.card), disc: s(L, o => o.disc), vat: s(L, o => o.vat),
+      voidN: V.length, voidAmt: s(V, o => o.total), exp: s(X, x => x.amount), expN: X.length, exps: X.map(x => ({a: x.amount, r: x.reason, c: x.cat, by: x.userName})),
+      ososN: O.length, ososAmt: s(O, o => o.total), rewards: L.filter(o => o.reward).length, loyalN: L.filter(o => o.phone).length,
+      hours, items: top, cats, users, low: lowStock().map(x => ({n: x.name, q: x.qty, u: x.unit})), at: new Date().toISOString()};
+  },
+
+  /* ---------- link this device (owner types the admin code once; it is never stored) ---------- */
+  async link(code){
+    const M = await this.load(), setup = this.appFor("cd-setup-" + Date.now()), sa = M.getAuth(setup);
+    try { await M.signInWithEmailAndPassword(sa, ADMIN_EMAIL, code); } catch (e) { await M.deleteApp(setup); throw new Error("CODE"); }
+    const rnd = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => "abcdefghijkmnpqrstuvwxyz23456789"[b % 32]).join("");
+    const email = `coffee-${rnd(12)}@osostl.local`, pass = rnd(28);
+    if (this.app) { try { await M.signOut(this.auth); } catch (e) {} } else { this.app = this.appFor("coffee"); this.auth = M.getAuth(this.app); this.db = M.getFirestore(this.app); }
+    const cred = await M.createUserWithEmailAndPassword(this.auth, email, pass);
+    await M.setDoc(M.doc(M.getFirestore(setup), "public", "coffeeStaff"), {uid: cred.user.uid, email, at: new Date().toISOString(), device: navigator.userAgent.slice(0, 120)});
+    await M.signOut(sa); await M.deleteApp(setup);
+    LS.set("cd_cloud", {email, pass, uid: cred.user.uid, at: new Date().toISOString()});
+    // first device: upload everything · new device with empty data: bring the cloud copy down
+    const local = (await DB.all("orders")).length;
+    if (!local) { const got = await this.pull(); if (got) return "pulled"; }
+    for (const s of DB.SYNC) for (const v of await DB.all(s)) await DB.queue(s + "/" + v.id, v);
+    const days = [...new Set((await DB.all("orders")).map(o => o.day))]; for (const d of days) await DB.queue("days/" + d, await this.agg(d));
+    this.cfgChanged(); this.start(); return "pushed";
+  },
+  async pull(){
+    const M = this.M, base = ["coffee", "data"], cfg = await M.getDoc(M.doc(this.db, ...base, "cfg", "main"));
+    if (!cfg.exists()) return false;
+    const c = cfg.data(); delete c.savedAt; CFG = {...c, held: [], shift: c.shift}; saveCfg();
+    for (const s of DB.SYNC) { const q = await M.getDocs(M.collection(this.db, ...base, s)); for (const d of q.docs) await DB.put(s, d.data(), true); }
+    this.start(); return true;
+  },
+  async unlink(){ try { if (this.auth) await this.M.signOut(this.auth); } catch (e) {} if (this.unsub) this.unsub(); LS.set("cd_cloud", null); localStorage.removeItem("cd_cloud"); await DB.clear("outbox"); this.paint(); },
+
+  /* ---------- push notifications through the institute's push service ---------- */
+  async pushUrl(){ if (this.site) return this.site; const M = this.M, d = await M.getDoc(M.doc(this.db, "public", "site")); this.site = ((d.exists() && d.data().pushUrl) || "").replace(/\/+$/, ""); return this.site; },
+  async notify(kind, id, quiet){
+    if (!this.linked()) return {ok: false, why: "الكاشير مو مربوط بالسحابة — المدير يربطه من الإعدادات ← السحابة"};
+    if (!navigator.onLine) { if (kind === "coffee") LS.set("cd_pendnotify", [...LS.get("cd_pendnotify", []), [kind, id]]); return {ok: false, why: "ما فيه إنترنت"}; }
+    try { await this.signIn(); if (!(await this.waitFlush())) throw new Error("sync");
+      const url = await this.pushUrl(); if (!url) return {ok: false, why: "خدمة الإشعارات غير مضبوطة في البوابة"};
+      const t = await this.auth.currentUser.getIdToken(), r = await fetch(url + "/notify", {method: "POST", headers: {"content-type": "application/json", authorization: "Bearer " + t}, body: JSON.stringify({kind, id})});
+      const j = r.ok ? await r.json() : null; return j ? {ok: true, sent: j.sent || 0} : {ok: false, why: "خدمة الإشعارات ما ردّت"};
+    } catch (e) { return {ok: false, why: "ما قدرت أوصل للسحابة"}; }
+  },
+  shiftClosed(sh){ if (this.linked()) this.notify("coffee", sh.id).then(r => !r.ok && LS.set("cd_pendnotify", [...LS.get("cd_pendnotify", []), ["coffee", sh.id]])); },
+
+  /* ---------- trainee pre-orders from the portal ---------- */
+  listenReqs(){
+    const M = this.M; if (this.unsub) this.unsub();
+    this.unsub = M.onSnapshot(M.query(M.collection(this.db, "coffeeReqs"), M.where("status", "in", ["new", "accepted", "ready"])), snap => {
+      this.reqs = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => (a.at || "").localeCompare(b.at || ""));
+      const fresh = this.reqs.filter(r => r.status === "new" && !this.seen.has(r.id)); this.reqs.forEach(r => this.seen.add(r.id));
+      if (fresh.length && USER) { beep(); toast(`📥 طلب جديد من المتدرب ${fresh[0].name || fresh[0].num}`); }
+      this.paint(); if (REQOV && REQOV.isConnected) { closeModal(REQOV); reqsModal(); }
+    }, () => { this.err = "perm"; this.paint(); });
+    M.onSnapshot(M.doc(this.db, "coffeePub", "offers"), d => { this.offers = d.exists() ? d.data().items || [] : []; }, () => {});
+  },
+  offers: [],
+  activeOffers(){ const t = dayOf(); return (this.offers || []).filter(o => o.on && (!o.from || o.from <= t) && (!o.to || o.to >= t)); },
+  async setReq(r, patch){ const M = this.M; await M.setDoc(M.doc(this.db, "coffeeReqs", r.id), {...patch, by: USER ? USER.name : ""}, {merge: true});
+    const x = this.reqs.find(y => y.id === r.id); if (x) Object.assign(x, patch); if (patch.status && !["new", "accepted", "ready"].includes(patch.status)) this.reqs = this.reqs.filter(y => y.id !== r.id); },
+
+  /* ---------- UI bits ---------- */
+  pill(){ if (!this.linked()) return ""; const n = this.reqs.filter(r => r.status === "new").length;
+    return `${(CFG.preorder || {}).on || this.reqs.length ? `<button class="btn sm ${n ? "warn" : ""}" id="reqb" title="طلبات المتدربين من البوابة">📥${this.reqs.length ? " " + this.reqs.length : ""}</button>` : ""}<span class="pill" id="cloudp" title="السحابة">${this.err === "perm" ? "☁️⚠️" : this.err === "offline" ? "☁️✕" : this.pending ? "☁️ " + this.pending : "☁️✓"}</span>`; },
+  bindPill(){ const b = $("#reqb"); if (b) b.onclick = reqsModal; },
+  paint(){ const p = $("#cloudp"); if (!p) return; const w = document.createElement("div"); w.innerHTML = this.pill(); const old = $("#reqb");
+    if (old) old.remove(); p.replaceWith(...w.childNodes); this.bindPill(); },
+
+  settings(){
+    const C = LS.get("cd_cloud", null), P = CFG.preorder || (CFG.preorder = {on: false}), own = location.href.split(/[?#]/)[0] + "?owner";
+    $("#sbody").innerHTML = C ? `<div class="card"><h3>☁️ السحابة — مربوط ✅</h3>
+        <table class="t"><tr><td>آخر مزامنة</td><td class="num">${this.last ? fmtDT(this.last) : "—"}</td></tr><tr><td>بانتظار الرفع</td><td class="num">${this.pending}</td></tr><tr><td>الحالة</td><td>${this.err === "offline" ? "⚠️ بدون إنترنت — يرفع أول ما يرجع" : this.err === "perm" ? "⚠️ مرفوض — انشر قواعد Firestore الجديدة أو اربط الجهاز من جديد" : "✅ شغّال"}</td></tr></table>
+        <div class="row" style="margin-top:10px"><button class="btn pri" id="csync">🔄 مزامنة الآن</button><button class="btn" id="cown">📊 لوحة المالك (جوالك)</button></div>
+        <div class="note" style="margin-top:10px;font-size:13.5px">لوحة المالك: افتح هذا الرابط من جوالك وادخل برمز الإدارة العامة في البوابة:<br><b dir="ltr" style="word-break:break-all">${esc(own)}</b></div></div>
+      <div class="card"><h3>📥 طلبات المتدربين من البوابة</h3><p style="color:var(--mut);margin-bottom:8px">المتدرب يطلب من بوابة المعهد وهو في المحاضرة، والطلب يوصل هنا، وتقبله وتجهّزه ويوصله إشعار لما يجهز. الدفع عند الاستلام.</p>
+        <label class="toggle"><input type="checkbox" id="pon" ${P.on ? "checked" : ""}> استقبال الطلبات مفتوح</label><button class="btn pri" id="psv" style="margin-top:8px">حفظ</button></div>
+      <div class="card"><button class="btn warn" id="cun">فصل الجهاز عن السحابة</button></div>`
+      : `<div class="card"><h3>☁️ ربط الكاشير بالسحابة</h3>
+        <p style="color:var(--mut)">بعد الربط: كل المبيعات تنحفظ نسخة في قاعدة بيانات المعهد تلقائياً، وتشوف المبيعات من جوالك، ويوصلك إشعار لما تنقفل الوردية، وتستقبل طلبات المتدربين من البوابة.</p>
+        <div class="note" style="margin:10px 0;font-size:13.5px">🔐 اكتب <b>رمز دخول الإدارة العامة</b> في البوابة مرة وحدة — يُستخدم للربط بس وما يُحفظ في الجهاز. الكاشير ياخذ حساب خاص فيه وما يقدر يشوف أي شي ثاني من بيانات المعهد.<br>لو ربطت جهاز جديد، القديم ينفصل تلقائياً.</div>
+        <label class="f"><span>رمز الإدارة العامة</span><input id="lcode" type="password" autocomplete="off" inputmode="numeric"></label>
+        <button class="btn pri" id="lgo">🔗 ربط</button></div>`;
+    if (!C) { $("#lgo").onclick = async e => { const code = $("#lcode").value.trim(); if (code.length < 4) return toast("اكتب الرمز", 1); if (!navigator.onLine) return toast("الربط يحتاج إنترنت", 1);
+        e.target.disabled = true; e.target.textContent = "⏳ جاري الربط…";
+        try { const r = await this.link(code); toast(r === "pulled" ? "✅ انربط واسترجعت بيانات السحابة" : "✅ انربط الكاشير بالسحابة"); render(); }
+        catch (x) { e.target.disabled = false; e.target.textContent = "🔗 ربط"; toast(x.message === "CODE" ? "رمز الإدارة غير صحيح" : "ما قدرت أربط — تأكد من النت ومن نشر قواعد Firestore الجديدة", 1); console.error(x); } }; return; }
+    $("#csync").onclick = async () => { await this.flush(); toast(this.err ? "⚠️ ما اكتملت المزامنة" : "✅ متزامن"); this.settings(); };
+    $("#cown").onclick = () => window.open(own, "_blank");
+    $("#psv").onclick = () => { P.on = $("#pon").checked; saveCfg(); toast(P.on ? "✅ الطلبات مفتوحة للمتدربين" : "انقفلت الطلبات"); render(); };
+    $("#cun").onclick = async () => { if (!(await confirmBox("تفصل الجهاز؟ البيانات تبقى على الجهاز، بس توقف المزامنة.", "فصل", 1))) return; await this.unlink(); toast("انفصل"); this.settings(); };
+  }
+};
+function beep(){ try { const a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(), g = a.createGain(); o.connect(g); g.connect(a.destination); o.frequency.value = 880; g.gain.value = .15; o.start(); o.frequency.setValueAtTime(1320, a.currentTime + .15); o.stop(a.currentTime + .35); } catch (e) {} }
+
+/* trainee requests panel */
+const RQS = {new: "جديد", accepted: "يتجهز", ready: "جاهز للاستلام"};
+function reqLines(r){ // rebuild cart lines from the request with today's menu prices
+  const out = []; (r.items || []).forEach(x => { const it = CFG.items.find(i => i.id === x.id); if (!it) return;
+    const size = it.sizes.find(s => s.n === x.size) || (it.sizes.length ? it.sizes[0] : null);
+    const ch = it.groups.map(g => CFG.groups.find(y => y.id === g)).filter(Boolean).flatMap(g => g.choices), opts = (x.opts || []).map(o => ch.find(c => c.n === o.n)).filter(Boolean);
+    out.push({key: uid(), itemId: it.id, cat: it.cat, name: it.name, size: size ? size.n : "", opts: opts.map(o => ({n: o.n, p: o.p})), unit: lineUnit(it, size, opts), qty: Math.max(1, Math.min(20, x.qty | 0)), note: (x.note || "").slice(0, 60)}); });
+  return out;
+}
+let REQOV = null;
+function reqsModal(){
+  const L = CL.reqs, pk = r => r.pickup ? `<span class="tag">⏰ ${esc(r.pickup)}</span>` : "";
+  const ov = modal(`<div class="mh"><b>📥 طلبات المتدربين (${L.length})</b><button class="x" data-close>×</button></div><div class="mb">
+    ${L.length ? L.map(r => `<div class="card" style="padding:12px;margin-bottom:10px;border:1.5px solid ${r.status === "new" ? "var(--gold)" : "var(--line)"}">
+      <div class="row" style="justify-content:space-between"><b>🎓 ${esc(r.name || "متدرب")} · <span class="num">${esc(r.num)}</span></b><span class="tag ${r.status === "ready" ? "g" : ""}">${RQS[r.status]}</span></div>
+      <div style="color:var(--mut);font-size:13.5px;margin:4px 0">${timeOf(new Date(r.at))} ${pk(r)}</div>
+      <div>${(r.items || []).map(x => `<div><b>${x.qty} × ${esc(x.name)}</b>${x.size ? " · " + esc(x.size) : ""}${(x.opts || []).length ? `<small style="color:var(--mut)"> — ${esc(x.opts.map(o => o.n).join("، "))}</small>` : ""}${x.note ? `<small> 📝 ${esc(x.note)}</small>` : ""}</div>`).join("")}</div>
+      ${r.note ? `<div class="note" style="margin-top:8px">💬 ${esc(r.note)}</div>` : ""}
+      <div class="row" style="margin-top:10px">${r.status === "new" ? `<button class="btn ok sm" data-acc="${r.id}">✅ قبول وطباعة تذكرة</button><button class="btn sm warn" data-rej="${r.id}">❌ رفض</button>`
+        : r.status === "accepted" ? `<button class="btn ok sm" data-rdy2="${r.id}">🔔 جاهز — أرسل له إشعار</button>` : `<button class="btn pri sm" data-take="${r.id}">💵 استلم ودفع</button><button class="btn sm" data-rdy2="${r.id}">🔔 ذكّره</button>`}</div></div>`).join("")
+      : `<div class="empty"><div class="big">📥</div>ما فيه طلبات${(CFG.preorder || {}).on ? "" : "<br><small>استقبال الطلبات مقفول — افتحه من الإعدادات ← السحابة</small>"}</div>`}</div>`, null, true);
+  REQOV = ov;
+  const R = id => CL.reqs.find(x => x.id === id), again = () => { if (ov.isConnected) { closeModal(ov); reqsModal(); } };
+  const push = async r => { const x = await CL.notify("coffeeReq", r.id); if (!x.ok) toast("⚠️ " + x.why, 1); else if (!x.sent) toast(`المتدرب ${r.num} ما فعّل الإشعارات في البوابة`, 1); return x; };
+  ov.querySelectorAll("[data-acc]").forEach(b => b.onclick = async () => { const r = R(b.dataset.acc); b.disabled = true;
+    await CL.setReq(r, {status: "accepted", acceptedAt: new Date().toISOString()}); push(r);
+    printDoc(ticketHTML({no: "بوابة", type: "takeaway", cust: r.name, osos: {num: r.num}, at: new Date().toISOString(), lines: reqLines(r).map(l => ({...l, note: l.note}))}), {quiet: true});
+    toast("✅ انقبل الطلب"); again(); });
+  ov.querySelectorAll("[data-rej]").forEach(b => b.onclick = async () => { const r = R(b.dataset.rej), why = await promptBox("سبب الرفض (يوصل للمتدرب)", "مثال: الصنف خلص اليوم"); if (!why) return;
+    await CL.setReq(r, {status: "rejected", reason: why, doneAt: new Date().toISOString()}); push(r); toast("انرفض الطلب"); again(); });
+  ov.querySelectorAll("[data-rdy2]").forEach(b => b.onclick = async () => { const r = R(b.dataset.rdy2); b.disabled = true;
+    if (r.status !== "ready") await CL.setReq(r, {status: "ready", readyAt: new Date().toISOString()}); else await CL.setReq(r, {remind: (r.remind || 0) + 1});
+    again(); const x = await push(r); if (x.ok && x.sent) toast(`🔔 وصل إشعار للمتدرب ${r.num}`); });
+  ov.querySelectorAll("[data-take]").forEach(b => b.onclick = async () => { const r = R(b.dataset.take);
+    if (CART.lines.length) { if (!(await confirmBox("عندك طلب مفتوح — أعلّقه وأفتح طلب المتدرب؟", "نعم"))) return; CFG.held.push({...CART, at: new Date().toISOString()}); saveCfg(); }
+    CART = newCart(); CART.lines = reqLines(r); CART.type = "takeaway"; CART.cust = r.name || ""; CART.osos = {num: r.num}; CART.reqId = r.id;
+    if (CFG.osos.on && CFG.osos.pct > 0) CART.disc = {type: "pct", v: CFG.osos.pct, by: "متدرب أسس", osos: true};
+    closeModal(ov); VIEW = "pos"; render(); toast("الطلب في السلة — خذ الدفع"); });
+}
+FX.reqPaid = async o => { if (o.reqId && CL.linked()) { try { await CL.setReq({id: o.reqId}, {status: "done", orderId: o.id, total: o.total, doneAt: o.at}); } catch (e) {} } };
+
+/* =====================================================================
+   لوحة المالك (?owner) — من جوال المالك بدخول الإدارة العامة
+   ===================================================================== */
+const OW = {range: "today"};
+async function ownerApp(){
+  document.title = "لوحة كوفي دوفي";
+  const app = $("#app"); app.innerHTML = `<div class="login"><div class="lbox"><div class="cupbig">📊</div><h1>لوحة المالك</h1><div class="sub">جاري التحميل…</div></div></div>`;
+  let M; try { M = await CL.load(); } catch (e) { app.querySelector(".sub").textContent = "تحتاج إنترنت لفتح اللوحة"; return; }
+  const oa = CL.appFor("cd-owner"); OW.auth = M.getAuth(oa); OW.db = M.getFirestore(oa); await OW.auth.authStateReady();
+  if (!OW.auth.currentUser || OW.auth.currentUser.email !== ADMIN_EMAIL) return ownerLogin();
+  ownerDash();
+}
+function ownerLogin(){
+  $("#app").innerHTML = `<div class="login"><div class="lbox"><div class="cupbig">📊</div><h1>لوحة كوفي دوفي</h1><div class="sub">ادخل برمز الإدارة العامة في البوابة</div>
+    <input class="bigin num" id="oc" type="password" inputmode="numeric" autocomplete="current-password"><button class="btn pri" style="width:100%;min-height:54px;margin-top:8px" id="ogo">دخول</button></div></div>`;
+  const go = async () => { try { await CL.M.signInWithEmailAndPassword(OW.auth, ADMIN_EMAIL, $("#oc").value.trim()); ownerDash(); } catch (e) { toast("الرمز غير صحيح", 1); } };
+  $("#ogo").onclick = go; $("#oc").onkeydown = e => e.key === "Enter" && go();
+}
+async function ownerDash(){
+  const M = CL.M, db = OW.db, d = dayOf(), back = n => dayOf(new Date(Date.now() - n * 864e5));
+  const R = {today: [d, d, "اليوم"], yest: [back(1), back(1), "أمس"], week: [back(6), d, "٧ أيام"], month: [d.slice(0, 8) + "01", d, "هذا الشهر"]}, [from, to] = R[OW.range];
+  $("#app").innerHTML = `<header class="top"><div class="brand"><div class="cup">☕</div><div>كوفي دوفي<small>لوحة المالك</small></div></div><div class="who"><button class="btn sm" id="ore">🔄</button><button class="btn sm" id="oout">خروج</button></div></header><div class="page"><div class="wrap" id="ow"><div class="empty">⏳ جاري التحميل…</div></div></div>`;
+  $("#oout").onclick = async () => { await M.signOut(OW.auth); ownerLogin(); }; $("#ore").onclick = ownerDash;
+  let days, shifts, cfg;
+  try { [days, shifts, cfg] = await Promise.all([
+      M.getDocs(M.query(M.collection(db, "coffee", "data", "days"), M.where("day", ">=", from), M.where("day", "<=", to))).then(q => q.docs.map(x => x.data())),
+      M.getDocs(M.query(M.collection(db, "coffee", "data", "shifts"), M.where("openAt", ">=", new Date(from + "T00:00:00").toISOString()))).then(q => q.docs.map(x => x.data())),
+      M.getDoc(M.doc(db, "coffee", "data", "cfg", "main")).then(x => x.exists() ? x.data() : null)]); }
+  catch (e) { $("#ow").innerHTML = `<div class="note red">ما قدرت أقرأ البيانات. تأكد إن قواعد Firestore الجديدة منشورة، وإن الكاشير مربوط بالسحابة.</div>`; return; }
+  const S = k => r2(days.reduce((a, x) => a + (x[k] || 0), 0)), sales = S("sales"), cnt = S("count"), hours = Array(24).fill(0), items = {}, exps = [];
+  days.forEach(x => { (x.hours || []).forEach((v, i) => hours[i] += v); Object.entries(x.items || {}).forEach(([k, v]) => { items[k] = items[k] || {q: 0, v: 0}; items[k].q += v.q; items[k].v += v.v; }); (x.exps || []).forEach(e => exps.push({...e, day: x.day})); });
+  const top = Object.entries(items).sort((a, b) => b[1].v - a[1].v).slice(0, 10), mx = Math.max(1, ...hours), h0 = hours.findIndex(v => v > 0), h1 = 23 - [...hours].reverse().findIndex(v => v > 0);
+  const low = cfg ? (cfg.stock || []).filter(s => s.min > 0 && s.qty <= s.min) : [], open = cfg && cfg.shift;
+  $("#ow").innerHTML = `<div class="row" style="margin-bottom:10px">${Object.entries(R).map(([k, v]) => `<button class="chip ${OW.range === k ? "on" : ""}" data-or="${k}">${v[2]}</button>`).join("")}</div>
+    ${open ? `<div class="note green" style="margin-bottom:10px">🟢 فيه وردية مفتوحة الحين — فتحها ${esc(open.openBy)} الساعة ${timeOf(new Date(open.openAt))}</div>` : `<div class="note" style="margin-bottom:10px">⚪ ما فيه وردية مفتوحة الحين</div>`}
+    ${low.length ? `<div class="note red" style="margin-bottom:10px">⚠️ قرّب يخلص: ${low.map(s => `<b>${esc(s.name)}</b> (${s.qty} ${esc(s.unit)})`).join("، ")}</div>` : ""}
+    <div class="kpis"><div class="kpi"><small>المبيعات</small><b class="num">${m2(sales)}</b></div><div class="kpi"><small>الطلبات</small><b class="num">${cnt}</b></div><div class="kpi"><small>متوسط الطلب</small><b class="num">${m2(cnt ? sales / cnt : 0)}</b></div>
+      <div class="kpi"><small>كاش / شبكة</small><b class="num" style="font-size:19px">${m2(S("cash"))} / ${m2(S("card"))}</b></div><div class="kpi"><small>المصروفات</small><b class="num">${m2(S("exp"))}</b></div><div class="kpi"><small>الصافي بعد المصروفات</small><b class="num">${m2(sales - S("exp"))}</b></div>
+      <div class="kpi"><small>🎓 طلبات متدربي أسس</small><b class="num">${S("ososN")} · ${m2(S("ososAmt"))}</b></div><div class="kpi"><small>الخصومات</small><b class="num">${m2(S("disc"))}</b></div><div class="kpi"><small>الملغي</small><b class="num">${S("voidN")} · ${m2(S("voidAmt"))}</b></div></div>
+    <div class="card"><h3>⏰ المبيعات حسب الساعة</h3>${cnt ? `<div class="bars" style="margin-bottom:22px">${hours.slice(h0, h1 + 1).map((v, i) => `<div style="height:${Math.max(2, v / mx * 100)}%"><span class="num">${h0 + i}</span></div>`).join("")}</div>` : `<div class="empty">ما فيه مبيعات</div>`}</div>
+    <div class="card"><h3>🏆 الأكثر مبيعاً</h3><table class="t">${top.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${v.q}</td><td class="num">${m2(v.v)}</td></tr>`).join("") || `<tr><td class="empty">—</td></tr>`}</table></div>
+    <div class="card"><h3>🕐 الورديات</h3><table class="t"><tr><th>الوردية</th><th>المبيعات</th><th>الفرق</th></tr>${shifts.filter(s => s.status === "closed").sort((a, b) => b.closeAt.localeCompare(a.closeAt)).map(s => `<tr><td>${esc(s.openBy)}<br><small class="num" style="color:var(--mut)">${fmtDT(s.openAt)} → ${timeOf(new Date(s.closeAt))}</small></td><td class="num">${m2(s.sum ? s.sum.sales : 0)}</td><td class="num" style="font-weight:800;color:${s.diff === 0 ? "var(--green)" : "var(--red)"}">${s.diff === 0 ? "✓ مطابق" : (s.diff > 0 ? "+" : "") + m2(s.diff)}</td></tr>`).join("") || `<tr><td colspan="3" class="empty">—</td></tr>`}</table></div>
+    <div class="card" id="offc"></div>
+    <div class="card"><h3>💸 المصروفات</h3><table class="t">${exps.map(e => `<tr><td>${esc(e.r)}<br><small style="color:var(--mut)">${esc(e.c)} · ${esc(e.by)} · ${e.day}</small></td><td class="num">${m2(e.a)}</td></tr>`).join("") || `<tr><td class="empty">—</td></tr>`}</table></div>`;
+  $$("[data-or]").forEach(b => b.onclick = () => { OW.range = b.dataset.or; ownerDash(); });
+  ownerOffers();
+}
+async function ownerOffers(){
+  const M = CL.M, ref = M.doc(OW.db, "coffeePub", "offers"), el = $("#offc"); let items = [];
+  try { const d = await M.getDoc(ref); items = d.exists() ? d.data().items || [] : []; } catch (e) {}
+  el.innerHTML = `<h3>🎁 عروض لمتدربي معهد أسس</h3><p style="color:var(--mut);margin-bottom:8px">العرض يطلع للمتدربين في تبويب «كوفي دوفي» في البوابة، ويوصلهم إشعار. إذا حطيت نسبة خصم، الكاشير يقدر يطبّقها على طلباتهم.</p>
+    ${items.length ? `<table class="t">${items.map((o, k) => `<tr><td><b>${esc(o.title)}</b>${o.pct ? ` <span class="tag g">${o.pct}٪</span>` : ""}<br><small style="color:var(--mut)">${esc(o.text || "")}${o.to ? " · لين " + esc(o.to) : ""}</small></td><td>${o.on ? "✅ ظاهر" : "⏸️ موقوف"}</td><td style="white-space:nowrap"><button class="btn sm" data-otg="${k}">${o.on ? "إيقاف" : "إظهار"}</button> <button class="btn sm" data-odl="${k}">🗑️</button></td></tr>`).join("")}</table>` : ""}
+    <details style="margin-top:10px"><summary class="btn sm" style="display:inline-flex">+ عرض جديد</summary><div style="margin-top:10px">
+      <label class="f"><span>عنوان العرض</span><input id="oft" placeholder="مثال: كرواسون + لاتيه بـ ٢٠ ريال"></label>
+      <label class="f"><span>التفاصيل (اختياري)</span><input id="ofx" placeholder="مثال: لمتدربي أسس طوال أسبوع الاختبارات"></label>
+      <div class="row"><label class="f grow"><span>خصم ٪ (اختياري)</span><input id="ofp" class="num" inputmode="decimal"></label><label class="f grow"><span>من</span><input id="off" type="date" value="${dayOf()}"></label><label class="f grow"><span>إلى</span><input id="ofe" type="date"></label></div>
+      <label class="toggle"><input type="checkbox" id="ofn" checked> أرسل إشعار لكل المتدربين</label>
+      <button class="btn pri" id="ofs">نشر العرض</button></div></details>`;
+  const save = async () => { await M.setDoc(ref, {items, at: new Date().toISOString()}); };
+  el.querySelectorAll("[data-otg]").forEach(b => b.onclick = async () => { items[+b.dataset.otg].on = !items[+b.dataset.otg].on; await save(); ownerOffers(); });
+  el.querySelectorAll("[data-odl]").forEach(b => b.onclick = async () => { if (!(await confirmBox("تحذف العرض؟", "حذف", 1))) return; items.splice(+b.dataset.odl, 1); await save(); ownerOffers(); });
+  $("#ofs").onclick = async e => { const title = $("#oft").value.trim(), pct = r2(parseFloat($("#ofp").value) || 0); if (title.length < 3) return toast("اكتب عنوان العرض", 1); if (pct < 0 || pct > 100) return toast("نسبة غير صحيحة", 1);
+    e.target.disabled = true; const o = {id: "of" + uid(), title: title.slice(0, 80), text: $("#ofx").value.trim().slice(0, 160), pct, from: $("#off").value, to: $("#ofe").value, on: true, at: new Date().toISOString()};
+    items.unshift(o); items = items.slice(0, 20);
+    try { await save(); if ($("#ofn").checked) { const d = await M.getDoc(M.doc(OW.db, "public", "site")), url = ((d.exists() && d.data().pushUrl) || "").replace(/\/+$/, "");
+        if (url) { const t = await OW.auth.currentUser.getIdToken(), r = await fetch(url + "/notify", {method: "POST", headers: {"content-type": "application/json", authorization: "Bearer " + t}, body: JSON.stringify({kind: "coffeeOffer", id: o.id})}); const j = r.ok ? await r.json() : {}; toast(`✅ انشر العرض ووصل إشعار لـ ${j.sent || 0} متدرب`); } else toast("✅ انشر العرض"); }
+      else toast("✅ انشر العرض"); } catch (x) { toast("ما قدرت أنشر — تأكد من قواعد Firestore", 1); }
+    ownerOffers(); };
+}
+
+/* =====================================================================
    الإدارة: الطلبات · إغلاق الوردية · التقارير · الإعدادات · النسخ الاحتياطي
    ===================================================================== */
 const TYPEN = {local: "محلي", takeaway: "سفري"};
@@ -1920,7 +2601,7 @@ function orderModal(o){
     if (!(await askManager(`إلغاء طلب #${o.no} بمبلغ ${m2(o.total)} ${cur()} يحتاج موافقة المدير`))) return;
     const why = await promptBox("سبب الإلغاء", "مثال: العميل غيّر رأيه / خطأ في الطلب"); if (!why) return;
     o.status = "void"; o.voidAt = new Date().toISOString(); o.voidBy = USER.name; o.voidReason = why; o.voidShift = SH() ? SH().id : o.shift;
-    await DB.put("orders", o); closeModal(ov); toast(`❌ انلغى طلب #${o.no} — رجّع للعميل ${m2(o.total)} ${cur()} ${o.pay.method === "card" ? "على الشبكة" : o.pay.method === "split" ? "(كاش + شبكة)" : "كاش"}`); ordersPage();
+    await FX.afterVoid(o); closeModal(ov); toast(`❌ انلغى طلب #${o.no} — رجّع للعميل ${m2(o.total)} ${cur()} ${o.pay.method === "card" ? "على الشبكة" : o.pay.method === "split" ? "(كاش + شبكة)" : "كاش"}`); ordersPage();
   };
 }
 function promptBox(title, ph){ return new Promise(res => { const ov = modal(`<div class="mh"><b>${esc(title)}</b><button class="x" data-close>×</button></div><div class="mb"><label class="f"><input id="pbx" placeholder="${esc(ph || "")}"></label></div><div class="mf"><button class="btn" data-close>رجوع</button><button class="btn pri" id="pbok">حفظ</button></div>`, () => res(null)); const i = ov.querySelector("#pbx"); setTimeout(() => i.focus(), 50); ov.querySelector("#pbok").onclick = () => { const v = i.value.trim(); if (v.length < 2) return toast("اكتب السبب", 1); closeModal(ov); res(v); }; }); }
@@ -1931,28 +2612,31 @@ async function shiftSummary(sh){
   const mine = all.filter(o => o.shift === sh.id), paid = mine.filter(live), voidedHere = all.filter(o => o.status === "void" && o.voidShift === sh.id && o.shift !== sh.id);
   const cash = r2(paid.reduce((a, o) => a + o.pay.cash, 0)), card = r2(paid.reduce((a, o) => a + o.pay.card, 0));
   const refundCash = r2(voidedHere.reduce((a, o) => a + o.pay.cash, 0));   // voids of earlier shifts paid back from this drawer
-  return {count: paid.length, voids: mine.filter(o => !live(o)).length + voidedHere.length, sales: r2(cash + card), cash, card, disc: r2(paid.reduce((a, o) => a + o.disc, 0)), refundCash, expected: r2(sh.openCash + cash - refundCash)};
+  const X = await FX.shiftExpenses(sh), exp = r2(X.reduce((a, x) => a + x.amount, 0));
+  return {count: paid.length, voids: mine.filter(o => !live(o)).length + voidedHere.length, sales: r2(cash + card), cash, card, disc: r2(paid.reduce((a, o) => a + o.disc, 0)), refundCash, exp, expList: X.map(x => ({a: x.amount, r: x.reason, c: x.cat, by: x.userName})), expected: r2(sh.openCash + cash - refundCash - exp)};
 }
 async function closeShiftPage(){
   const sh = SH(), S = await shiftSummary(sh);
   $("#pg").innerHTML = `<div class="wrap" style="max-width:640px"><div class="card"><h3>🕐 إغلاق الوردية</h3><p style="color:var(--mut)">فُتحت ${fmtDT(sh.openAt)} بواسطة ${esc(sh.openBy)}</p></div>
     <div class="kpis"><div class="kpi"><small>المبيعات</small><b class="num">${m2(S.sales)}</b></div><div class="kpi"><small>عدد الطلبات</small><b class="num">${S.count}</b></div><div class="kpi"><small>كاش</small><b class="num">${m2(S.cash)}</b></div><div class="kpi"><small>شبكة</small><b class="num">${m2(S.card)}</b></div></div>
-    <div class="card"><table class="t"><tr><td>فكّة بداية الوردية</td><td class="num">${m2(sh.openCash)}</td></tr><tr><td>+ مبيعات الكاش</td><td class="num">${m2(S.cash)}</td></tr>${S.refundCash ? `<tr><td>− مرتجعات كاش لطلبات سابقة</td><td class="num">${m2(S.refundCash)}</td></tr>` : ""}<tr><td><b>المفروض في الدرج</b></td><td class="num"><b>${m2(S.expected)}</b></td></tr></table>
+    <div class="card"><table class="t"><tr><td>فكّة بداية الوردية</td><td class="num">${m2(sh.openCash)}</td></tr><tr><td>+ مبيعات الكاش</td><td class="num">${m2(S.cash)}</td></tr>${S.refundCash ? `<tr><td>− مرتجعات كاش لطلبات سابقة</td><td class="num">${m2(S.refundCash)}</td></tr>` : ""}${S.exp ? `<tr><td>− مصروفات من الدرج (${S.expList.length})</td><td class="num">${m2(S.exp)}</td></tr>` : ""}<tr><td><b>المفروض في الدرج</b></td><td class="num"><b>${m2(S.expected)}</b></td></tr></table>
+      ${S.expList.length ? `<details style="margin-top:8px"><summary style="cursor:pointer;color:var(--mut)">تفاصيل المصروفات</summary><table class="t">${S.expList.map(x => `<tr><td>${esc(x.r)}<br><small style="color:var(--mut)">${esc(x.c)} · ${esc(x.by)}</small></td><td class="num">${m2(x.a)}</td></tr>`).join("")}</table></details>` : ""}
+      <button class="btn sm" id="cexp" style="margin-top:8px">💸 إضافة مصروف</button>
       <label class="f" style="margin-top:14px"><span>كم عدّيت كاش في الدرج فعلياً؟</span><input class="bigin num" id="cnt" inputmode="decimal" placeholder="0.00"></label><div id="cdiff"></div>
       <label class="f"><span>ملاحظات (اختياري)</span><input id="cnote"></label>
       <button class="btn warn" style="width:100%;min-height:56px;font-size:18px" id="cgo">إغلاق الوردية وطباعة التقرير</button></div></div>`;
   const diff = () => { const v = parseFloat($("#cnt").value); if (isNaN(v)) return $("#cdiff").innerHTML = ""; const d = r2(v - S.expected); $("#cdiff").innerHTML = `<div class="change ${d === 0 ? "ok" : "bad"}" style="margin-bottom:12px">${d === 0 ? "✅ الدرج مطابق" : d > 0 ? "زيادة في الدرج" : "عجز في الدرج"}<b class="num">${m2(Math.abs(d))} ${cur()}</b></div>`; };
-  $("#cnt").oninput = diff;
+  $("#cnt").oninput = diff; $("#cexp").onclick = expenseModal;
   $("#cgo").onclick = async () => { const v = r2(parseFloat($("#cnt").value)); if (isNaN(v)) return toast("اكتب الكاش اللي عدّيته", 1);
     if (!(await confirmBox(`تقفل الوردية؟ ${r2(v - S.expected) !== 0 ? `<br><b style="color:var(--red)">فيه فرق ${m2(v - S.expected)} ${cur()}</b>` : ""}`, "إغلاق"))) return;
     const done = {...sh, status: "closed", closeAt: new Date().toISOString(), closeBy: USER.name, counted: v, expected: S.expected, diff: r2(v - S.expected), note: $("#cnote").value.trim(), sum: S};
-    await DB.put("shifts", done); CFG.shift = null; saveCfg(); printDoc(zHTML(done)); toast("✅ انقفلت الوردية"); setTimeout(() => { USER = null; VIEW = "pos"; render(); }, 600); };
+    await DB.put("shifts", done); CFG.shift = null; saveCfg(); printDoc(zHTML(done)); toast("✅ انقفلت الوردية"); CL.shiftClosed(done); setTimeout(() => { USER = null; VIEW = "pos"; render(); }, 600); };
 }
 function zHTML(s){ const S = s.sum;
   return `<div class="rcpt ${CFG.settings.paper === 58 ? "w58" : ""}"><div class="c"><h2>${esc(CFG.settings.name)}</h2><div style="font-weight:800">تقرير إغلاق الوردية</div></div><div class="hr"></div>
     <table><tr><td>الفتح</td><td class="p num">${fmtDT(s.openAt)}</td></tr><tr><td>الإغلاق</td><td class="p num">${fmtDT(s.closeAt)}</td></tr><tr><td>فتحها</td><td class="p">${esc(s.openBy)}</td></tr><tr><td>قفلها</td><td class="p">${esc(s.closeBy)}</td></tr></table><div class="hr"></div>
     <table><tr><td>عدد الطلبات</td><td class="p num">${S.count}</td></tr><tr><td>الملغي</td><td class="p num">${S.voids}</td></tr><tr><td>الخصومات</td><td class="p num">${m2(S.disc)}</td></tr><tr><td>كاش</td><td class="p num">${m2(S.cash)}</td></tr><tr><td>شبكة</td><td class="p num">${m2(S.card)}</td></tr><tr class="tot"><td>المبيعات</td><td class="p num">${m2(S.sales)}</td></tr></table><div class="hr"></div>
-    <table><tr><td>الفكّة</td><td class="p num">${m2(s.openCash)}</td></tr>${S.refundCash ? `<tr><td>مرتجعات كاش</td><td class="p num">-${m2(S.refundCash)}</td></tr>` : ""}<tr><td>المفروض</td><td class="p num">${m2(s.expected)}</td></tr><tr><td>المعدود</td><td class="p num">${m2(s.counted)}</td></tr><tr class="tot"><td>الفرق</td><td class="p num">${m2(s.diff)}</td></tr></table>${s.note ? `<div class="hr"></div><div>${esc(s.note)}</div>` : ""}</div>`; }
+    <table><tr><td>الفكّة</td><td class="p num">${m2(s.openCash)}</td></tr>${S.refundCash ? `<tr><td>مرتجعات كاش</td><td class="p num">-${m2(S.refundCash)}</td></tr>` : ""}${S.exp ? `<tr><td>مصروفات</td><td class="p num">-${m2(S.exp)}</td></tr>` : ""}<tr><td>المفروض</td><td class="p num">${m2(s.expected)}</td></tr><tr><td>المعدود</td><td class="p num">${m2(s.counted)}</td></tr><tr class="tot"><td>الفرق</td><td class="p num">${m2(s.diff)}</td></tr></table>${s.note ? `<div class="hr"></div><div>${esc(s.note)}</div>` : ""}</div>`; }
 
 /* ---------------- reports ---------------- */
 let RR = {from: null, to: null};
@@ -1993,10 +2677,10 @@ function csv(name, rows){
 let STAB = "store";
 function settingsPage(){
   if (!isMgr()) { VIEW = "pos"; return render(); }
-  const T = [["store", "🏪 المتجر"], ["menu", "📋 المنيو"], ["groups", "➕ الإضافات"], ["users", "👥 المستخدمين"], ["print", "🖨️ الطباعة والضريبة"], ["data", "💾 البيانات"]];
+  const T = [["store", "🏪 المتجر"], ["menu", "📋 المنيو"], ["groups", "➕ الإضافات"], ["users", "👥 المستخدمين"], ["stock", "📦 المخزون"], ["loyal", "🎁 الولاء والخصومات"], ["print", "🖨️ الطباعة والضريبة"], ["cloud", "☁️ السحابة"], ["data", "💾 البيانات"]];
   $("#pg").innerHTML = `<div class="wrap"><div class="stabs">${T.map(([k, t]) => `<button class="chip ${STAB === k ? "on" : ""}" data-st="${k}">${t}</button>`).join("")}</div><div id="sbody"></div></div>`;
   $$("[data-st]").forEach(b => b.onclick = () => { STAB = b.dataset.st; settingsPage(); });
-  ({store: setStore, menu: setMenu, groups: setGroups, users: setUsers, print: setPrint, data: setData})[STAB]();
+  ({store: setStore, menu: setMenu, groups: setGroups, users: setUsers, stock: setStock, loyal: setLoyal, print: setPrint, cloud: () => CL.settings(), data: setData})[STAB]();
 }
 const S$ = () => CFG.settings;
 function setStore(){
@@ -2006,8 +2690,9 @@ function setStore(){
     <label class="f"><span>الفرع / العنوان</span><input id="s_br" value="${esc(S.branch)}"></label><label class="f"><span>رقم التواصل</span><input id="s_ph" value="${esc(S.phone)}" dir="ltr" inputmode="tel"></label>
     <label class="f"><span>رقم السجل التجاري (اختياري)</span><input id="s_cr" value="${esc(S.cr)}" dir="ltr"></label><label class="f"><span>رسالة أسفل الإيصال</span><input id="s_ft" value="${esc(S.footer)}"></label>
     <label class="toggle"><input type="checkbox" id="s_dp" ${S.discPin ? "checked" : ""}> الخصم يحتاج رمز المدير</label>
+    <label class="f"><span>المصروف من الدرج اللي فوق هذا المبلغ يحتاج موافقة المدير (${cur()})</span><input id="s_xm" class="num" inputmode="decimal" value="${S.expMax || 200}"></label>
     <button class="btn pri" id="s_save">حفظ</button></div>`;
-  $("#s_save").onclick = () => { Object.assign(S, {name: $("#s_name").value.trim() || "كوفي دوفي", nameEn: $("#s_en").value.trim(), branch: $("#s_br").value.trim(), phone: $("#s_ph").value.trim(), cr: $("#s_cr").value.trim(), footer: $("#s_ft").value.trim(), discPin: $("#s_dp").checked}); saveCfg(); toast("✅ انحفظ"); render(); };
+  $("#s_save").onclick = () => { Object.assign(S, {name: $("#s_name").value.trim() || "كوفي دوفي", nameEn: $("#s_en").value.trim(), branch: $("#s_br").value.trim(), phone: $("#s_ph").value.trim(), cr: $("#s_cr").value.trim(), footer: $("#s_ft").value.trim(), discPin: $("#s_dp").checked, expMax: r2(parseFloat($("#s_xm").value) || 200)}); saveCfg(); toast("✅ انحفظ"); render(); };
 }
 function setMenu(){
   const cat = CFG.cats.find(c => c.id === CAT) || CFG.cats[0]; CAT = cat ? cat.id : null;
@@ -2022,13 +2707,14 @@ function setMenu(){
   $$("[data-ei]").forEach(b => b.onclick = () => itemEditor(JSON.parse(JSON.stringify(CFG.items.find(i => i.id === b.dataset.ei))), false));
 }
 function catModal(c){
-  const ov = modal(`<div class="mh"><b>${c ? "تعديل القسم" : "قسم جديد"}</b><button class="x" data-close>×</button></div><div class="mb"><label class="f"><span>الاسم</span><input id="cn" value="${esc(c ? c.name : "")}"></label><label class="f"><span>أيقونة (إيموجي)</span><input id="ci" value="${esc(c ? c.icon : "☕")}" maxlength="4"></label></div><div class="mf"><button class="btn" data-close>رجوع</button><button class="btn pri" id="cok">حفظ</button></div>`);
-  ov.querySelector("#cok").onclick = () => { const n = ov.querySelector("#cn").value.trim(); if (!n) return toast("اكتب اسم القسم", 1); if (c) { c.name = n; c.icon = ov.querySelector("#ci").value.trim(); } else { const id = uid(); CFG.cats.push({id, name: n, icon: ov.querySelector("#ci").value.trim()}); CAT = id; } saveCfg(); closeModal(ov); setMenu(); };
+  const ov = modal(`<div class="mh"><b>${c ? "تعديل القسم" : "قسم جديد"}</b><button class="x" data-close>×</button></div><div class="mb"><label class="f"><span>الاسم</span><input id="cn" value="${esc(c ? c.name : "")}"></label><label class="f"><span>أيقونة (إيموجي)</span><input id="ci" value="${esc(c ? c.icon : "☕")}" maxlength="4"></label><label class="f"><span>الاسم بالبنغالي</span><input id="cbn" lang="bn" value="${esc(c ? c.bn || BN[c.name] || "" : "")}"></label></div><div class="mf"><button class="btn" data-close>رجوع</button><button class="btn pri" id="cok">حفظ</button></div>`);
+  ov.querySelector("#cok").onclick = () => { const n = ov.querySelector("#cn").value.trim(); if (!n) return toast("اكتب اسم القسم", 1); const bn = ov.querySelector("#cbn").value.trim(); if (c) { c.name = n; c.icon = ov.querySelector("#ci").value.trim(); c.bn = bn; } else { const id = uid(); CFG.cats.push({id, name: n, icon: ov.querySelector("#ci").value.trim(), bn}); CAT = id; } saveCfg(); closeModal(ov); setMenu(); };
 }
 function itemEditor(it, isNew){
   const draw = () => {
     ov.querySelector(".modal").innerHTML = `<div class="mh"><b>${isNew ? "صنف جديد" : "تعديل صنف"}</b><button class="x" data-close>×</button></div><div class="mb">
       <div class="row"><label class="f" style="width:90px"><span>أيقونة</span><input id="ii" value="${esc(it.icon)}" maxlength="4"></label><label class="f grow"><span>الاسم</span><input id="in" value="${esc(it.name)}"></label></div>
+      <div class="row"><label class="f grow"><span>الاسم بالبنغالي (للعامل)</span><input id="ibn" lang="bn" value="${esc(it.bn || BN[it.name] || "")}"></label><div style="text-align:center">${PHOTOS[it.id] ? `<img src="${PHOTOS[it.id]}" style="width:64px;height:64px;object-fit:cover;border-radius:12px;display:block;margin-bottom:4px">` : ""}<button class="btn sm" id="iph">📷 ${PHOTOS[it.id] ? "تغيير" : "صورة"}</button></div></div>
       <label class="f"><span>القسم</span><select id="ic">${CFG.cats.map(c => `<option value="${c.id}" ${c.id === it.cat ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>
       <label class="toggle"><input type="checkbox" id="ihs" ${it.sizes.length ? "checked" : ""}> له أحجام بأسعار مختلفة</label>
       ${it.sizes.length ? `<div class="grp">${it.sizes.map((s, i) => `<div class="row" style="margin-bottom:6px"><input class="grow" data-sn="${i}" value="${esc(s.n)}" style="min-height:44px;border-radius:10px;border:1.5px solid var(--line);padding:4px 10px"><input data-sp="${i}" class="num" inputmode="decimal" value="${s.p}" style="width:110px;min-height:44px;border-radius:10px;border:1.5px solid var(--line);padding:4px 10px"><button class="btn sm" data-sd="${i}">✕</button></div>`).join("")}<button class="btn sm" id="isa">+ حجم</button></div>`
@@ -2036,9 +2722,10 @@ function itemEditor(it, isNew){
       <div class="grp"><h4>الإضافات المتاحة لهذا الصنف</h4><div class="opts">${CFG.groups.map(g => `<button class="opt ${it.groups.includes(g.id) ? "on" : ""}" data-ig="${g.id}">${esc(g.name)}</button>`).join("")}</div></div>
       <label class="toggle"><input type="checkbox" id="ia" ${it.active ? "checked" : ""}> متوفّر للبيع</label></div>
       <div class="mf">${isNew ? "" : `<button class="btn warn" id="idel">🗑️</button>`}<button class="btn" data-close>رجوع</button><button class="btn pri" id="iok">حفظ</button></div>`;
-    const grab = () => { it.icon = ov.querySelector("#ii").value.trim(); it.name = ov.querySelector("#in").value.trim(); it.cat = ov.querySelector("#ic").value; it.active = ov.querySelector("#ia").checked;
+    const grab = () => { it.icon = ov.querySelector("#ii").value.trim(); it.name = ov.querySelector("#in").value.trim(); it.bn = ov.querySelector("#ibn").value.trim(); it.cat = ov.querySelector("#ic").value; it.active = ov.querySelector("#ia").checked;
       if (ov.querySelector("#ip")) it.price = r2(parseFloat(ov.querySelector("#ip").value)); ov.querySelectorAll("[data-sn]").forEach(x => it.sizes[+x.dataset.sn].n = x.value.trim()); ov.querySelectorAll("[data-sp]").forEach(x => it.sizes[+x.dataset.sp].p = r2(parseFloat(x.value))); };
     ov.querySelector("#ihs").onchange = e => { grab(); it.sizes = e.target.checked ? [{n: "صغير", p: it.price}, {n: "وسط", p: r2(it.price + 2)}, {n: "كبير", p: r2(it.price + 4)}] : []; if (!e.target.checked && it.sizes.length === 0) {} draw(); };
+    ov.querySelector("#iph").onclick = () => { grab(); pickPhoto(it.id, draw); };
     const sa = ov.querySelector("#isa"); if (sa) sa.onclick = () => { grab(); it.sizes.push({n: "حجم", p: 0}); draw(); };
     ov.querySelectorAll("[data-sd]").forEach(b => b.onclick = () => { grab(); it.sizes.splice(+b.dataset.sd, 1); draw(); });
     ov.querySelectorAll("[data-ig]").forEach(b => b.onclick = () => { grab(); const k = it.groups.indexOf(b.dataset.ig); k >= 0 ? it.groups.splice(k, 1) : it.groups.push(b.dataset.ig); draw(); });
@@ -2057,10 +2744,10 @@ function setGroups(){
 }
 function groupEditor(g, isNew){
   const draw = () => { ov.querySelector(".modal").innerHTML = `<div class="mh"><b>${isNew ? "مجموعة جديدة" : "تعديل المجموعة"}</b><button class="x" data-close>×</button></div><div class="mb">
-      <label class="f"><span>الاسم</span><input id="gn" value="${esc(g.name)}" placeholder="مثال: نوع الحليب"></label><label class="toggle"><input type="checkbox" id="gm" ${g.multi ? "checked" : ""}> يقدر العميل يختار أكثر من خيار</label>
-      <div class="grp"><h4>الخيارات والسعر الإضافي</h4>${g.choices.map((c, i) => `<div class="row" style="margin-bottom:6px"><input class="grow" data-cn="${i}" value="${esc(c.n)}" style="min-height:44px;border-radius:10px;border:1.5px solid var(--line);padding:4px 10px"><input data-cp="${i}" class="num" inputmode="decimal" value="${c.p}" style="width:100px;min-height:44px;border-radius:10px;border:1.5px solid var(--line);padding:4px 10px"><button class="btn sm" data-cd="${i}">✕</button></div>`).join("")}<button class="btn sm" id="gca">+ خيار</button></div></div>
+      <label class="f"><span>الاسم</span><input id="gn" value="${esc(g.name)}" placeholder="مثال: نوع الحليب"></label><label class="f"><span>الاسم بالبنغالي</span><input id="gbn" lang="bn" value="${esc(g.bn || BN[g.name] || "")}"></label><label class="toggle"><input type="checkbox" id="gm" ${g.multi ? "checked" : ""}> يقدر العميل يختار أكثر من خيار</label>
+      <div class="grp"><h4>الخيارات والسعر الإضافي</h4>${g.choices.map((c, i) => `<div class="row" style="margin-bottom:6px"><input class="grow" data-cn="${i}" value="${esc(c.n)}" style="min-height:44px;border-radius:10px;border:1.5px solid var(--line);padding:4px 10px"><input class="grow" data-cb="${i}" lang="bn" placeholder="বাংলা" value="${esc(c.bn || BN[c.n] || "")}" style="min-height:44px;border-radius:10px;border:1.5px solid var(--line);padding:4px 10px"><input data-cp="${i}" class="num" inputmode="decimal" value="${c.p}" style="width:100px;min-height:44px;border-radius:10px;border:1.5px solid var(--line);padding:4px 10px"><button class="btn sm" data-cd="${i}">✕</button></div>`).join("")}<button class="btn sm" id="gca">+ خيار</button></div></div>
       <div class="mf">${isNew ? "" : `<button class="btn warn" id="gdel">🗑️</button>`}<button class="btn" data-close>رجوع</button><button class="btn pri" id="gok">حفظ</button></div>`;
-    const grab = () => { g.name = ov.querySelector("#gn").value.trim(); g.multi = ov.querySelector("#gm").checked; ov.querySelectorAll("[data-cn]").forEach(x => g.choices[+x.dataset.cn].n = x.value.trim()); ov.querySelectorAll("[data-cp]").forEach(x => g.choices[+x.dataset.cp].p = r2(parseFloat(x.value) || 0)); };
+    const grab = () => { g.name = ov.querySelector("#gn").value.trim(); g.bn = ov.querySelector("#gbn").value.trim(); g.multi = ov.querySelector("#gm").checked; ov.querySelectorAll("[data-cb]").forEach(x => g.choices[+x.dataset.cb].bn = x.value.trim()); ov.querySelectorAll("[data-cn]").forEach(x => g.choices[+x.dataset.cn].n = x.value.trim()); ov.querySelectorAll("[data-cp]").forEach(x => g.choices[+x.dataset.cp].p = r2(parseFloat(x.value) || 0)); };
     ov.querySelector("#gca").onclick = () => { grab(); g.choices.push({n: "", p: 0}); draw(); };
     ov.querySelectorAll("[data-cd]").forEach(b => b.onclick = () => { grab(); g.choices.splice(+b.dataset.cd, 1); draw(); });
     const dl = ov.querySelector("#gdel"); if (dl) dl.onclick = async () => { if (!(await confirmBox(`تحذف مجموعة «${esc(g.name)}»؟`, "حذف", 1))) return; CFG.groups = CFG.groups.filter(x => x.id !== g.id); CFG.items.forEach(i => i.groups = i.groups.filter(x => x !== g.id)); saveCfg(); closeModal(ov); setGroups(); };
@@ -2087,16 +2774,41 @@ function userEditor(u, isNew){
     if (!isNew && u.role === "manager" && r !== "manager" && CFG.users.filter(x => x.role === "manager").length < 2) return toast("لازم يبقى مدير واحد على الأقل", 1);
     const k = CFG.users.findIndex(x => x.id === u.id), nu = {...u, name: n, role: r, pin: p || u.pin}; if (k >= 0) CFG.users[k] = nu; else CFG.users.push(nu); if (USER.id === nu.id) USER = nu; saveCfg(); closeModal(ov); toast("✅ انحفظ"); setUsers(); };
 }
+function setLoyal(){
+  const L = CFG.loyalty, O = CFG.osos;
+  $("#sbody").innerHTML = `<div class="card"><h3>🎁 بطاقة الولاء</h3><p style="color:var(--mut);margin-bottom:8px">العميل يعطي رقم جواله، وكل مشروب يجمع له ختم. لما يكمّل العدد ياخذ مشروب مجاني.</p>
+      <label class="toggle"><input type="checkbox" id="lon" ${L.on ? "checked" : ""}> تفعيل بطاقة الولاء</label>
+      <label class="f"><span>عدد المشروبات للحصول على مجاني</span><input class="num" id="lneed" inputmode="numeric" value="${L.need}"></label>
+      <div class="grp"><h4>الأقسام اللي تجمع أختام</h4><div class="opts">${CFG.cats.map(c => `<button class="opt ${L.cats.includes(c.id) ? "on" : ""}" data-lc="${c.id}">${c.icon || ""} ${esc(c.name)}</button>`).join("")}</div></div>
+      <label class="f"><span>أقصى قيمة للمشروب المجاني (٠ = بدون حد)</span><input class="num" id="lmax" inputmode="decimal" value="${L.maxFree}"></label>
+      <button class="btn pri" id="lsave">حفظ</button>
+      <div id="ltop" style="margin-top:14px"></div></div>
+    <div class="card"><h3>🎓 متدربي معهد أسس</h3>
+      <label class="toggle"><input type="checkbox" id="oon" ${O.on ? "checked" : ""}> خصم للمتدربين</label>
+      <label class="f"><span>نسبة الخصم ٪</span><input class="num" id="opct" inputmode="decimal" value="${O.pct}"></label>
+      <label class="toggle"><input type="checkbox" id="oneed" ${O.needNum ? "checked" : ""}> لازم يكتب الكاشير الرقم التدريبي</label>
+      <button class="btn pri" id="osave">حفظ</button></div>`;
+  $$("[data-lc]").forEach(b => b.onclick = () => b.classList.toggle("on"));
+  $("#lsave").onclick = () => { const n = parseInt($("#lneed").value); if (!(n >= 2 && n <= 50)) return toast("العدد من ٢ إلى ٥٠", 1);
+    Object.assign(L, {on: $("#lon").checked, need: n, cats: $$("[data-lc].on").map(b => b.dataset.lc), maxFree: r2(parseFloat($("#lmax").value) || 0)}); saveCfg(); toast("✅ انحفظ"); };
+  $("#osave").onclick = () => { const p = parseFloat($("#opct").value); if (!(p >= 0 && p <= 100)) return toast("نسبة غير صحيحة", 1); Object.assign(O, {on: $("#oon").checked, pct: r2(p), needNum: $("#oneed").checked}); saveCfg(); toast("✅ انحفظ"); };
+  DB.all("customers").then(C => { C.sort((a, b) => b.spent - a.spent); $("#ltop").innerHTML = C.length ? `<h4>أفضل العملاء (${C.length} عميل)</h4><table class="t"><tr><th>العميل</th><th>الزيارات</th><th>الأختام</th><th>المشتريات</th></tr>${C.slice(0, 15).map(c => `<tr><td>${esc(c.name || "—")}<br><small class="num" style="color:var(--mut)">${esc(c.phone)}</small></td><td class="num">${c.visits}</td><td class="num">${c.stamps}</td><td class="num">${m2(c.spent)}</td></tr>`).join("")}</table>` : ""; });
+}
 function setPrint(){
   const S = S$(), V = S.vat, P = S.printer;
   $("#sbody").innerHTML = `<div class="card"><h3>🖨️ الطباعة</h3><label class="f"><span>عرض ورق الطابعة</span><select id="pw"><option value="80" ${S.paper === 80 ? "selected" : ""}>٨٠ مم (الأشهر)</option><option value="58" ${S.paper === 58 ? "selected" : ""}>٥٨ مم</option></select></label>
-      <label class="toggle"><input type="checkbox" id="pa" ${S.autoPrint ? "checked" : ""}> اطبع الإيصال تلقائياً بعد كل دفع</label><label class="toggle"><input type="checkbox" id="pt" ${S.autoTicket ? "checked" : ""}> اطبع تذكرة الباريستا تلقائياً</label>
+      <label class="toggle"><input type="checkbox" id="pa" ${S.autoPrint ? "checked" : ""}> اطبع الإيصال تلقائياً بعد كل دفع</label><label class="toggle"><input type="checkbox" id="pt" ${S.autoTicket ? "checked" : ""}> اطبع تذكرة الباريستا تلقائياً</label><label class="toggle"><input type="checkbox" id="ptb" ${S.ticketBN !== false ? "checked" : ""}> تذكرة الباريستا بالعربي + البنغالي (বাংলা)</label>
       <div class="note" style="margin-top:10px">💡 الطباعة تمر عبر نافذة الطباعة في الجهاز. على <b>ويندوز</b>: عرّف الطابعة الحرارية واجعلها الطابعة الافتراضية، وفعّل من إعدادات تعريفها «فتح درج الكاش عند الطباعة». على <b>الآيباد</b>: تحتاج طابعة تدعم الطباعة عبر الشبكة (AirPrint) — طابعات USB ما تشتغل مع الآيباد.</div>
       <h4 style="margin:16px 0 8px">طريقة الاتصال بالطابعة</h4>
-      <div class="opts" id="pmode"><button class="opt ${P.mode !== "epson" ? "on" : ""}" data-pm2="system">🖨️ نافذة الطباعة (AirPrint / ويندوز)</button><button class="opt ${P.mode === "epson" ? "on" : ""}" data-pm2="epson">📶 Epson عبر الواي فاي (IP)</button></div>
-      <div id="epbox" style="${P.mode === "epson" ? "" : "display:none"}">
+      <div class="opts" id="pmode">${[["usb", "🔌 USB مباشر (Chrome)"], ["rawbt", "📱 تطبيق RawBT (أندرويد)"], ["system", "🖨️ نافذة الطباعة (AirPrint / ويندوز)"], ["epson", "📶 Epson عبر IP"]].map(([k, t]) => `<button class="opt ${(P.mode || "system") === k ? "on" : ""}" data-pm2="${k}">${t}</button>`).join("")}</div>
+      <div id="usbbox" class="pbx" data-for="usb" style="${P.mode === "usb" ? "" : "display:none"}">
+        <div class="note" style="font-size:13.5px">لطابعات <b>رواء وCityPOS وXprinter</b> وأي طابعة ESC/POS. وصّل الطابعة بالتابلت بكيبل <b>USB-OTG</b>، وافتح الكاشير من متصفح <b>Chrome</b>، واضغط «ربط الطابعة» واختر الطابعة من القائمة. تربطها مرة وحدة بس.</div>
+        <div class="row" style="margin-top:8px"><button class="btn" id="upick">🔗 ربط الطابعة</button><span id="uname" style="color:var(--mut)">${P.usbName ? "✅ مربوطة: " + esc(P.usbName) : ESC.usbOK() ? "ما فيه طابعة مربوطة" : "⚠️ هذا المتصفح ما يدعم USB — افتح الكاشير من Chrome"}</span></div></div>
+      <div class="pbx" data-for="rawbt" style="${P.mode === "rawbt" ? "" : "display:none"}">
+        <div class="note" style="font-size:13.5px">إذا ما عندك Chrome: نزّل تطبيق <b>RawBT</b> على التابلت، وافتح التطبيق وعرّف فيه طابعتك (USB أو بلوتوث أو واي فاي بعنوان IP)، وفعّل من إعداداته <b>Auto print / بدون تأكيد</b>. بعدها كل إيصال من الكاشير يروح للتطبيق ويطبع.</div></div>
+      <label class="toggle pbx" data-for="usb rawbt epson" style="${["usb", "rawbt", "epson"].includes(P.mode) ? "" : "display:none"}"><input type="checkbox" id="pdr" ${P.drawer ? "checked" : ""}> افتح درج الكاش تلقائياً مع إيصالات الكاش</label>
+      <div id="epbox" class="pbx" data-for="epson" style="${P.mode === "epson" ? "" : "display:none"}">
         <div class="row"><label class="f grow"><span>عنوان IP الطابعة</span><input id="pip" class="num" dir="ltr" inputmode="decimal" placeholder="192.168.1.50" value="${esc(P.ip || "")}"></label><label class="f" style="width:110px"><span>المنفذ (اختياري)</span><input id="pport" class="num" dir="ltr" inputmode="numeric" placeholder="تلقائي" value="${esc(P.port || "")}"></label></div>
-        <label class="toggle"><input type="checkbox" id="pdr" ${P.drawer ? "checked" : ""}> افتح درج الكاش تلقائياً مع إيصالات الكاش</label>
         <div class="note" style="font-size:13.5px">📌 <b>أول مرة فقط:</b> اضغط «افتح صفحة الطابعة»، وإذا طلع تحذير أمان اضغط «إظهار التفاصيل ← زيارة الموقع» (هذا طبيعي لأن الطابعة داخل محلك)، ثم ارجع هنا واضغط «طباعة تجريبية».<br>عنوان IP يطلع في ورقة تطبعها الطابعة لما تضغط زر الـ Feed مع تشغيلها.</div>
         <div class="row" style="margin-top:8px"><button class="btn" id="popen">🌐 افتح صفحة الطابعة</button></div></div>
       <div class="row" style="margin-top:12px"><button class="btn" id="ptest">🧪 طباعة تجريبية</button><button class="btn pri" id="psave">حفظ</button></div></div>
@@ -2107,11 +2819,12 @@ function setPrint(){
       <div class="note red" style="font-size:13.5px">⚠️ إذا وصلك من هيئة الزكاة إشعار «مرحلة الربط والتكامل» (المرحلة الثانية)، تحتاج ربط مباشر مع منصة «فاتورة» — هذا غير مشمول هنا ويحتاج تطوير إضافي.</div>
       <button class="btn pri" id="vsave" style="margin-top:10px">حفظ إعدادات الضريبة</button></div>`;
   let mode = P.mode || "system";
-  $$("[data-pm2]").forEach(b => b.onclick = () => { mode = b.dataset.pm2; $$("[data-pm2]").forEach(x => x.classList.toggle("on", x === b)); $("#epbox").style.display = mode === "epson" ? "" : "none"; });
+  $$("[data-pm2]").forEach(b => b.onclick = () => { mode = b.dataset.pm2; $$("[data-pm2]").forEach(x => x.classList.toggle("on", x === b)); $$(".pbx").forEach(x => x.style.display = x.dataset.for.split(" ").includes(mode) ? "" : "none"); });
+  $("#upick").onclick = async () => { try { const n = await ESC.pick(); $("#uname").textContent = "✅ مربوطة: " + n; toast("✅ انربطت الطابعة"); } catch (e) { toast(ESC.why(e), 1); } };
   const grabP = () => { const ip = $("#pip").value.trim(), port = $("#pport").value.trim();
     if (mode === "epson" && !/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) { toast("اكتب عنوان IP صحيح مثل 192.168.1.50", 1); return false; }
     if (port && !/^\d{2,5}$/.test(port)) { toast("المنفذ أرقام فقط", 1); return false; }
-    S.paper = +$("#pw").value; S.autoPrint = $("#pa").checked; S.autoTicket = $("#pt").checked; Object.assign(P, {mode, ip, port, drawer: $("#pdr").checked}); saveCfg(); return true; };
+    S.paper = +$("#pw").value; S.autoPrint = $("#pa").checked; S.autoTicket = $("#pt").checked; S.ticketBN = $("#ptb").checked; Object.assign(P, {mode, ip, port, drawer: $("#pdr").checked}); saveCfg(); return true; };
   $("#popen").onclick = () => { const ip = $("#pip").value.trim(); if (!ip) return toast("اكتب عنوان IP أول", 1); window.open(`${location.protocol === "https:" ? "https" : "http"}://${ip}${$("#pport").value.trim() ? ":" + $("#pport").value.trim() : ""}/`, "_blank"); };
   $("#psave").onclick = () => { if (grabP()) toast("✅ انحفظ"); };
   $("#ptest").onclick = () => grabP() && printDoc(`<div class="rcpt ${+$("#pw").value === 58 ? "w58" : ""}"><div class="c"><h2>${esc(S.name)}</h2><div>طباعة تجريبية ✓</div><div class="num">${fmtDT(new Date().toISOString())}</div></div><div class="hr"></div><div class="c">إذا ظهر هذا الإيصال كامل وواضح، الطابعة جاهزة</div></div>`);
@@ -2134,7 +2847,12 @@ function setData(){
 }
 
 /* ---------------- boot ---------------- */
-(async () => { await DB.open(); render(); })();
+(async () => {
+  await DB.open(); migrate(); await loadPhotos();
+  if (/[?&]owner\b/.test(location.search)) return ownerApp();
+  render(); CL.start();
+  if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol) && !/claude|localhost:877/.test(location.host)) navigator.serviceWorker.register("doffee-sw.js", {scope: location.pathname}).catch(() => {});
+})();
 
 </script>
 </body>
