@@ -3,8 +3,10 @@
      login, re-reads the record with its own service-account key, decides who should hear about it, and keeps
      a pushLog so the same thing is never sent twice. The caller cannot choose the text or the recipients.
    - Two daily schedules: 09:00 installment reminders + tomorrow's calendar, 20:00 trainers who did not take attendance.
-   Secrets: SA_JSON = the Firebase service-account key (JSON). Vars: PROJECT_ID. */
+   - POST /mail and email(): the institute mailboxes (@osustl.com) inside the portal.
+   Secrets: SA_JSON = the Firebase service-account key (JSON), MEET_SECRET. Vars: PROJECT_ID, MEET_DOMAIN, MAIL_DOMAIN. Binding EMAIL (send_email). */
 
+import {parseMail} from "./mime.js";
 const TZ = "Asia/Riyadh";
 const DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 const todayStr = (d = new Date()) => new Intl.DateTimeFormat("en-CA", {timeZone: TZ}).format(d);
@@ -221,6 +223,13 @@ async function onEvent(env, kind, id, user){
       return deliver(env, msgs(await tokensWhere(fs, "num", nums), "بدأت المحاضرة", `${g.course || "المحاضرة"}: ${l.mode === "teams" ? "على Teams" : "في قاعة المعهد"}. ادخل من البوابة.`, link));
     });
   }
+  if (kind === "exam" || kind === "examres") {
+    const e = await fs.get("exams/" + id); if (!e || e.status === "draft") return 0;
+    const nums = (e.memberNums || []).filter(Boolean); if (!nums.length) return 0;
+    if (kind === "exam") return once("pub", async () => deliver(env, msgs(await tokensWhere(fs, "num", nums), "اختبار جديد", `${e.course || ""}: ${e.title} · ${e.mins} دقيقة. يفتح في وقته من «الاختبارات» في البوابة.`, link)));
+    if (!e.resultsOut) return 0;
+    return once("res", async () => deliver(env, msgs(await tokensWhere(fs, "num", nums), "ظهرت نتيجة الاختبار", `${e.course || ""}: ${e.title}. شوف نتيجتك في «الاختبارات».`, link)));
+  }
   if (kind === "acad") {
     const r = await fs.get("acReqs/" + id); if (!r) return 0;
     if (r.status === "new") return once("new", async () => deliver(env, msgs(await tokensWhere(fs, "email", "acadmic@osostl.local"), "طلب جديد من طالب", `${r.name || r.num} · ${r.cat || "استفسار"}: ${(r.text || "").slice(0, 80)}`, link)));
@@ -245,7 +254,19 @@ async function onEvent(env, kind, id, user){
 /* ---------- staff accounts: emergency stop / new code (general administration only) ----------
    Uses the Firebase Auth admin API with the service account. After any change, public/staffLock[role] is set
    to now, and the security rules refuse every session of that role that signed in before it. */
-const STAFF = {admin: "admin@osostl.local", academic: "acadmic@osostl.local", finance: "finance@osostl.local", auditor: "audit@osostl.local"};
+const MAIL_STAFF = ["admission", "business", "hr"];
+const STAFF = {admin: "admin@osostl.local", academic: "acadmic@osostl.local", finance: "finance@osostl.local", auditor: "audit@osostl.local",
+  ...Object.fromEntries(MAIL_STAFF.map(r => [r, `m-${r}@osostl.local`]))};
+/* mailbox-only accounts are made here, not by sign-up: public/mailStaff keeps the one uid allowed for each, so an account
+   someone registered with the same address by themselves is replaced and never accepted */
+async function makeMailStaff(env, fs, role, code){
+  const email = STAFF[role], old = ((await idt(env, "lookup", {email: [email]})).users || [])[0];
+  if (old) await idt(env, "delete", {localId: old.localId});
+  const r = await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${env.PROJECT_ID}/accounts`, {method: "POST", headers: {authorization: "Bearer " + await accessToken(env), "content-type": "application/json"}, body: JSON.stringify({email, password: code, emailVerified: true})});
+  const j = await r.json().catch(() => ({})); if (!r.ok || !j.localId) throw new Error("create " + r.status + " " + JSON.stringify(j).slice(0, 200));
+  await fs.patch("public/mailStaff", {[role]: j.localId});
+  return j.localId;
+}
 async function idt(env, op, body){
   const r = await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${env.PROJECT_ID}/accounts:${op}`, {method: "POST", headers: {authorization: "Bearer " + await accessToken(env), "content-type": "application/json"}, body: JSON.stringify(body)});
   const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(op + " " + r.status + " " + JSON.stringify(j).slice(0, 300)); return j;
@@ -271,17 +292,24 @@ async function staffSecurity(req, env){
   }
   if (action === "lockall") {
     const res = {};
-    for (const r of ["academic", "finance", "auditor"]) {
+    for (const r of Object.keys(STAFF).filter(x => x !== "admin")) {
       const u = await lookup(STAFF[r]); if (!u) continue;
       await idt(env, "update", {localId: u.localId, disableUser: true, validSince: String(now)}); res[r] = "stopped";
     }
     const a = await lookup(STAFF.admin), code = newCode();
     await idt(env, "update", {localId: a.localId, password: code, validSince: String(now)});
-    await lock(["admin", "academic", "finance", "auditor"]);
+    await lock(Object.keys(STAFF));
     return json({ok: true, code, res});
   }
   if (!STAFF[role] || !["newcode", "disable", "enable"].includes(action)) return json({error: "bad request"}, 400);
   if (role === "admin" && action === "disable") return json({error: "cannot stop own account"}, 400);
+  if (action === "newcode" && MAIL_STAFF.includes(role)) {
+    const code = newCode(), ms = (await fs.get("public/mailStaff")) || {}, u0 = await lookup(STAFF[role]);
+    if (u0 && ms[role] === u0.localId) await idt(env, "update", {localId: u0.localId, password: code, validSince: String(now)});
+    else await makeMailStaff(env, fs, role, code);
+    await lock([role]);
+    return json({ok: true, code});
+  }
   const u = await lookup(STAFF[role]); if (!u) return json({error: "no account"}, 404);
   if (action === "newcode") {
     const code = newCode();
@@ -294,6 +322,146 @@ async function staffSecurity(req, env){
   return json({ok: true});
 }
 
+
+/* ---------- institute mail inside the portal ----------
+   Incoming: Cloudflare Email Routing (catch-all) hands every message for @osustl.com to email() below; it is read,
+   its attachments go to the meet server (next to the recordings), and the message lands in mbox/{role}/m/{id}.
+   Outgoing: POST /mail {action:"send"} from the portal, sent with Cloudflare Email Service (binding EMAIL). */
+const BOXES = {
+  ceo: {role: "admin", name: "الإدارة العامة"}, info: {role: "admin", name: "معهد أسس"},
+  academic: {role: "academic", name: "الشؤون الأكاديمية"}, finance: {role: "finance", name: "الإدارة المالية"},
+  admission: {role: "admission", name: "القبول والتسجيل"}, support: {role: "admission", name: "خدمة العملاء"},
+  hr: {role: "hr", name: "الموارد البشرية"}, business: {role: "business", name: "قطاع الشركات"}
+};
+const MAIL_ROLES = ["admin", "academic", "finance", "admission", "business", "hr"];
+const INST = "معهد أسس التقنية والقانون العالي للتدريب";
+const mailDomain = env => env.MAIL_DOMAIN || "osustl.com";
+const meetBase = env => `https://${env.MEET_DOMAIN || "meet.osustl.com"}/rec`;
+const rid8 = () => new Intl.DateTimeFormat("en-CA", {timeZone: TZ}).format(new Date()).replace(/-/g, "") + "-" + [...crypto.getRandomValues(new Uint8Array(10))].map(x => "abcdefghijkmnpqrstuvwxyz23456789"[x % 32]).join("");
+const mailId = () => Date.now().toString(36) + [...crypto.getRandomValues(new Uint8Array(6))].map(x => "abcdefghijkmnpqrstuvwxyz23456789"[x % 32]).join("");
+const escH = s => String(s || "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+async function attPut(env, bytes){
+  const rid = rid8(), t = await recTicket({op: "up", k: "mail", gid: "_mail", rid, exp: Math.floor(Date.now() / 1000) + 900, max: bytes.byteLength}, env.MEET_SECRET);
+  const r = await fetch(`${meetBase(env)}/up?t=${t}`, {method: "PUT", body: bytes});
+  if (!r.ok) throw new Error("att up " + r.status);
+  return rid;
+}
+const attTicket = (env, op, a, ttl = 3600) => recTicket({op, k: "mail", gid: "_mail", rid: a.rid, fn: a.name || "file", ct: a.type || "application/octet-stream", exp: Math.floor(Date.now() / 1000) + ttl}, env.MEET_SECRET);
+async function receiveMail(message, env){
+  const dom = mailDomain(env), [local, d] = String(message.to || "").toLowerCase().split("@"), box = BOXES[local];
+  if (d !== dom || !box) { message.setReject("Address not found"); return; }
+  const raw = new Uint8Array(await new Response(message.raw).arrayBuffer());
+  const m = parseMail(raw), fs = FS(env);
+  const atts = []; let total = 0;
+  for (const a of m.atts.slice(0, 25)) {
+    total += a.content.byteLength;
+    const meta = {name: a.filename, type: a.type, size: a.content.byteLength};
+    if (a.cid && /^image\//.test(a.type) && a.content.byteLength < 2048) continue;     // tracking pixels and tiny logos
+    try { if (!env.MEET_SECRET || total > 40 * 1024 ** 2) throw new Error("skip"); meta.rid = await attPut(env, a.content); } catch (e) { console.error(e); meta.failed = true; }
+    atts.push(meta);
+  }
+  const from = m.from.email || String(message.from || "").toLowerCase();
+  const doc = {
+    box: local, role: box.role, dir: "in", from, fromName: (m.from.name || "").slice(0, 200), replyTo: m.replyTo || "",
+    to: m.to.map(x => x.email).slice(0, 50), cc: m.cc.map(x => x.email).slice(0, 50),
+    subject: (m.subject || "(بدون عنوان)").slice(0, 400), text: (m.text || "").slice(0, 100000),
+    html: m.html.length <= 300000 ? m.html : "", at: new Date().toISOString(), read: false, trash: false, star: false,
+    msgId: m.messageId.slice(0, 900), refs: (m.references + " " + m.inReplyTo).trim().slice(-1800), atts, sus: !!m.suspicious
+  };
+  const plain = (doc.text || m.html.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ")).replace(/\s+/g, " ").trim();
+  if (!doc.text && !doc.html) doc.text = plain.slice(0, 100000);
+  await saveMail(fs, box.role, mailId(), doc, plain);
+  const link = await portalUrl(fs);
+  await deliver(env, msgs(await tokensWhere(fs, "role", box.role), "بريد جديد · " + box.name, `${doc.fromName || from}: ${doc.subject}`.slice(0, 160), link));
+}
+/* list entry (small, loaded for the inbox) in mbox/{role}/m/{id}; the full body in mbox/{role}/b/{id}, read when opened */
+async function saveMail(fs, role, id, doc, plain){
+  const {text, html, ...head} = doc;
+  await fs.set(`mbox/${role}/b/${id}`, {text: text || "", html: html || ""});
+  await fs.set(`mbox/${role}/m/${id}`, {...head, snip: String(plain || text || "").replace(/\s+/g, " ").trim().slice(0, 160)});
+}
+/* ---------- student documents (ID, high-school certificate, transcript): kept on the institute server ---------- */
+async function docsApi(req, env){
+  const user = await verifyUser(req, env); if (!user) return json({error: "login required"}, 401);
+  if (![STAFF.admin, STAFF.academic].includes(user.email)) return json({error: "not allowed"}, 403);
+  const role = user.email === STAFF.admin ? "admin" : "academic", fs = FS(env), locks = (await fs.get("public/staffLock")) || {};
+  if (locks[role] && locks[role] >= (user.auth_time || 0)) return json({error: "not allowed"}, 403);
+  if (!env.MEET_SECRET) return json({error: "not configured"}, 503);
+  let b; try { b = await req.json(); } catch { return json({error: "bad body"}, 400); }
+  const num = String(b.num || ""); if (!/^\d{4,12}$/.test(num)) return json({error: "bad request"}, 400);
+  if (b.action === "up") {
+    const size = Number(b.size) || 0; if (size <= 0 || size > 15 * 1024 ** 2) return json({error: "too big"}, 400);
+    const rid = rid8(), t = await recTicket({op: "up", k: "mail", gid: "_docs", rid, exp: Math.floor(Date.now() / 1000) + 1800, max: size}, env.MEET_SECRET);
+    return json({rid, url: `${meetBase(env)}/up?t=${t}`});
+  }
+  const f = (((await fs.get("studentDocs/" + num)) || {}).files || []).find(x => x && x.rid === String(b.rid || ""));
+  if (!f) return json({error: "missing"}, 404);
+  const a = {rid: f.rid, name: f.name, type: f.type};
+  if (b.action === "get") return json({url: `${meetBase(env)}/get?t=${await recTicket({op: "get", k: "mail", gid: "_docs", rid: a.rid, fn: a.name || "file", ct: a.type || "application/octet-stream", exp: Math.floor(Date.now() / 1000) + 600}, env.MEET_SECRET)}`});
+  if (b.action === "del") { await fetch(`${meetBase(env)}/del?t=${await recTicket({op: "del", k: "mail", gid: "_docs", rid: a.rid, exp: Math.floor(Date.now() / 1000) + 600}, env.MEET_SECRET)}`, {method: "POST"}).catch(() => {}); return json({ok: true}); }
+  return json({error: "bad request"}, 400);
+}
+const EMAIL_RE = /^[^@\s<>"(),;:]+@[^@\s<>"(),;:]+\.[a-z]{2,}$/i;
+async function mailApi(req, env){
+  const user = await verifyUser(req, env); if (!user) return json({error: "login required"}, 401);
+  const role = Object.keys(STAFF).find(r => STAFF[r] === user.email);
+  if (!MAIL_ROLES.includes(role)) return json({error: "not allowed"}, 403);
+  const fs = FS(env), locks = (await fs.get("public/staffLock")) || {};
+  if (locks[role] && locks[role] >= (user.auth_time || 0)) return json({error: "not allowed"}, 403);
+  if (MAIL_STAFF.includes(role) && ((await fs.get("public/mailStaff")) || {})[role] !== user.sub) return json({error: "not allowed"}, 403);
+  let b; try { b = await req.json(); } catch { return json({error: "bad body"}, 400); }
+  const action = String(b.action || ""), canBox = x => BOXES[x] && (role === "admin" || BOXES[x].role === role);
+  const canRole = r => MAIL_ROLES.includes(r) && (role === "admin" || r === role);
+  if (!env.MEET_SECRET) return json({error: "not configured"}, 503);
+  if (action === "attUp") {
+    const size = Number(b.size) || 0; if (!canBox(String(b.box)) || size <= 0 || size > 20 * 1024 ** 2) return json({error: "bad request"}, 400);
+    const rid = rid8(), t = await recTicket({op: "up", k: "mail", gid: "_mail", rid, exp: Math.floor(Date.now() / 1000) + 1800, max: size}, env.MEET_SECRET);
+    return json({rid, url: `${meetBase(env)}/up?t=${t}`});
+  }
+  const r = String(b.r || ""), id = String(b.id || "");
+  if (["attGet", "del"].includes(action)) {
+    if (!canRole(r) || !/^[a-z0-9]{6,40}$/.test(id)) return json({error: "bad request"}, 400);
+    const doc = await fs.get(`mbox/${r}/m/${id}`); if (!doc) return json({error: "missing"}, 404);
+    if (action === "attGet") {
+      const a = (doc.atts || [])[Number(b.i)]; if (!a || !a.rid) return json({error: "missing"}, 404);
+      return json({url: `${meetBase(env)}/get?t=${await attTicket(env, "get", a)}`});
+    }
+    if (doc.dir === "in") for (const a of doc.atts || []) if (a.rid) await fetch(`${meetBase(env)}/del?t=${await attTicket(env, "del", a, 600)}`, {method: "POST"}).catch(() => {});
+    await fs.del(`mbox/${r}/m/${id}`); await fs.del(`mbox/${r}/b/${id}`);
+    return json({ok: true});
+  }
+  if (action !== "send") return json({error: "bad request"}, 400);
+  if (!env.EMAIL) return json({error: "sending off"}, 503);
+  const box = String(b.box || ""); if (!canBox(box)) return json({error: "not allowed"}, 403);
+  const list = v => [...new Set((Array.isArray(v) ? v : String(v || "").split(/[,;\s]+/)).map(x => String(x).trim().toLowerCase()).filter(Boolean))];
+  const to = list(b.to), cc = list(b.cc);
+  if (!to.length || to.length + cc.length > 50 || ![...to, ...cc].every(x => EMAIL_RE.test(x))) return json({error: "bad address"}, 400);
+  const subject = String(b.subject || "").trim().slice(0, 300) || "(بدون عنوان)", body = String(b.body || "").slice(0, 100000);
+  const info = BOXES[box], fromEmail = `${box}@${mailDomain(env)}`, name = `${INST} - ${info.name}`;
+  const atts = [], meta = []; let total = 0;
+  for (const a of (Array.isArray(b.atts) ? b.atts : []).slice(0, 20)) {
+    if (!a || !RIDM.test(String(a.rid || ""))) return json({error: "bad attachment"}, 400);
+    const x = {rid: String(a.rid), name: String(a.name || "file").replace(/[\/\\\x00-\x1f]/g, "_").slice(0, 150), type: /^[\w.+-]+\/[\w.+-]+$/.test(a.type || "") ? a.type : "application/octet-stream"};
+    const res = await fetch(`${meetBase(env)}/get?t=${await attTicket(env, "get", x, 600)}`); if (!res.ok) return json({error: "attachment missing"}, 400);
+    const buf = await res.arrayBuffer(); total += buf.byteLength; if (total > 20 * 1024 ** 2) return json({error: "too big"}, 400);
+    atts.push({content: buf, filename: x.name, type: x.type, disposition: "attachment"}); meta.push({...x, size: buf.byteLength});
+  }
+  let orig = null, origPath = "";
+  if (b.replyId && canRole(String(b.replyR || "")) && /^[a-z0-9]{6,40}$/.test(String(b.replyId))) { origPath = `mbox/${b.replyR}/m/${b.replyId}`; orig = await fs.get(origPath); }
+  const headers = {};
+  if (orig && orig.msgId) { headers["In-Reply-To"] = orig.msgId; headers["References"] = ((orig.refs || "") + " " + orig.msgId).trim().slice(-1900); }
+  const sigT = `\n\n--\n${info.name}\n${INST}\nhttps://${mailDomain(env)}`;
+  const html = `<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;font-size:15px;line-height:1.8;color:#222">${escH(body).replace(/\r?\n/g, "<br>")}<br><br><div style="border-top:1px solid #ddd;padding-top:8px;color:#1F5136"><b>${escH(info.name)}</b><br>${escH(INST)}<br><a href="https://${mailDomain(env)}" style="color:#B08D3C">${mailDomain(env)}</a></div></div>`;
+  let res;
+  try { res = await env.EMAIL.send({from: {email: fromEmail, name}, to, ...(cc.length ? {cc} : {}), subject, text: body + sigT, html, ...(atts.length ? {attachments: atts} : {}), ...(Object.keys(headers).length ? {headers} : {})}); }
+  catch (e) { console.error(e); return json({error: e.code || "send failed"}, 502); }
+  const doc = {box, role: info.role, dir: "out", from: fromEmail, fromName: info.name, replyTo: "", to, cc, subject, text: body, html: "", at: new Date().toISOString(),
+    read: true, trash: false, star: false, msgId: res && res.messageId ? String(res.messageId) : "", refs: headers.References || "", atts: meta, sus: false, by: role};
+  await saveMail(fs, info.role, mailId(), doc, body);
+  if (orig) await fs.patch(origPath, {replied: true}).catch(() => {});
+  return json({ok: true});
+}
+const RIDM = /^\d{8}-[a-z0-9]{6,20}$/;
 /* ---------- virtual classroom passes ----------
    The meet server only lets in people holding a pass signed with MEET_SECRET (shared with its prosody).
    Trainer of the group and the administration get moderator passes; a student of the group gets one only
@@ -422,7 +590,7 @@ async function evening(env){
   return deliver(env, out);
 }
 
-const KINDS = ["test", "att", "warning", "grade", "excuse", "cert", "ann", "sign", "fin", "acad", "gradesub", "memo", "live"];
+const KINDS = ["test", "att", "warning", "grade", "excuse", "cert", "ann", "sign", "fin", "acad", "gradesub", "memo", "live", "exam", "examres"];
 export default {
   async fetch(req, env){
     const url = new URL(req.url);
@@ -430,6 +598,8 @@ export default {
     if (req.method === "GET") return new Response("osos-push شغّال ✓", {headers: {"content-type": "text/plain; charset=utf-8", ...CORS}});
     if (url.pathname === "/staff-security" && req.method === "POST") { try { return await staffSecurity(req, env); } catch (e) { console.error(e); return json({error: "failed"}, 500); } }
     if (url.pathname === "/rec-ticket" && req.method === "POST") { try { return await recPass(req, env); } catch (e) { console.error(e); return json({error: "failed"}, 500); } }
+    if (url.pathname === "/docs" && req.method === "POST") { try { return await docsApi(req, env); } catch (e) { console.error(e); return json({error: "failed"}, 500); } }
+    if (url.pathname === "/mail" && req.method === "POST") { try { return await mailApi(req, env); } catch (e) { console.error(e); return json({error: "failed"}, 500); } }
     if (url.pathname === "/meet-token" && req.method === "POST") { try { return await meetPass(req, env); } catch (e) { console.error(e); return json({error: "failed"}, 500); } }
     if (url.pathname === "/batch") {   // only from this worker itself (service binding), marked with the key id
       if (req.headers.get("x-key") !== JSON.parse(env.SA_JSON).private_key_id) return json({error: "forbidden"}, 403);
@@ -443,6 +613,10 @@ export default {
     if (!KINDS.includes(kind) || !/^[\w.:-]{1,200}$/.test(id) || (kind === "ann" && !["all", "trainers", "students"].includes(id))) return json({error: "bad request"}, 400);
     try { return json({ok: true, sent: await onEvent(env, kind, id, user)}); }
     catch (e) { console.error(e); return json({error: "failed"}, 500); }
+  },
+  async email(message, env, ctx){
+    try { await receiveMail(message, env); }
+    catch (e) { console.error(e); message.setReject("Temporary problem, please try again later"); }
   },
   async scheduled(event, env, ctx){
     ctx.waitUntil((event.cron === "0 6 * * *" ? morning(env) : evening(env)).catch(e => console.error(e)));
