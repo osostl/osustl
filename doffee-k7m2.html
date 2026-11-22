@@ -1,0 +1,2141 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="كوفي دوفي">
+<meta name="theme-color" content="#5a3721">
+<title>كاشير كوفي دوفي</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f5efe6; --card:#fff; --ink:#2b1d14; --mut:#8a7565; --line:#eadfce;
+  --brown:#5a3721; --brown2:#7b4d2d; --gold:#c8873a; --gold2:#f6e7d2;
+  --green:#1f8a5b; --green2:#e3f4ec; --red:#c0392b; --red2:#fbe9e7; --blue:#2563a8;
+  --r:16px; --sh:0 6px 20px rgba(60,35,15,.08);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans Arabic",Tahoma,sans-serif;font-size:16px;line-height:1.5;overscroll-behavior:none;user-select:none;-webkit-user-select:none}
+input,textarea,select{user-select:text;-webkit-user-select:text;font-family:inherit;font-size:16px}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit;font-size:inherit}
+.hidden{display:none!important}
+.num{font-family:"IBM Plex Sans Arabic",Tahoma,sans-serif;font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate}
+
+/* ---------- buttons ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:10px 18px;border-radius:12px;font-weight:700;background:var(--card);border:1.5px solid var(--line);transition:transform .08s,filter .15s}
+.btn:active{transform:scale(.97)}
+.btn.pri{background:var(--brown);color:#fff;border-color:var(--brown)}
+.btn.ok{background:var(--green);color:#fff;border-color:var(--green)}
+.btn.warn{background:var(--red);color:#fff;border-color:var(--red)}
+.btn.gold{background:var(--gold);color:#fff;border-color:var(--gold)}
+.btn.ghost{background:transparent}
+.btn.sm{min-height:38px;padding:6px 12px;font-size:14px;border-radius:10px}
+.btn:disabled{opacity:.4;pointer-events:none}
+.chip{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:8px 16px;border-radius:30px;background:var(--card);border:1.5px solid var(--line);font-weight:600;white-space:nowrap}
+.chip.on{background:var(--brown);color:#fff;border-color:var(--brown)}
+
+/* ---------- top bar ---------- */
+.top{height:64px;display:flex;align-items:center;gap:10px;padding:0 14px;background:var(--brown);color:#fff;position:sticky;top:0;z-index:20}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px;white-space:nowrap}
+.brand .cup{width:40px;height:40px;border-radius:12px;background:var(--gold);display:grid;place-items:center;font-size:22px}
+.brand small{display:block;font-size:11px;font-weight:500;opacity:.8;margin-top:-3px}
+.nav{display:flex;gap:6px;margin-inline-start:12px;overflow-x:auto}
+.nav button{min-height:44px;padding:6px 14px;border-radius:12px;color:#f3e4d2;font-weight:600;white-space:nowrap}
+.nav button.on{background:rgba(255,255,255,.16);color:#fff}
+.who{margin-inline-start:auto;display:flex;align-items:center;gap:8px;font-size:14px;white-space:nowrap}
+.who .pill{background:rgba(255,255,255,.14);padding:6px 12px;border-radius:30px}
+.top .btn{min-height:40px;background:rgba(255,255,255,.12);border-color:transparent;color:#fff}
+
+/* ---------- sale screen ---------- */
+.pos{display:grid;grid-template-columns:1fr 390px;height:calc(100vh - 64px);height:calc(100dvh - 64px)}
+.menu{display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.cats{display:flex;gap:8px;padding:12px 14px 6px;overflow-x:auto;scrollbar-width:none}
+.cats::-webkit-scrollbar{display:none}
+.search{margin:6px 14px;position:relative}
+.search input{width:100%;min-height:46px;border-radius:12px;border:1.5px solid var(--line);padding:8px 44px 8px 14px;background:var(--card)}
+.search span{position:absolute;right:14px;top:11px;opacity:.5}
+.grid{flex:1;overflow-y:auto;padding:6px 14px 20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;align-content:start}
+.item{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);padding:14px 12px;min-height:122px;display:flex;flex-direction:column;justify-content:space-between;text-align:right;border:2px solid transparent;position:relative}
+.item:active{transform:scale(.97);border-color:var(--gold)}
+.item .ic{font-size:30px;line-height:1}
+.item .nm{font-weight:700;font-size:16px;margin-top:8px}
+.item .pr{color:var(--brown2);font-weight:700;font-size:15px}
+.item .pr small{color:var(--mut);font-weight:500;font-size:12px}
+.item.off{opacity:.4}
+
+.cart{background:var(--card);border-inline-start:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.cart-h{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cart-h b{font-size:18px}
+.seg{display:flex;background:var(--bg);border-radius:12px;padding:3px}
+.seg button{min-height:38px;padding:4px 14px;border-radius:10px;font-weight:700;color:var(--mut)}
+.seg button.on{background:var(--card);color:var(--brown);box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.lines{flex:1;overflow-y:auto;padding:6px 10px}
+.line{display:flex;gap:10px;align-items:center;padding:10px 6px;border-bottom:1px dashed var(--line)}
+.line .info{flex:1;min-width:0}
+.line .info b{display:block;font-size:15px}
+.line .info small{display:block;color:var(--mut);font-size:12.5px;line-height:1.4}
+.line .lp{font-weight:700;min-width:62px;text-align:left}
+.qty{display:flex;align-items:center;gap:4px}
+.qty button{width:36px;height:36px;border-radius:10px;background:var(--bg);font-size:20px;font-weight:700}
+.qty span{min-width:26px;text-align:center;font-weight:700}
+.empty{color:var(--mut);text-align:center;padding:50px 20px}
+.empty .big{font-size:54px;margin-bottom:8px;opacity:.6}
+.cust{padding:6px 12px}
+.cust input{width:100%;min-height:42px;border-radius:10px;border:1.5px solid var(--line);padding:6px 12px;background:var(--bg)}
+.totals{padding:10px 14px;border-top:1px solid var(--line);background:#fdfaf6}
+.totals .r{display:flex;justify-content:space-between;padding:2px 0;color:var(--mut);font-size:14.5px}
+.totals .r.big{color:var(--ink);font-size:24px;font-weight:800;padding-top:6px}
+.acts{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:10px 12px 14px}
+.acts .pay{grid-column:1/-1;min-height:62px;font-size:21px}
+
+/* ---------- modal ---------- */
+.ov{position:fixed;inset:0;background:rgba(30,18,8,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;animation:fade .15s}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.modal{background:var(--card);border-radius:22px;width:100%;max-width:560px;max-height:calc(100dvh - 32px);overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);animation:pop .18s}
+.modal.wide{max-width:860px}
+@keyframes pop{from{transform:scale(.96);opacity:0}to{transform:none;opacity:1}}
+.mh{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--card);z-index:2}
+.mh b{font-size:19px}
+.mh .x{width:42px;height:42px;border-radius:12px;background:var(--bg);font-size:22px}
+.mb{padding:16px 20px}
+.mf{padding:12px 20px 18px;display:flex;gap:10px;border-top:1px solid var(--line);position:sticky;bottom:0;background:var(--card)}
+.mf .btn{flex:1}
+.grp{margin-bottom:16px}
+.grp h4{font-size:14px;color:var(--mut);margin-bottom:8px;font-weight:700}
+.opts{display:flex;flex-wrap:wrap;gap:8px}
+.opt{min-height:48px;padding:8px 16px;border-radius:12px;border:1.5px solid var(--line);background:var(--card);font-weight:600}
+.opt small{color:var(--mut);font-weight:500;margin-inline-start:4px}
+.opt.on{border-color:var(--brown);background:var(--gold2);color:var(--brown)}
+.f{display:block;margin-bottom:12px}
+.f>span{display:block;font-size:14px;color:var(--mut);margin-bottom:5px;font-weight:600}
+.f input,.f select,.f textarea{width:100%;min-height:46px;border-radius:12px;border:1.5px solid var(--line);padding:8px 12px;background:#fff}
+.f textarea{min-height:80px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.row>.grow{flex:1}
+
+/* ---------- payment ---------- */
+.paytot{text-align:center;padding:6px 0 14px}
+.paytot small{color:var(--mut)}
+.paytot b{display:block;font-size:44px;font-weight:800;color:var(--brown)}
+.tabs3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.tabs3 button{min-height:62px;border-radius:14px;border:2px solid var(--line);font-weight:800;font-size:17px;background:var(--card)}
+.tabs3 button.on{border-color:var(--brown);background:var(--gold2);color:var(--brown)}
+.quick{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
+.quick button{min-height:52px;border-radius:12px;background:var(--bg);font-weight:800;font-size:17px}
+.bigin{width:100%;min-height:64px;font-size:30px;text-align:center;border-radius:14px;border:2px solid var(--line);font-weight:800;direction:ltr}
+.change{margin-top:12px;padding:14px;border-radius:14px;text-align:center;font-size:18px;font-weight:700;background:var(--bg)}
+.change.ok{background:var(--green2);color:var(--green)}
+.change.bad{background:var(--red2);color:var(--red)}
+.change b{font-size:30px;display:block}
+.note{background:var(--gold2);border-radius:14px;padding:14px;color:var(--brown);font-size:15px;line-height:1.7}
+.note.red{background:var(--red2);color:var(--red)}
+.note.green{background:var(--green2);color:var(--green)}
+
+/* ---------- PIN / login ---------- */
+.login{min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(900px 500px at 70% -10%,#e8cfae,transparent),var(--bg)}
+.lbox{background:var(--card);border-radius:26px;box-shadow:0 20px 60px rgba(60,35,15,.15);padding:28px;width:100%;max-width:440px;text-align:center}
+.lbox .cupbig{width:74px;height:74px;border-radius:22px;background:var(--brown);color:#fff;font-size:38px;display:grid;place-items:center;margin:0 auto 10px}
+.lbox h1{font-size:26px}
+.lbox .sub{color:var(--mut);margin-bottom:18px}
+.users{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:14px}
+.dots{display:flex;gap:12px;justify-content:center;margin:12px 0 16px}
+.dots i{width:16px;height:16px;border-radius:50%;border:2px solid var(--brown2);display:block}
+.dots i.f{background:var(--brown2)}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.pad button{min-height:64px;border-radius:16px;background:var(--bg);font-size:26px;font-weight:800}
+.pad button:active{background:var(--gold2)}
+.hint{font-size:12.5px;color:var(--mut);margin-top:14px}
+.shake{animation:shake .35s}
+@keyframes shake{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+
+/* ---------- pages (orders/reports/settings) ---------- */
+.page{height:calc(100vh - 64px);height:calc(100dvh - 64px);overflow-y:auto;padding:16px}
+.wrap{max-width:1100px;margin:0 auto}
+.card{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);padding:16px;margin-bottom:14px}
+.card h3{font-size:17px;margin-bottom:10px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px}
+.kpi{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);padding:14px 16px}
+.kpi small{color:var(--mut);font-weight:600}
+.kpi b{display:block;font-size:26px;font-weight:800;color:var(--brown)}
+table.t{width:100%;border-collapse:collapse;font-size:14.5px}
+table.t th{color:var(--mut);font-weight:700;text-align:right;padding:8px;border-bottom:2px solid var(--line);white-space:nowrap}
+table.t td{padding:9px 8px;border-bottom:1px solid var(--line)}
+table.t tr.click{cursor:pointer}
+table.t tr.click:active{background:var(--bg)}
+.tag{display:inline-block;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:700;background:var(--bg)}
+.tag.g{background:var(--green2);color:var(--green)}
+.tag.r{background:var(--red2);color:var(--red)}
+.tag.b{background:#e6eef8;color:var(--blue)}
+.bars{display:flex;align-items:flex-end;gap:4px;height:140px;padding-top:10px}
+.bars div{flex:1;background:var(--gold);border-radius:6px 6px 0 0;position:relative;min-height:2px}
+.bars div span{position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--mut)}
+.stabs{display:flex;gap:8px;overflow-x:auto;margin-bottom:14px}
+.mi{display:grid;grid-template-columns:1fr 110px 110px 110px auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--line)}
+.mi input{min-height:42px;border-radius:10px;border:1.5px solid var(--line);padding:4px 10px;width:100%}
+.toggle{display:flex;align-items:center;gap:10px;min-height:46px;cursor:pointer}
+.toggle input{width:24px;height:24px;accent-color:var(--brown)}
+
+/* ---------- toast ---------- */
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(120px);background:var(--ink);color:#fff;padding:12px 22px;border-radius:30px;font-weight:600;z-index:90;transition:transform .25s;max-width:90vw;text-align:center}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast.bad{background:var(--red)}
+
+/* ---------- receipt (screen preview + print) ---------- */
+.rcpt{background:#fff;color:#000;width:300px;margin:0 auto;padding:14px 12px;font-family:"IBM Plex Sans Arabic",Tahoma,sans-serif;font-size:13px;line-height:1.45;box-shadow:0 2px 12px rgba(0,0,0,.12)}
+.rcpt.w58{width:220px;font-size:11.5px}
+.rcpt .c{text-align:center}
+.rcpt h2{font-size:19px;margin:2px 0}
+.rcpt .hr{border-top:1px dashed #000;margin:7px 0}
+.rcpt table{width:100%;border-collapse:collapse}
+.rcpt td{padding:2px 0;vertical-align:top}
+.rcpt td.p{text-align:left;white-space:nowrap;padding-inline-start:6px}
+.rcpt .o{font-size:11px;color:#333}
+.rcpt .tot td{font-size:17px;font-weight:800;padding-top:4px}
+.rcpt .big{font-size:40px;font-weight:800;text-align:center;line-height:1.1}
+.rcpt .qr{display:flex;justify-content:center;margin-top:8px}
+.rcpt .qr svg{width:120px;height:120px}
+#print{display:none}
+@media print{
+  @page{margin:0}
+  html,body{background:#fff!important;height:auto}
+  body>*:not(#print){display:none!important}
+  #print{display:block!important}
+  #print .rcpt{box-shadow:none;margin:0;width:72mm;padding:3mm 2mm}
+  #print .rcpt.w58{width:48mm}
+}
+
+/* ---------- responsive (iPad portrait / phones) ---------- */
+@media (max-width:900px){
+  .pos{grid-template-columns:1fr 330px}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
+  .nav button{padding:6px 10px}
+  .brand small{display:none}
+}
+@media (max-width:700px){
+  .pos{grid-template-columns:1fr;grid-template-rows:1fr auto;height:auto;min-height:calc(100dvh - 64px)}
+  .cart{border:0;border-top:2px solid var(--line)}
+  .lines{max-height:38vh}
+  .who .pill.sh{display:none}
+  .mi{grid-template-columns:1fr 1fr}
+}
+
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="print"></div>
+<div class="toast" id="toast"></div>
+<script>
+/* QR encoder — QRCode for JavaScript (c) 2009 Kazuhiko Arase, MIT license (as vendored in qrcode-terminal, Apache-2.0) */
+var QRLib=(function(){var defs={},cache={};function req(n){n=n.replace(/^\.\//,'').replace(/\.js$/,'');if(cache[n])return cache[n].exports;var m={exports:{}};cache[n]=m;defs[n](m,m.exports,req);return m.exports;}
+defs['QR8bitByte']=function(module,exports,require){
+var QRMode = require('./QRMode');
+
+function QR8bitByte(data) {
+	this.mode = QRMode.MODE_8BIT_BYTE;
+	this.data = data;
+}
+
+QR8bitByte.prototype = {
+
+	getLength : function() {
+		return this.data.length;
+	},
+	
+	write : function(buffer) {
+		for (var i = 0; i < this.data.length; i++) {
+			// not JIS ...
+			buffer.put(this.data.charCodeAt(i), 8);
+		}
+	}
+};
+
+module.exports = QR8bitByte;
+
+};
+defs['QRBitBuffer']=function(module,exports,require){
+function QRBitBuffer() {
+	this.buffer = [];
+	this.length = 0;
+}
+
+QRBitBuffer.prototype = {
+
+	get : function(index) {
+		var bufIndex = Math.floor(index / 8);
+		return ( (this.buffer[bufIndex] >>> (7 - index % 8) ) & 1) == 1;
+	},
+	
+	put : function(num, length) {
+		for (var i = 0; i < length; i++) {
+			this.putBit( ( (num >>> (length - i - 1) ) & 1) == 1);
+		}
+	},
+	
+	getLengthInBits : function() {
+		return this.length;
+	},
+	
+	putBit : function(bit) {
+	
+		var bufIndex = Math.floor(this.length / 8);
+		if (this.buffer.length <= bufIndex) {
+			this.buffer.push(0);
+		}
+	
+		if (bit) {
+			this.buffer[bufIndex] |= (0x80 >>> (this.length % 8) );
+		}
+	
+		this.length++;
+	}
+};
+
+module.exports = QRBitBuffer;
+
+};
+defs['QRErrorCorrectLevel']=function(module,exports,require){
+module.exports = {
+	L : 1,
+	M : 0,
+	Q : 3,
+	H : 2
+};
+
+
+};
+defs['QRMaskPattern']=function(module,exports,require){
+module.exports = {
+	PATTERN000 : 0,
+	PATTERN001 : 1,
+	PATTERN010 : 2,
+	PATTERN011 : 3,
+	PATTERN100 : 4,
+	PATTERN101 : 5,
+	PATTERN110 : 6,
+	PATTERN111 : 7
+};
+
+};
+defs['QRMath']=function(module,exports,require){
+var QRMath = {
+
+	glog : function(n) {
+	
+		if (n < 1) {
+			throw new Error("glog(" + n + ")");
+		}
+		
+		return QRMath.LOG_TABLE[n];
+	},
+	
+	gexp : function(n) {
+	
+		while (n < 0) {
+			n += 255;
+		}
+	
+		while (n >= 256) {
+			n -= 255;
+		}
+	
+		return QRMath.EXP_TABLE[n];
+	},
+	
+	EXP_TABLE : new Array(256),
+	
+	LOG_TABLE : new Array(256)
+
+};
+	
+for (var i = 0; i < 8; i++) {
+	QRMath.EXP_TABLE[i] = 1 << i;
+}
+for (var i = 8; i < 256; i++) {
+	QRMath.EXP_TABLE[i] = QRMath.EXP_TABLE[i - 4]
+		^ QRMath.EXP_TABLE[i - 5]
+		^ QRMath.EXP_TABLE[i - 6]
+		^ QRMath.EXP_TABLE[i - 8];
+}
+for (var i = 0; i < 255; i++) {
+	QRMath.LOG_TABLE[QRMath.EXP_TABLE[i] ] = i;
+}
+
+module.exports = QRMath;
+
+};
+defs['QRMode']=function(module,exports,require){
+module.exports = {
+    MODE_NUMBER :       1 << 0,
+    MODE_ALPHA_NUM :    1 << 1,
+    MODE_8BIT_BYTE :    1 << 2,
+    MODE_KANJI :        1 << 3
+};
+
+};
+defs['QRPolynomial']=function(module,exports,require){
+var QRMath = require('./QRMath');
+
+function QRPolynomial(num, shift) {
+	if (num.length === undefined) {
+		throw new Error(num.length + "/" + shift);
+	}
+
+	var offset = 0;
+
+	while (offset < num.length && num[offset] === 0) {
+		offset++;
+	}
+
+	this.num = new Array(num.length - offset + shift);
+	for (var i = 0; i < num.length - offset; i++) {
+		this.num[i] = num[i + offset];
+	}
+}
+
+QRPolynomial.prototype = {
+
+	get : function(index) {
+		return this.num[index];
+	},
+	
+	getLength : function() {
+		return this.num.length;
+	},
+	
+	multiply : function(e) {
+	
+		var num = new Array(this.getLength() + e.getLength() - 1);
+	
+		for (var i = 0; i < this.getLength(); i++) {
+			for (var j = 0; j < e.getLength(); j++) {
+				num[i + j] ^= QRMath.gexp(QRMath.glog(this.get(i) ) + QRMath.glog(e.get(j) ) );
+			}
+		}
+	
+		return new QRPolynomial(num, 0);
+	},
+	
+	mod : function(e) {
+	
+		if (this.getLength() - e.getLength() < 0) {
+			return this;
+		}
+	
+		var ratio = QRMath.glog(this.get(0) ) - QRMath.glog(e.get(0) );
+	
+		var num = new Array(this.getLength() );
+		
+		for (var i = 0; i < this.getLength(); i++) {
+			num[i] = this.get(i);
+		}
+		
+		for (var x = 0; x < e.getLength(); x++) {
+			num[x] ^= QRMath.gexp(QRMath.glog(e.get(x) ) + ratio);
+		}
+	
+		// recursive call
+		return new QRPolynomial(num, 0).mod(e);
+	}
+};
+
+module.exports = QRPolynomial;
+
+};
+defs['QRRSBlock']=function(module,exports,require){
+var QRErrorCorrectLevel = require('./QRErrorCorrectLevel');
+
+function QRRSBlock(totalCount, dataCount) {
+	this.totalCount = totalCount;
+	this.dataCount  = dataCount;
+}
+
+QRRSBlock.RS_BLOCK_TABLE = [
+
+	// L
+	// M
+	// Q
+	// H
+
+	// 1
+	[1, 26, 19],
+	[1, 26, 16],
+	[1, 26, 13],
+	[1, 26, 9],
+	
+	// 2
+	[1, 44, 34],
+	[1, 44, 28],
+	[1, 44, 22],
+	[1, 44, 16],
+
+	// 3
+	[1, 70, 55],
+	[1, 70, 44],
+	[2, 35, 17],
+	[2, 35, 13],
+
+	// 4		
+	[1, 100, 80],
+	[2, 50, 32],
+	[2, 50, 24],
+	[4, 25, 9],
+	
+	// 5
+	[1, 134, 108],
+	[2, 67, 43],
+	[2, 33, 15, 2, 34, 16],
+	[2, 33, 11, 2, 34, 12],
+	
+	// 6
+	[2, 86, 68],
+	[4, 43, 27],
+	[4, 43, 19],
+	[4, 43, 15],
+	
+	// 7		
+	[2, 98, 78],
+	[4, 49, 31],
+	[2, 32, 14, 4, 33, 15],
+	[4, 39, 13, 1, 40, 14],
+	
+	// 8
+	[2, 121, 97],
+	[2, 60, 38, 2, 61, 39],
+	[4, 40, 18, 2, 41, 19],
+	[4, 40, 14, 2, 41, 15],
+	
+	// 9
+	[2, 146, 116],
+	[3, 58, 36, 2, 59, 37],
+	[4, 36, 16, 4, 37, 17],
+	[4, 36, 12, 4, 37, 13],
+	
+	// 10		
+	[2, 86, 68, 2, 87, 69],
+	[4, 69, 43, 1, 70, 44],
+	[6, 43, 19, 2, 44, 20],
+	[6, 43, 15, 2, 44, 16],
+
+	// 11
+	[4, 101, 81],
+	[1, 80, 50, 4, 81, 51],
+	[4, 50, 22, 4, 51, 23],
+	[3, 36, 12, 8, 37, 13],
+
+	// 12
+	[2, 116, 92, 2, 117, 93],
+	[6, 58, 36, 2, 59, 37],
+	[4, 46, 20, 6, 47, 21],
+	[7, 42, 14, 4, 43, 15],
+
+	// 13
+	[4, 133, 107],
+	[8, 59, 37, 1, 60, 38],
+	[8, 44, 20, 4, 45, 21],
+	[12, 33, 11, 4, 34, 12],
+
+	// 14
+	[3, 145, 115, 1, 146, 116],
+	[4, 64, 40, 5, 65, 41],
+	[11, 36, 16, 5, 37, 17],
+	[11, 36, 12, 5, 37, 13],
+
+	// 15
+	[5, 109, 87, 1, 110, 88],
+	[5, 65, 41, 5, 66, 42],
+	[5, 54, 24, 7, 55, 25],
+	[11, 36, 12],
+
+	// 16
+	[5, 122, 98, 1, 123, 99],
+	[7, 73, 45, 3, 74, 46],
+	[15, 43, 19, 2, 44, 20],
+	[3, 45, 15, 13, 46, 16],
+
+	// 17
+	[1, 135, 107, 5, 136, 108],
+	[10, 74, 46, 1, 75, 47],
+	[1, 50, 22, 15, 51, 23],
+	[2, 42, 14, 17, 43, 15],
+
+	// 18
+	[5, 150, 120, 1, 151, 121],
+	[9, 69, 43, 4, 70, 44],
+	[17, 50, 22, 1, 51, 23],
+	[2, 42, 14, 19, 43, 15],
+
+	// 19
+	[3, 141, 113, 4, 142, 114],
+	[3, 70, 44, 11, 71, 45],
+	[17, 47, 21, 4, 48, 22],
+	[9, 39, 13, 16, 40, 14],
+
+	// 20
+	[3, 135, 107, 5, 136, 108],
+	[3, 67, 41, 13, 68, 42],
+	[15, 54, 24, 5, 55, 25],
+	[15, 43, 15, 10, 44, 16],
+
+	// 21
+	[4, 144, 116, 4, 145, 117],
+	[17, 68, 42],
+	[17, 50, 22, 6, 51, 23],
+	[19, 46, 16, 6, 47, 17],
+
+	// 22
+	[2, 139, 111, 7, 140, 112],
+	[17, 74, 46],
+	[7, 54, 24, 16, 55, 25],
+	[34, 37, 13],
+
+	// 23
+	[4, 151, 121, 5, 152, 122],
+	[4, 75, 47, 14, 76, 48],
+	[11, 54, 24, 14, 55, 25],
+	[16, 45, 15, 14, 46, 16],
+
+	// 24
+	[6, 147, 117, 4, 148, 118],
+	[6, 73, 45, 14, 74, 46],
+	[11, 54, 24, 16, 55, 25],
+	[30, 46, 16, 2, 47, 17],
+
+	// 25
+	[8, 132, 106, 4, 133, 107],
+	[8, 75, 47, 13, 76, 48],
+	[7, 54, 24, 22, 55, 25],
+	[22, 45, 15, 13, 46, 16],
+
+	// 26
+	[10, 142, 114, 2, 143, 115],
+	[19, 74, 46, 4, 75, 47],
+	[28, 50, 22, 6, 51, 23],
+	[33, 46, 16, 4, 47, 17],
+
+	// 27
+	[8, 152, 122, 4, 153, 123],
+	[22, 73, 45, 3, 74, 46],
+	[8, 53, 23, 26, 54, 24],
+	[12, 45, 15, 28, 46, 16],
+
+	// 28
+	[3, 147, 117, 10, 148, 118],
+	[3, 73, 45, 23, 74, 46],
+	[4, 54, 24, 31, 55, 25],
+	[11, 45, 15, 31, 46, 16],
+
+	// 29
+	[7, 146, 116, 7, 147, 117],
+	[21, 73, 45, 7, 74, 46],
+	[1, 53, 23, 37, 54, 24],
+	[19, 45, 15, 26, 46, 16],
+
+	// 30
+	[5, 145, 115, 10, 146, 116],
+	[19, 75, 47, 10, 76, 48],
+	[15, 54, 24, 25, 55, 25],
+	[23, 45, 15, 25, 46, 16],
+
+	// 31
+	[13, 145, 115, 3, 146, 116],
+	[2, 74, 46, 29, 75, 47],
+	[42, 54, 24, 1, 55, 25],
+	[23, 45, 15, 28, 46, 16],
+
+	// 32
+	[17, 145, 115],
+	[10, 74, 46, 23, 75, 47],
+	[10, 54, 24, 35, 55, 25],
+	[19, 45, 15, 35, 46, 16],
+
+	// 33
+	[17, 145, 115, 1, 146, 116],
+	[14, 74, 46, 21, 75, 47],
+	[29, 54, 24, 19, 55, 25],
+	[11, 45, 15, 46, 46, 16],
+
+	// 34
+	[13, 145, 115, 6, 146, 116],
+	[14, 74, 46, 23, 75, 47],
+	[44, 54, 24, 7, 55, 25],
+	[59, 46, 16, 1, 47, 17],
+
+	// 35
+	[12, 151, 121, 7, 152, 122],
+	[12, 75, 47, 26, 76, 48],
+	[39, 54, 24, 14, 55, 25],
+	[22, 45, 15, 41, 46, 16],
+
+	// 36
+	[6, 151, 121, 14, 152, 122],
+	[6, 75, 47, 34, 76, 48],
+	[46, 54, 24, 10, 55, 25],
+	[2, 45, 15, 64, 46, 16],
+
+	// 37
+	[17, 152, 122, 4, 153, 123],
+	[29, 74, 46, 14, 75, 47],
+	[49, 54, 24, 10, 55, 25],
+	[24, 45, 15, 46, 46, 16],
+
+	// 38
+	[4, 152, 122, 18, 153, 123],
+	[13, 74, 46, 32, 75, 47],
+	[48, 54, 24, 14, 55, 25],
+	[42, 45, 15, 32, 46, 16],
+
+	// 39
+	[20, 147, 117, 4, 148, 118],
+	[40, 75, 47, 7, 76, 48],
+	[43, 54, 24, 22, 55, 25],
+	[10, 45, 15, 67, 46, 16],
+
+	// 40
+	[19, 148, 118, 6, 149, 119],
+	[18, 75, 47, 31, 76, 48],
+	[34, 54, 24, 34, 55, 25],
+	[20, 45, 15, 61, 46, 16]
+];
+
+QRRSBlock.getRSBlocks = function(typeNumber, errorCorrectLevel) {
+	
+	var rsBlock = QRRSBlock.getRsBlockTable(typeNumber, errorCorrectLevel);
+	
+	if (rsBlock === undefined) {
+		throw new Error("bad rs block @ typeNumber:" + typeNumber + "/errorCorrectLevel:" + errorCorrectLevel);
+	}
+
+	var length = rsBlock.length / 3;
+	
+	var list = [];
+	
+	for (var i = 0; i < length; i++) {
+
+		var count = rsBlock[i * 3 + 0];
+		var totalCount = rsBlock[i * 3 + 1];
+		var dataCount  = rsBlock[i * 3 + 2];
+
+		for (var j = 0; j < count; j++) {
+			list.push(new QRRSBlock(totalCount, dataCount) );	
+		}
+	}
+	
+	return list;
+};
+
+QRRSBlock.getRsBlockTable = function(typeNumber, errorCorrectLevel) {
+
+	switch(errorCorrectLevel) {
+	case QRErrorCorrectLevel.L :
+		return QRRSBlock.RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 0];
+	case QRErrorCorrectLevel.M :
+		return QRRSBlock.RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 1];
+	case QRErrorCorrectLevel.Q :
+		return QRRSBlock.RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 2];
+	case QRErrorCorrectLevel.H :
+		return QRRSBlock.RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 3];
+	default :
+		return undefined;
+	}
+};
+
+module.exports = QRRSBlock;
+
+};
+defs['QRUtil']=function(module,exports,require){
+var QRMode = require('./QRMode');
+var QRPolynomial = require('./QRPolynomial');
+var QRMath = require('./QRMath');
+var QRMaskPattern = require('./QRMaskPattern');
+
+var QRUtil = {
+
+    PATTERN_POSITION_TABLE : [
+        [],
+        [6, 18],
+        [6, 22],
+        [6, 26],
+        [6, 30],
+        [6, 34],
+        [6, 22, 38],
+        [6, 24, 42],
+        [6, 26, 46],
+        [6, 28, 50],
+        [6, 30, 54],        
+        [6, 32, 58],
+        [6, 34, 62],
+        [6, 26, 46, 66],
+        [6, 26, 48, 70],
+        [6, 26, 50, 74],
+        [6, 30, 54, 78],
+        [6, 30, 56, 82],
+        [6, 30, 58, 86],
+        [6, 34, 62, 90],
+        [6, 28, 50, 72, 94],
+        [6, 26, 50, 74, 98],
+        [6, 30, 54, 78, 102],
+        [6, 28, 54, 80, 106],
+        [6, 32, 58, 84, 110],
+        [6, 30, 58, 86, 114],
+        [6, 34, 62, 90, 118],
+        [6, 26, 50, 74, 98, 122],
+        [6, 30, 54, 78, 102, 126],
+        [6, 26, 52, 78, 104, 130],
+        [6, 30, 56, 82, 108, 134],
+        [6, 34, 60, 86, 112, 138],
+        [6, 30, 58, 86, 114, 142],
+        [6, 34, 62, 90, 118, 146],
+        [6, 30, 54, 78, 102, 126, 150],
+        [6, 24, 50, 76, 102, 128, 154],
+        [6, 28, 54, 80, 106, 132, 158],
+        [6, 32, 58, 84, 110, 136, 162],
+        [6, 26, 54, 82, 110, 138, 166],
+        [6, 30, 58, 86, 114, 142, 170]
+    ],
+
+    G15 : (1 << 10) | (1 << 8) | (1 << 5) | (1 << 4) | (1 << 2) | (1 << 1) | (1 << 0),
+    G18 : (1 << 12) | (1 << 11) | (1 << 10) | (1 << 9) | (1 << 8) | (1 << 5) | (1 << 2) | (1 << 0),
+    G15_MASK : (1 << 14) | (1 << 12) | (1 << 10)    | (1 << 4) | (1 << 1),
+
+    getBCHTypeInfo : function(data) {
+        var d = data << 10;
+        while (QRUtil.getBCHDigit(d) - QRUtil.getBCHDigit(QRUtil.G15) >= 0) {
+            d ^= (QRUtil.G15 << (QRUtil.getBCHDigit(d) - QRUtil.getBCHDigit(QRUtil.G15) ) );    
+        }
+        return ( (data << 10) | d) ^ QRUtil.G15_MASK;
+    },
+
+    getBCHTypeNumber : function(data) {
+        var d = data << 12;
+        while (QRUtil.getBCHDigit(d) - QRUtil.getBCHDigit(QRUtil.G18) >= 0) {
+            d ^= (QRUtil.G18 << (QRUtil.getBCHDigit(d) - QRUtil.getBCHDigit(QRUtil.G18) ) );    
+        }
+        return (data << 12) | d;
+    },
+
+    getBCHDigit : function(data) {
+
+        var digit = 0;
+
+        while (data !== 0) {
+            digit++;
+            data >>>= 1;
+        }
+
+        return digit;
+    },
+
+    getPatternPosition : function(typeNumber) {
+        return QRUtil.PATTERN_POSITION_TABLE[typeNumber - 1];
+    },
+
+    getMask : function(maskPattern, i, j) {
+        
+        switch (maskPattern) {
+            
+        case QRMaskPattern.PATTERN000 : return (i + j) % 2 === 0;
+        case QRMaskPattern.PATTERN001 : return i % 2 === 0;
+        case QRMaskPattern.PATTERN010 : return j % 3 === 0;
+        case QRMaskPattern.PATTERN011 : return (i + j) % 3 === 0;
+        case QRMaskPattern.PATTERN100 : return (Math.floor(i / 2) + Math.floor(j / 3) ) % 2 === 0;
+        case QRMaskPattern.PATTERN101 : return (i * j) % 2 + (i * j) % 3 === 0;
+        case QRMaskPattern.PATTERN110 : return ( (i * j) % 2 + (i * j) % 3) % 2 === 0;
+        case QRMaskPattern.PATTERN111 : return ( (i * j) % 3 + (i + j) % 2) % 2 === 0;
+
+        default :
+            throw new Error("bad maskPattern:" + maskPattern);
+        }
+    },
+
+    getErrorCorrectPolynomial : function(errorCorrectLength) {
+
+        var a = new QRPolynomial([1], 0);
+
+        for (var i = 0; i < errorCorrectLength; i++) {
+            a = a.multiply(new QRPolynomial([1, QRMath.gexp(i)], 0) );
+        }
+
+        return a;
+    },
+
+    getLengthInBits : function(mode, type) {
+
+        if (1 <= type && type < 10) {
+
+            // 1 - 9
+
+            switch(mode) {
+            case QRMode.MODE_NUMBER     : return 10;
+            case QRMode.MODE_ALPHA_NUM  : return 9;
+            case QRMode.MODE_8BIT_BYTE  : return 8;
+            case QRMode.MODE_KANJI      : return 8;
+            default :
+                throw new Error("mode:" + mode);
+            }
+
+        } else if (type < 27) {
+
+            // 10 - 26
+
+            switch(mode) {
+            case QRMode.MODE_NUMBER     : return 12;
+            case QRMode.MODE_ALPHA_NUM  : return 11;
+            case QRMode.MODE_8BIT_BYTE  : return 16;
+            case QRMode.MODE_KANJI      : return 10;
+            default :
+                throw new Error("mode:" + mode);
+            }
+
+        } else if (type < 41) {
+
+            // 27 - 40
+
+            switch(mode) {
+            case QRMode.MODE_NUMBER     : return 14;
+            case QRMode.MODE_ALPHA_NUM  : return 13;
+            case QRMode.MODE_8BIT_BYTE  : return 16;
+            case QRMode.MODE_KANJI      : return 12;
+            default :
+                throw new Error("mode:" + mode);
+            }
+
+        } else {
+            throw new Error("type:" + type);
+        }
+    },
+
+    getLostPoint : function(qrCode) {
+        
+        var moduleCount = qrCode.getModuleCount();
+        var lostPoint = 0;
+        var row = 0; 
+        var col = 0;
+
+        
+        // LEVEL1
+        
+        for (row = 0; row < moduleCount; row++) {
+
+            for (col = 0; col < moduleCount; col++) {
+
+                var sameCount = 0;
+                var dark = qrCode.isDark(row, col);
+
+                for (var r = -1; r <= 1; r++) {
+
+                    if (row + r < 0 || moduleCount <= row + r) {
+                        continue;
+                    }
+
+                    for (var c = -1; c <= 1; c++) {
+
+                        if (col + c < 0 || moduleCount <= col + c) {
+                            continue;
+                        }
+
+                        if (r === 0 && c === 0) {
+                            continue;
+                        }
+
+                        if (dark === qrCode.isDark(row + r, col + c) ) {
+                            sameCount++;
+                        }
+                    }
+                }
+
+                if (sameCount > 5) {
+                    lostPoint += (3 + sameCount - 5);
+                }
+            }
+        }
+
+        // LEVEL2
+
+        for (row = 0; row < moduleCount - 1; row++) {
+            for (col = 0; col < moduleCount - 1; col++) {
+                var count = 0;
+                if (qrCode.isDark(row,     col    ) ) count++;
+                if (qrCode.isDark(row + 1, col    ) ) count++;
+                if (qrCode.isDark(row,     col + 1) ) count++;
+                if (qrCode.isDark(row + 1, col + 1) ) count++;
+                if (count === 0 || count === 4) {
+                    lostPoint += 3;
+                }
+            }
+        }
+
+        // LEVEL3
+
+        for (row = 0; row < moduleCount; row++) {
+            for (col = 0; col < moduleCount - 6; col++) {
+                if (qrCode.isDark(row, col) && 
+                        !qrCode.isDark(row, col + 1) && 
+                         qrCode.isDark(row, col + 2) && 
+                         qrCode.isDark(row, col + 3) && 
+                         qrCode.isDark(row, col + 4) && 
+                        !qrCode.isDark(row, col + 5) && 
+                         qrCode.isDark(row, col + 6) ) {
+                    lostPoint += 40;
+                }
+            }
+        }
+
+        for (col = 0; col < moduleCount; col++) {
+            for (row = 0; row < moduleCount - 6; row++) {
+                if (qrCode.isDark(row, col) &&
+                        !qrCode.isDark(row + 1, col) &&
+                         qrCode.isDark(row + 2, col) &&
+                         qrCode.isDark(row + 3, col) &&
+                         qrCode.isDark(row + 4, col) &&
+                        !qrCode.isDark(row + 5, col) &&
+                         qrCode.isDark(row + 6, col) ) {
+                    lostPoint += 40;
+                }
+            }
+        }
+
+        // LEVEL4
+        
+        var darkCount = 0;
+
+        for (col = 0; col < moduleCount; col++) {
+            for (row = 0; row < moduleCount; row++) {
+                if (qrCode.isDark(row, col) ) {
+                    darkCount++;
+                }
+            }
+        }
+        
+        var ratio = Math.abs(100 * darkCount / moduleCount / moduleCount - 50) / 5;
+        lostPoint += ratio * 10;
+
+        return lostPoint;       
+    }
+
+};
+
+module.exports = QRUtil;
+
+};
+defs['index']=function(module,exports,require){
+//---------------------------------------------------------------------
+// QRCode for JavaScript
+//
+// Copyright (c) 2009 Kazuhiko Arase
+//
+// URL: http://www.d-project.com/
+//
+// Licensed under the MIT license:
+//   http://www.opensource.org/licenses/mit-license.php
+//
+// The word "QR Code" is registered trademark of 
+// DENSO WAVE INCORPORATED
+//   http://www.denso-wave.com/qrcode/faqpatent-e.html
+//
+//---------------------------------------------------------------------
+// Modified to work in node for this project (and some refactoring)
+//---------------------------------------------------------------------
+
+var QR8bitByte = require('./QR8bitByte');
+var QRUtil = require('./QRUtil');
+var QRPolynomial = require('./QRPolynomial');
+var QRRSBlock = require('./QRRSBlock');
+var QRBitBuffer = require('./QRBitBuffer');
+
+function QRCode(typeNumber, errorCorrectLevel) {
+	this.typeNumber = typeNumber;
+	this.errorCorrectLevel = errorCorrectLevel;
+	this.modules = null;
+	this.moduleCount = 0;
+	this.dataCache = null;
+	this.dataList = [];
+}
+
+QRCode.prototype = {
+	
+	addData : function(data) {
+		var newData = new QR8bitByte(data);
+		this.dataList.push(newData);
+		this.dataCache = null;
+	},
+	
+	isDark : function(row, col) {
+		if (row < 0 || this.moduleCount <= row || col < 0 || this.moduleCount <= col) {
+			throw new Error(row + "," + col);
+		}
+		return this.modules[row][col];
+	},
+
+	getModuleCount : function() {
+		return this.moduleCount;
+	},
+	
+	make : function() {
+		// Calculate automatically typeNumber if provided is < 1
+		if (this.typeNumber < 1 ){
+			var typeNumber = 1;
+			for (typeNumber = 1; typeNumber < 40; typeNumber++) {
+				var rsBlocks = QRRSBlock.getRSBlocks(typeNumber, this.errorCorrectLevel);
+
+				var buffer = new QRBitBuffer();
+				var totalDataCount = 0;
+				for (var i = 0; i < rsBlocks.length; i++) {
+					totalDataCount += rsBlocks[i].dataCount;
+				}
+
+				for (var x = 0; x < this.dataList.length; x++) {
+					var data = this.dataList[x];
+					buffer.put(data.mode, 4);
+					buffer.put(data.getLength(), QRUtil.getLengthInBits(data.mode, typeNumber) );
+					data.write(buffer);
+				}
+				if (buffer.getLengthInBits() <= totalDataCount * 8)
+					break;
+			}
+			this.typeNumber = typeNumber;
+		}
+		this.makeImpl(false, this.getBestMaskPattern() );
+	},
+	
+	makeImpl : function(test, maskPattern) {
+		
+		this.moduleCount = this.typeNumber * 4 + 17;
+		this.modules = new Array(this.moduleCount);
+		
+		for (var row = 0; row < this.moduleCount; row++) {
+			
+			this.modules[row] = new Array(this.moduleCount);
+			
+			for (var col = 0; col < this.moduleCount; col++) {
+				this.modules[row][col] = null;//(col + row) % 3;
+			}
+		}
+	
+		this.setupPositionProbePattern(0, 0);
+		this.setupPositionProbePattern(this.moduleCount - 7, 0);
+		this.setupPositionProbePattern(0, this.moduleCount - 7);
+		this.setupPositionAdjustPattern();
+		this.setupTimingPattern();
+		this.setupTypeInfo(test, maskPattern);
+		
+		if (this.typeNumber >= 7) {
+			this.setupTypeNumber(test);
+		}
+	
+		if (this.dataCache === null) {
+			this.dataCache = QRCode.createData(this.typeNumber, this.errorCorrectLevel, this.dataList);
+		}
+	
+		this.mapData(this.dataCache, maskPattern);
+	},
+
+	setupPositionProbePattern : function(row, col)  {
+		
+		for (var r = -1; r <= 7; r++) {
+			
+			if (row + r <= -1 || this.moduleCount <= row + r) continue;
+			
+			for (var c = -1; c <= 7; c++) {
+				
+				if (col + c <= -1 || this.moduleCount <= col + c) continue;
+				
+				if ( (0 <= r && r <= 6 && (c === 0 || c === 6) ) || 
+                     (0 <= c && c <= 6 && (r === 0 || r === 6) ) || 
+                     (2 <= r && r <= 4 && 2 <= c && c <= 4) ) {
+					this.modules[row + r][col + c] = true;
+				} else {
+					this.modules[row + r][col + c] = false;
+				}
+			}		
+		}		
+	},
+	
+	getBestMaskPattern : function() {
+	
+		var minLostPoint = 0;
+		var pattern = 0;
+	
+		for (var i = 0; i < 8; i++) {
+			
+			this.makeImpl(true, i);
+	
+			var lostPoint = QRUtil.getLostPoint(this);
+	
+			if (i === 0 || minLostPoint >  lostPoint) {
+				minLostPoint = lostPoint;
+				pattern = i;
+			}
+		}
+	
+		return pattern;
+	},
+	
+	createMovieClip : function(target_mc, instance_name, depth) {
+	
+		var qr_mc = target_mc.createEmptyMovieClip(instance_name, depth);
+		var cs = 1;
+	
+		this.make();
+
+		for (var row = 0; row < this.modules.length; row++) {
+			
+			var y = row * cs;
+			
+			for (var col = 0; col < this.modules[row].length; col++) {
+	
+				var x = col * cs;
+				var dark = this.modules[row][col];
+			
+				if (dark) {
+					qr_mc.beginFill(0, 100);
+					qr_mc.moveTo(x, y);
+					qr_mc.lineTo(x + cs, y);
+					qr_mc.lineTo(x + cs, y + cs);
+					qr_mc.lineTo(x, y + cs);
+					qr_mc.endFill();
+				}
+			}
+		}
+		
+		return qr_mc;
+	},
+
+	setupTimingPattern : function() {
+		
+		for (var r = 8; r < this.moduleCount - 8; r++) {
+			if (this.modules[r][6] !== null) {
+				continue;
+			}
+			this.modules[r][6] = (r % 2 === 0);
+		}
+	
+		for (var c = 8; c < this.moduleCount - 8; c++) {
+			if (this.modules[6][c] !== null) {
+				continue;
+			}
+			this.modules[6][c] = (c % 2 === 0);
+		}
+	},
+	
+	setupPositionAdjustPattern : function() {
+	
+		var pos = QRUtil.getPatternPosition(this.typeNumber);
+		
+		for (var i = 0; i < pos.length; i++) {
+		
+			for (var j = 0; j < pos.length; j++) {
+			
+				var row = pos[i];
+				var col = pos[j];
+				
+				if (this.modules[row][col] !== null) {
+					continue;
+				}
+				
+				for (var r = -2; r <= 2; r++) {
+				
+					for (var c = -2; c <= 2; c++) {
+					
+						if (Math.abs(r) === 2 || 
+                            Math.abs(c) === 2 ||
+                            (r === 0 && c === 0) ) {
+							this.modules[row + r][col + c] = true;
+						} else {
+							this.modules[row + r][col + c] = false;
+						}
+					}
+				}
+			}
+		}
+	},
+	
+	setupTypeNumber : function(test) {
+	
+		var bits = QRUtil.getBCHTypeNumber(this.typeNumber);
+        var mod;
+	
+		for (var i = 0; i < 18; i++) {
+			mod = (!test && ( (bits >> i) & 1) === 1);
+			this.modules[Math.floor(i / 3)][i % 3 + this.moduleCount - 8 - 3] = mod;
+		}
+	
+		for (var x = 0; x < 18; x++) {
+			mod = (!test && ( (bits >> x) & 1) === 1);
+			this.modules[x % 3 + this.moduleCount - 8 - 3][Math.floor(x / 3)] = mod;
+		}
+	},
+	
+	setupTypeInfo : function(test, maskPattern) {
+	
+		var data = (this.errorCorrectLevel << 3) | maskPattern;
+		var bits = QRUtil.getBCHTypeInfo(data);
+        var mod;
+	
+		// vertical		
+		for (var v = 0; v < 15; v++) {
+	
+			mod = (!test && ( (bits >> v) & 1) === 1);
+	
+			if (v < 6) {
+				this.modules[v][8] = mod;
+			} else if (v < 8) {
+				this.modules[v + 1][8] = mod;
+			} else {
+				this.modules[this.moduleCount - 15 + v][8] = mod;
+			}
+		}
+	
+		// horizontal
+		for (var h = 0; h < 15; h++) {
+	
+			mod = (!test && ( (bits >> h) & 1) === 1);
+			
+			if (h < 8) {
+				this.modules[8][this.moduleCount - h - 1] = mod;
+			} else if (h < 9) {
+				this.modules[8][15 - h - 1 + 1] = mod;
+			} else {
+				this.modules[8][15 - h - 1] = mod;
+			}
+		}
+	
+		// fixed module
+		this.modules[this.moduleCount - 8][8] = (!test);
+	
+	},
+	
+	mapData : function(data, maskPattern) {
+		
+		var inc = -1;
+		var row = this.moduleCount - 1;
+		var bitIndex = 7;
+		var byteIndex = 0;
+		
+		for (var col = this.moduleCount - 1; col > 0; col -= 2) {
+	
+			if (col === 6) col--;
+	
+			while (true) {
+	
+				for (var c = 0; c < 2; c++) {
+					
+					if (this.modules[row][col - c] === null) {
+						
+						var dark = false;
+	
+						if (byteIndex < data.length) {
+							dark = ( ( (data[byteIndex] >>> bitIndex) & 1) === 1);
+						}
+	
+						var mask = QRUtil.getMask(maskPattern, row, col - c);
+	
+						if (mask) {
+							dark = !dark;
+						}
+						
+						this.modules[row][col - c] = dark;
+						bitIndex--;
+	
+						if (bitIndex === -1) {
+							byteIndex++;
+							bitIndex = 7;
+						}
+					}
+				}
+								
+				row += inc;
+	
+				if (row < 0 || this.moduleCount <= row) {
+					row -= inc;
+					inc = -inc;
+					break;
+				}
+			}
+		}
+		
+	}
+
+};
+
+QRCode.PAD0 = 0xEC;
+QRCode.PAD1 = 0x11;
+
+QRCode.createData = function(typeNumber, errorCorrectLevel, dataList) {
+	
+	var rsBlocks = QRRSBlock.getRSBlocks(typeNumber, errorCorrectLevel);
+	
+	var buffer = new QRBitBuffer();
+	
+	for (var i = 0; i < dataList.length; i++) {
+		var data = dataList[i];
+		buffer.put(data.mode, 4);
+		buffer.put(data.getLength(), QRUtil.getLengthInBits(data.mode, typeNumber) );
+		data.write(buffer);
+	}
+
+	// calc num max data.
+	var totalDataCount = 0;
+	for (var x = 0; x < rsBlocks.length; x++) {
+		totalDataCount += rsBlocks[x].dataCount;
+	}
+
+	if (buffer.getLengthInBits() > totalDataCount * 8) {
+		throw new Error("code length overflow. (" + 
+            buffer.getLengthInBits() + 
+            ">" +  
+            totalDataCount * 8 + 
+            ")");
+	}
+
+	// end code
+	if (buffer.getLengthInBits() + 4 <= totalDataCount * 8) {
+		buffer.put(0, 4);
+	}
+
+	// padding
+	while (buffer.getLengthInBits() % 8 !== 0) {
+		buffer.putBit(false);
+	}
+
+	// padding
+	while (true) {
+		
+		if (buffer.getLengthInBits() >= totalDataCount * 8) {
+			break;
+		}
+		buffer.put(QRCode.PAD0, 8);
+		
+		if (buffer.getLengthInBits() >= totalDataCount * 8) {
+			break;
+		}
+		buffer.put(QRCode.PAD1, 8);
+	}
+
+	return QRCode.createBytes(buffer, rsBlocks);
+};
+
+QRCode.createBytes = function(buffer, rsBlocks) {
+
+	var offset = 0;
+	
+	var maxDcCount = 0;
+	var maxEcCount = 0;
+	
+	var dcdata = new Array(rsBlocks.length);
+	var ecdata = new Array(rsBlocks.length);
+	
+	for (var r = 0; r < rsBlocks.length; r++) {
+
+		var dcCount = rsBlocks[r].dataCount;
+		var ecCount = rsBlocks[r].totalCount - dcCount;
+
+		maxDcCount = Math.max(maxDcCount, dcCount);
+		maxEcCount = Math.max(maxEcCount, ecCount);
+		
+		dcdata[r] = new Array(dcCount);
+		
+		for (var i = 0; i < dcdata[r].length; i++) {
+			dcdata[r][i] = 0xff & buffer.buffer[i + offset];
+		}
+		offset += dcCount;
+		
+		var rsPoly = QRUtil.getErrorCorrectPolynomial(ecCount);
+		var rawPoly = new QRPolynomial(dcdata[r], rsPoly.getLength() - 1);
+
+		var modPoly = rawPoly.mod(rsPoly);
+		ecdata[r] = new Array(rsPoly.getLength() - 1);
+		for (var x = 0; x < ecdata[r].length; x++) {
+            var modIndex = x + modPoly.getLength() - ecdata[r].length;
+			ecdata[r][x] = (modIndex >= 0)? modPoly.get(modIndex) : 0;
+		}
+
+	}
+	
+	var totalCodeCount = 0;
+	for (var y = 0; y < rsBlocks.length; y++) {
+		totalCodeCount += rsBlocks[y].totalCount;
+	}
+
+	var data = new Array(totalCodeCount);
+	var index = 0;
+
+	for (var z = 0; z < maxDcCount; z++) {
+		for (var s = 0; s < rsBlocks.length; s++) {
+			if (z < dcdata[s].length) {
+				data[index++] = dcdata[s][z];
+			}
+		}
+	}
+
+	for (var xx = 0; xx < maxEcCount; xx++) {
+		for (var t = 0; t < rsBlocks.length; t++) {
+			if (xx < ecdata[t].length) {
+				data[index++] = ecdata[t][xx];
+			}
+		}
+	}
+
+	return data;
+
+};
+
+module.exports = QRCode;
+
+};
+return {QRCode:req('index'),ECL:req('QRErrorCorrectLevel')};})();
+"use strict";
+/* =====================================================================
+   كاشير كوفي دوفي — النواة: التخزين، المنيو، الدخول، الوردية، البيع، الدفع، الإيصال
+   يعمل بدون إنترنت: الإعدادات في localStorage والطلبات في IndexedDB على الجهاز
+   ===================================================================== */
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, m => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[m]));
+const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+const m2 = n => r2(n).toFixed(2);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const pad = (n, l = 2) => String(n).padStart(l, "0");
+const dayOf = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const timeOf = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const fmtDT = iso => { const d = new Date(iso); return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()} ${timeOf(d)}`; };
+let toastT;
+function toast(msg, bad){ const t = $("#toast"); t.textContent = msg; t.className = "toast show" + (bad ? " bad" : ""); clearTimeout(toastT); toastT = setTimeout(() => t.className = "toast" + (bad ? " bad" : ""), 2600); }
+
+/* ---------------- storage ---------------- */
+const LS = {
+  get(k, d){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { toast("⚠️ ما قدرت أحفظ — مساحة الجهاز ممتلئة. صدّر نسخة احتياطية.", 1); return false; } }
+};
+/* orders and shifts in IndexedDB (big, grows daily); falls back to localStorage if IndexedDB is blocked */
+const DB = {
+  db: null, mem: false,
+  open(){ return new Promise(res => { try { const r = indexedDB.open("coffeedoffee", 1);
+      r.onupgradeneeded = () => { const d = r.result; d.createObjectStore("orders", {keyPath: "id"}).createIndex("day", "day"); d.createObjectStore("shifts", {keyPath: "id"}); };
+      r.onsuccess = () => { DB.db = r.result; res(); }; r.onerror = () => { DB.mem = true; res(); };
+    } catch (e) { DB.mem = true; res(); } }); },
+  _ls(s){ return LS.get("cd_" + s, []); },
+  put(s, v){ if (DB.mem) { const a = DB._ls(s).filter(x => x.id !== v.id); a.push(v); LS.set("cd_" + s, a); return Promise.resolve(v); }
+    return new Promise((res, rej) => { const t = DB.db.transaction(s, "readwrite"); t.objectStore(s).put(v); t.oncomplete = () => res(v); t.onerror = () => rej(t.error); }); },
+  get(s, id){ if (DB.mem) return Promise.resolve(DB._ls(s).find(x => x.id === id)); return new Promise(res => { const r = DB.db.transaction(s).objectStore(s).get(id); r.onsuccess = () => res(r.result); r.onerror = () => res(null); }); },
+  all(s){ if (DB.mem) return Promise.resolve(DB._ls(s)); return new Promise(res => { const r = DB.db.transaction(s).objectStore(s).getAll(); r.onsuccess = () => res(r.result || []); r.onerror = () => res([]); }); },
+  days(from, to){ if (DB.mem) return Promise.resolve(DB._ls("orders").filter(o => o.day >= from && o.day <= to));
+    return new Promise(res => { const r = DB.db.transaction("orders").objectStore("orders").index("day").getAll(IDBKeyRange.bound(from, to)); r.onsuccess = () => res(r.result || []); r.onerror = () => res([]); }); },
+  clear(s){ if (DB.mem) { LS.set("cd_" + s, []); return Promise.resolve(); } return new Promise(res => { const t = DB.db.transaction(s, "readwrite"); t.objectStore(s).clear(); t.oncomplete = () => res(); }); }
+};
+
+/* ---------------- starter menu (prices are placeholders — edit in Settings) ---------------- */
+function seed(){
+  const S = (a, b, c) => [{n: "صغير", p: a}, {n: "وسط", p: b}, {n: "كبير", p: c}];
+  const MILK = ["milk", "extra", "sugar"], BLACK = ["extra", "sugar"];
+  const it = (cat, icon, name, price, sizes, groups) => ({id: uid(), cat, icon, name, price, sizes: sizes || [], groups: groups || [], active: true});
+  return {
+    v: 1,
+    settings: {name: "كوفي دوفي", nameEn: "Coffee Doffee", branch: "فرع معهد أسس", phone: "", cr: "", footer: "شكراً لزيارتكم ☕ نتشرّف بخدمتكم دائماً",
+      paper: 80, autoPrint: false, autoTicket: false, printer: {mode: "system", ip: "", port: "", proto: "", devid: "local_printer", drawer: true}, discPin: true, vat: {on: false, rate: 15, number: ""}},
+    users: [{id: "u_mgr", name: "المدير", role: "manager", pin: "1234"}, {id: "u_cash", name: "الكاشير", role: "cashier", pin: "0000"}],
+    groups: [
+      {id: "milk", name: "نوع الحليب", multi: false, choices: [{n: "حليب عادي", p: 0}, {n: "قليل الدسم", p: 0}, {n: "شوفان", p: 3}, {n: "لوز", p: 3}, {n: "جوز الهند", p: 3}]},
+      {id: "extra", name: "إضافات", multi: true, choices: [{n: "شوت إسبريسو إضافي", p: 4}, {n: "سيرب فانيلا", p: 2}, {n: "سيرب كراميل", p: 2}, {n: "سيرب بندق", p: 2}, {n: "كريمة", p: 2}]},
+      {id: "sugar", name: "السكر", multi: false, choices: [{n: "سكر عادي", p: 0}, {n: "سكر خفيف", p: 0}, {n: "بدون سكر", p: 0}]}
+    ],
+    cats: [{id: "hot", name: "قهوة حارة", icon: "☕"}, {id: "cold", name: "قهوة باردة", icon: "🧊"}, {id: "tea", name: "شاي ومشروبات", icon: "🍵"}, {id: "fresh", name: "منعشات", icon: "🥤"}, {id: "sweet", name: "حلا ومخبوزات", icon: "🍰"}],
+    items: [
+      it("hot", "☕", "إسبريسو", 9, null, BLACK), it("hot", "☕", "أمريكانو", 12, S(12, 14, 16), BLACK), it("hot", "🥛", "لاتيه", 15, S(15, 17, 19), MILK),
+      it("hot", "☕", "كابتشينو", 15, S(15, 17, 19), MILK), it("hot", "☕", "فلات وايت", 16, null, MILK), it("hot", "🥛", "سبانش لاتيه", 17, S(17, 19, 21), MILK),
+      it("hot", "🫖", "قهوة اليوم V60", 16, null, ["sugar"]), it("hot", "🫖", "قهوة سعودية", 15, null, ["sugar"]),
+      it("cold", "🧊", "آيس لاتيه", 16, S(16, 18, 20), MILK), it("cold", "🧊", "آيس سبانش لاتيه", 18, S(18, 20, 22), MILK), it("cold", "🧊", "آيس أمريكانو", 13, S(13, 15, 17), BLACK),
+      it("cold", "🧋", "كولد برو", 17, null, ["sugar"]), it("cold", "🍫", "آيس موكا", 18, S(18, 20, 22), MILK),
+      it("tea", "🍵", "شاي أحمر", 5, null, ["sugar"]), it("tea", "🍵", "شاي كرك", 8, null, ["sugar"]), it("tea", "🍵", "شاي أخضر", 7, null, ["sugar"]),
+      it("tea", "🍫", "هوت شوكلت", 14, S(14, 16, 18), ["milk"]), it("tea", "🍵", "ماتشا لاتيه", 19, S(19, 21, 23), MILK),
+      it("fresh", "🍹", "موهيتو", 16), it("fresh", "🍊", "عصير برتقال", 14), it("fresh", "🍋", "ليمون نعناع", 13), it("fresh", "💧", "مياه", 2),
+      it("sweet", "🍪", "كوكيز", 8), it("sweet", "🥐", "كرواسون", 9), it("sweet", "🍰", "تشيز كيك", 18), it("sweet", "🍫", "براونيز", 12), it("sweet", "🍮", "سان سباستيان", 22)
+    ],
+    seq: {day: "", n: 0}, serial: 0, held: [], shift: null
+  };
+}
+let CFG = LS.get("cd_cfg", null) || seed();
+function saveCfg(){ LS.set("cd_cfg", CFG); }
+if (!CFG.settings.printer) { CFG.settings.printer = seed().settings.printer; saveCfg(); }
+
+/* ---------------- session ---------------- */
+let USER = null, VIEW = "pos", CAT = null, Q = "";
+let CART = newCart();
+function newCart(){ return {lines: [], type: "local", disc: null, cust: ""}; }
+const isMgr = () => USER && USER.role === "manager";
+const SH = () => CFG.shift;   // open shift object or null
+const cur = () => "ر.س";
+
+/* ---------------- money math ---------------- */
+function lineUnit(item, size, opts){ return r2((size ? size.p : item.price) + opts.reduce((a, o) => a + o.p, 0)); }
+function totals(c = CART){
+  const sub = r2(c.lines.reduce((a, l) => a + l.unit * l.qty, 0));
+  let disc = 0; if (c.disc) disc = c.disc.type === "pct" ? r2(sub * c.disc.v / 100) : Math.min(sub, r2(c.disc.v));
+  const total = r2(sub - disc), V = CFG.settings.vat;
+  const vat = V.on ? r2(total - total / (1 + V.rate / 100)) : 0;   // menu prices include VAT
+  return {sub, disc, total, vat, net: r2(total - vat), count: c.lines.reduce((a, l) => a + l.qty, 0)};
+}
+
+/* ---------------- app shell ---------------- */
+function render(){
+  const app = $("#app");
+  if (!USER) { app.innerHTML = loginHTML(); bindLogin(); return; }
+  if (!SH()) { app.innerHTML = topHTML() + openShiftHTML(); bindTop(); bindOpenShift(); return; }
+  app.innerHTML = topHTML() + (VIEW === "pos" ? posHTML() : VIEW === "orders" ? `<div class="page" id="pg"></div>` : VIEW === "reports" ? `<div class="page" id="pg"></div>` : VIEW === "settings" ? `<div class="page" id="pg"></div>` : `<div class="page" id="pg"></div>`);
+  bindTop();
+  if (VIEW === "pos") bindPos(); else if (VIEW === "orders") ordersPage(); else if (VIEW === "reports") reportsPage(); else if (VIEW === "settings") settingsPage(); else if (VIEW === "close") closeShiftPage();
+}
+function topHTML(){
+  const N = [["pos", "💵 البيع"], ["orders", "🧾 الطلبات"], ["reports", "📊 التقارير"], ...(isMgr() ? [["settings", "⚙️ الإعدادات"]] : [])];
+  return `<header class="top"><div class="brand"><div class="cup">☕</div><div>${esc(CFG.settings.name)}<small>${esc(CFG.settings.branch)}</small></div></div>
+    <nav class="nav">${SH() ? N.map(([k, t]) => `<button data-nav="${k}" class="${VIEW === k ? "on" : ""}">${t}</button>`).join("") : ""}</nav>
+    <div class="who">${SH() ? `<span class="pill sh">🕐 وردية مفتوحة ${timeOf(new Date(SH().openAt))}</span><button class="btn sm" data-nav="close">إغلاق الوردية</button>` : ""}<span class="pill">👤 ${esc(USER.name)}</span><button class="btn sm" id="lock">🔒 قفل</button></div></header>`;
+}
+function bindTop(){
+  $$("[data-nav]").forEach(b => b.onclick = () => { VIEW = b.dataset.nav; render(); });
+  $("#lock").onclick = () => { USER = null; VIEW = "pos"; render(); };
+}
+
+/* ---------------- login with PIN ---------------- */
+let PIN = "", PICK = null;
+function loginHTML(){
+  const U = CFG.users; PICK = PICK && U.find(u => u.id === PICK.id) ? PICK : U.find(u => u.role === "cashier") || U[0];
+  const first = CFG.users.some(u => u.pin === "1234" && u.role === "manager");
+  return `<div class="login"><div class="lbox"><div class="cupbig">☕</div><h1>${esc(CFG.settings.name)}</h1><div class="sub">${esc(CFG.settings.branch)} · نظام الكاشير</div>
+    <div class="users">${U.map(u => `<button class="chip ${u.id === PICK.id ? "on" : ""}" data-u="${u.id}">${u.role === "manager" ? "⭐ " : "👤 "}${esc(u.name)}</button>`).join("")}</div>
+    <div class="dots" id="dots">${[0, 1, 2, 3].map(i => `<i class="${i < PIN.length ? "f" : ""}"></i>`).join("")}</div>
+    <div class="pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button data-k="${n}">${n}</button>`).join("")}<button data-k="c">⌫</button><button data-k="0">0</button><button data-k="ok" style="background:var(--brown);color:#fff;font-size:20px">دخول</button></div>
+    ${first ? `<div class="hint">أول استخدام: المدير <b>1234</b> · الكاشير <b>0000</b> — غيّرها من الإعدادات ← المستخدمين</div>` : ""}</div></div>`;
+}
+function bindLogin(){
+  $$("[data-u]").forEach(b => b.onclick = () => { PICK = CFG.users.find(u => u.id === b.dataset.u); PIN = ""; render(); });
+  const go = () => { if (PIN === PICK.pin) { USER = PICK; PIN = ""; VIEW = "pos"; CAT = null; render(); } else { PIN = ""; const d = $("#dots"); render(); $(".lbox").classList.add("shake"); toast("الرمز غير صحيح", 1); } };
+  $$("[data-k]").forEach(b => b.onclick = () => { const k = b.dataset.k; if (k === "c") PIN = PIN.slice(0, -1); else if (k === "ok") return go(); else if (PIN.length < 6) PIN += k; $("#dots").innerHTML = [0, 1, 2, 3].map(i => `<i class="${i < PIN.length ? "f" : ""}"></i>`).join("") + (PIN.length > 4 ? "•".repeat(PIN.length - 4) : ""); if (PIN.length === PICK.pin.length && PIN === PICK.pin) go(); });
+}
+/* manager approval: resolves true if a manager PIN is typed (or the user is a manager) */
+function askManager(why){
+  return new Promise(res => {
+    if (isMgr()) return res(true);
+    let p = ""; const ov = modal(`<div class="mh"><b>🔐 موافقة المدير</b><button class="x" data-close>×</button></div><div class="mb" style="text-align:center"><p style="color:var(--mut)">${esc(why)}</p><div class="dots" id="mdots">${"<i></i>".repeat(4)}</div><div class="pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button data-k="${n}">${n}</button>`).join("")}<button data-k="c">⌫</button><button data-k="0">0</button><button data-k="ok" style="background:var(--brown);color:#fff;font-size:18px">موافقة</button></div></div>`, () => res(false));
+    const ok = () => { const m = CFG.users.find(u => u.role === "manager" && u.pin === p); if (m) { closeModal(ov); res(true); } else { p = ""; dots(); ov.querySelector(".modal").classList.add("shake"); setTimeout(() => ov.querySelector(".modal").classList.remove("shake"), 400); toast("رمز المدير غير صحيح", 1); } };
+    const dots = () => ov.querySelector("#mdots").innerHTML = [0, 1, 2, 3].map(i => `<i class="${i < p.length ? "f" : ""}"></i>`).join("");
+    ov.querySelectorAll("[data-k]").forEach(b => b.onclick = () => { const k = b.dataset.k; if (k === "c") p = p.slice(0, -1); else if (k === "ok") return ok(); else if (p.length < 6) p += k; dots(); });
+  });
+}
+
+/* ---------------- modal helpers ---------------- */
+function modal(inner, onClose, wide){
+  const ov = document.createElement("div"); ov.className = "ov"; ov.innerHTML = `<div class="modal ${wide ? "wide" : ""}">${inner}</div>`;
+  ov.addEventListener("click", e => { if (e.target === ov || e.target.closest("[data-close]")) { closeModal(ov); onClose && onClose(); } });
+  document.body.appendChild(ov); return ov;
+}
+function closeModal(ov){ if (ov && ov.parentNode) ov.parentNode.removeChild(ov); }
+function confirmBox(msg, okTxt = "تأكيد", danger){ return new Promise(res => { const ov = modal(`<div class="mh"><b>تأكيد</b><button class="x" data-close>×</button></div><div class="mb"><p style="font-size:17px">${msg}</p></div><div class="mf"><button class="btn" data-close>رجوع</button><button class="btn ${danger ? "warn" : "pri"}" id="cfok">${esc(okTxt)}</button></div>`, () => res(false)); ov.querySelector("#cfok").onclick = () => { closeModal(ov); res(true); }; }); }
+
+/* ---------------- shift open ---------------- */
+function openShiftHTML(){
+  return `<div class="login" style="min-height:calc(100dvh - 64px)"><div class="lbox"><div class="cupbig">🕐</div><h1>افتح الوردية</h1><div class="sub">كم الكاش الموجود في الدرج الحين؟ (الفكّة)</div>
+    <input class="bigin num" id="opc" inputmode="decimal" value="0"><div class="quick">${[0, 100, 200, 500].map(v => `<button data-oq="${v}">${v}</button>`).join("")}</div>
+    <button class="btn ok" style="width:100%;min-height:58px;font-size:19px;margin-top:6px" id="opgo">ابدأ البيع ✓</button></div></div>`;
+}
+function bindOpenShift(){
+  $$("[data-oq]").forEach(b => b.onclick = () => $("#opc").value = b.dataset.oq);
+  $("#opgo").onclick = async () => { const v = r2(parseFloat($("#opc").value)); if (isNaN(v) || v < 0) return toast("اكتب مبلغ صحيح", 1);
+    const s = {id: "sh_" + uid(), openAt: new Date().toISOString(), openBy: USER.name, openCash: v, status: "open"};
+    await DB.put("shifts", s); CFG.shift = s; saveCfg(); toast("✅ انفتحت الوردية — بالتوفيق"); render(); };
+}
+
+/* ---------------- sale screen ---------------- */
+function posHTML(){
+  if (!CAT || !CFG.cats.find(c => c.id === CAT)) CAT = (CFG.cats[0] || {}).id;
+  return `<div class="pos"><section class="menu">
+      <div class="cats">${CFG.cats.map(c => `<button class="chip ${c.id === CAT && !Q ? "on" : ""}" data-cat="${c.id}">${c.icon || ""} ${esc(c.name)}</button>`).join("")}</div>
+      <div class="search"><input id="q" placeholder="ابحث عن صنف…" value="${esc(Q)}"><span>🔍</span></div>
+      <div class="grid" id="grid">${gridHTML()}</div></section>
+    <aside class="cart" id="cart">${cartHTML()}</aside></div>`;
+}
+function gridHTML(){
+  const L = CFG.items.filter(i => Q ? i.name.includes(Q) : i.cat === CAT);
+  if (!L.length) return `<div class="empty" style="grid-column:1/-1"><div class="big">🔍</div>ما فيه أصناف${Q ? " بهذا الاسم" : " في هذا القسم — أضفها من الإعدادات"}</div>`;
+  return L.map(i => { const p = i.sizes.length ? `${m2(Math.min(...i.sizes.map(s => s.p)))} <small>${cur()} +</small>` : `${m2(i.price)} <small>${cur()}</small>`;
+    return `<button class="item ${i.active ? "" : "off"}" data-item="${i.id}" ${i.active ? "" : "disabled"}><span class="ic">${i.icon || "☕"}</span><span class="nm">${esc(i.name)}</span><span class="pr num">${p}</span></button>`; }).join("");
+}
+function cartHTML(){
+  const t = totals(), no = nextNo(true);
+  return `<div class="cart-h"><b>طلب #${no}</b><div class="seg"><button data-type="local" class="${CART.type === "local" ? "on" : ""}">🪑 محلي</button><button data-type="takeaway" class="${CART.type === "takeaway" ? "on" : ""}">🛍️ سفري</button></div></div>
+    <div class="lines">${CART.lines.length ? CART.lines.map((l, i) => `<div class="line"><div class="info"><b>${esc(l.name)}${l.size ? ` · ${esc(l.size)}` : ""}</b>${l.opts.length || l.note ? `<small>${esc(l.opts.map(o => o.n).join("، "))}${l.note ? ` · 📝 ${esc(l.note)}` : ""}</small>` : ""}<small class="num">${m2(l.unit)} × ${l.qty}</small></div>
+        <div class="qty"><button data-dec="${i}">−</button><span class="num">${l.qty}</span><button data-inc="${i}">+</button></div><div class="lp num">${m2(l.unit * l.qty)}</div></div>`).join("")
+      : `<div class="empty"><div class="big">🧾</div>اضغط على الأصناف لإضافتها للطلب</div>`}</div>
+    <div class="cust"><input id="cust" placeholder="اسم العميل (للنداء) — اختياري" value="${esc(CART.cust)}"></div>
+    <div class="totals"><div class="r"><span>المجموع (${t.count} صنف)</span><span class="num">${m2(t.sub)}</span></div>
+      ${t.disc ? `<div class="r" style="color:var(--red)"><span>الخصم ${CART.disc.type === "pct" ? `(${CART.disc.v}٪)` : ""}</span><span class="num">-${m2(t.disc)}</span></div>` : ""}
+      ${CFG.settings.vat.on ? `<div class="r"><span>منها ضريبة ${CFG.settings.vat.rate}٪</span><span class="num">${m2(t.vat)}</span></div>` : ""}
+      <div class="r big"><span>الإجمالي</span><span class="num">${m2(t.total)} ${cur()}</span></div></div>
+    <div class="acts"><button class="btn" id="disc">🏷️ خصم</button><button class="btn" id="hold">⏸️ ${CFG.held.length ? `معلّق (${CFG.held.length})` : "تعليق"}</button><button class="btn" id="clr">🗑️ مسح</button>
+      <button class="btn ok pay" id="pay" ${CART.lines.length ? "" : "disabled"}>💳 الدفع · <span class="num">${m2(t.total)}</span></button></div>`;
+}
+function refreshCart(){ $("#cart").innerHTML = cartHTML(); bindCart(); }
+function bindPos(){
+  $$("[data-cat]").forEach(b => b.onclick = () => { CAT = b.dataset.cat; Q = ""; render(); });
+  const q = $("#q"); q.oninput = () => { Q = q.value.trim(); $("#grid").innerHTML = gridHTML(); bindGrid(); $$("[data-cat]").forEach(b => b.classList.toggle("on", !Q && b.dataset.cat === CAT)); };
+  bindGrid(); bindCart();
+}
+function bindGrid(){ $$("[data-item]").forEach(b => b.onclick = () => { const it = CFG.items.find(x => x.id === b.dataset.item); if (!it) return; if (it.sizes.length || it.groups.length) itemModal(it); else addLine(it, null, [], 1, ""); }); }
+function bindCart(){
+  $$("[data-type]").forEach(b => b.onclick = () => { CART.type = b.dataset.type; refreshCart(); });
+  $$("[data-inc]").forEach(b => b.onclick = () => { CART.lines[+b.dataset.inc].qty++; refreshCart(); });
+  $$("[data-dec]").forEach(b => b.onclick = () => { const l = CART.lines[+b.dataset.dec]; l.qty--; if (l.qty <= 0) CART.lines.splice(+b.dataset.dec, 1); refreshCart(); });
+  const c = $("#cust"); if (c) c.oninput = () => CART.cust = c.value.slice(0, 40);
+  $("#clr").onclick = async () => { if (!CART.lines.length) return; if (await confirmBox("تمسح الطلب الحالي؟", "مسح", 1)) { CART = newCart(); refreshCart(); } };
+  $("#disc").onclick = discountModal;
+  $("#hold").onclick = holdModal;
+  $("#pay").onclick = () => { if (CART.lines.length) payModal(); };
+}
+function addLine(it, size, opts, qty, note){
+  const unit = lineUnit(it, size, opts), key = [it.id, size ? size.n : "", opts.map(o => o.n).join("|"), note].join("§");
+  const ex = CART.lines.find(l => l.key === key);
+  if (ex) ex.qty += qty; else CART.lines.push({key, itemId: it.id, cat: it.cat, name: it.name, size: size ? size.n : "", opts, unit, qty, note});
+  refreshCart(); toast(`➕ ${it.name}${size ? " · " + size.n : ""}`);
+}
+function itemModal(it){
+  const st = {size: it.sizes.length ? it.sizes[Math.min(1, it.sizes.length - 1)] : null, sel: {}, qty: 1, note: ""};
+  const groups = it.groups.map(g => CFG.groups.find(x => x.id === g)).filter(Boolean);
+  groups.forEach(g => { st.sel[g.id] = g.multi ? [] : [0]; });
+  const opts = () => groups.flatMap(g => (st.sel[g.id] || []).map(i => g.choices[i]).filter(Boolean)).filter(o => !(o.p === 0 && /عادي/.test(o.n)));
+  const draw = () => {
+    const price = lineUnit(it, st.size, opts()) * st.qty;
+    ov.querySelector(".modal").innerHTML = `<div class="mh"><b>${it.icon || ""} ${esc(it.name)}</b><button class="x" data-close>×</button></div><div class="mb">
+      ${it.sizes.length ? `<div class="grp"><h4>الحجم</h4><div class="opts">${it.sizes.map((s, i) => `<button class="opt ${st.size === s ? "on" : ""}" data-sz="${i}">${esc(s.n)} <small class="num">${m2(s.p)}</small></button>`).join("")}</div></div>` : ""}
+      ${groups.map(g => `<div class="grp"><h4>${esc(g.name)}${g.multi ? " (اختر أكثر من واحد)" : ""}</h4><div class="opts">${g.choices.map((c, i) => `<button class="opt ${(st.sel[g.id] || []).includes(i) ? "on" : ""}" data-g="${g.id}" data-i="${i}">${esc(c.n)}${c.p ? ` <small class="num">+${m2(c.p)}</small>` : ""}</button>`).join("")}</div></div>`).join("")}
+      <div class="grp"><h4>ملاحظة للباريستا</h4><input class="f" style="width:100%;min-height:46px;border-radius:12px;border:1.5px solid var(--line);padding:8px 12px" id="inote" placeholder="مثال: ثلج خفيف، حار جداً…" value="${esc(st.note)}"></div>
+      <div class="row" style="justify-content:space-between"><div class="qty"><button id="iqm">−</button><span class="num" style="font-size:20px">${st.qty}</span><button id="iqp">+</button></div><b class="num" style="font-size:24px;color:var(--brown)">${m2(price)} ${cur()}</b></div></div>
+      <div class="mf"><button class="btn" data-close>إلغاء</button><button class="btn ok" id="iadd">➕ أضف للطلب</button></div>`;
+    ov.querySelectorAll("[data-sz]").forEach(b => b.onclick = () => { st.size = it.sizes[+b.dataset.sz]; draw(); });
+    ov.querySelectorAll("[data-g]").forEach(b => b.onclick = () => { const g = groups.find(x => x.id === b.dataset.g), i = +b.dataset.i, a = st.sel[g.id]; if (g.multi) { const k = a.indexOf(i); k >= 0 ? a.splice(k, 1) : a.push(i); } else st.sel[g.id] = [i]; draw(); });
+    ov.querySelector("#inote").oninput = e => st.note = e.target.value.slice(0, 60);
+    ov.querySelector("#iqm").onclick = () => { if (st.qty > 1) st.qty--; draw(); };
+    ov.querySelector("#iqp").onclick = () => { st.qty++; draw(); };
+    ov.querySelector("#iadd").onclick = () => { closeModal(ov); addLine(it, st.size, opts(), st.qty, st.note.trim()); };
+  };
+  const ov = modal(""); draw();
+}
+async function discountModal(){
+  if (!CART.lines.length) return toast("أضف أصناف أولاً", 1);
+  if (CFG.settings.discPin && !(await askManager("الخصم يحتاج موافقة المدير"))) return;
+  const ov = modal(`<div class="mh"><b>🏷️ خصم على الطلب</b><button class="x" data-close>×</button></div><div class="mb">
+    <div class="grp"><h4>نسبة</h4><div class="quick">${[5, 10, 15, 20, 25, 50, 100].map(v => `<button data-dp="${v}">${v}٪</button>`).join("")}<button data-dp="0" style="color:var(--red)">بدون</button></div></div>
+    <div class="grp"><h4>أو مبلغ ثابت (${cur()})</h4><div class="row"><input class="bigin num grow" id="damt" inputmode="decimal" placeholder="0.00" style="min-height:54px;font-size:22px"><button class="btn pri" id="dgo">تطبيق</button></div></div></div>`);
+  ov.querySelectorAll("[data-dp]").forEach(b => b.onclick = () => { const v = +b.dataset.dp; CART.disc = v ? {type: "pct", v, by: USER.name} : null; closeModal(ov); refreshCart(); });
+  ov.querySelector("#dgo").onclick = () => { const v = r2(parseFloat(ov.querySelector("#damt").value)); if (!(v > 0)) return toast("اكتب مبلغ صحيح", 1); CART.disc = {type: "amt", v, by: USER.name}; closeModal(ov); refreshCart(); };
+}
+function holdModal(){
+  const ov = modal(`<div class="mh"><b>⏸️ الطلبات المعلّقة</b><button class="x" data-close>×</button></div><div class="mb">
+    ${CART.lines.length ? `<button class="btn gold" style="width:100%;margin-bottom:12px" id="hnow">⏸️ علّق الطلب الحالي (${totals().count} صنف)</button>` : ""}
+    ${CFG.held.length ? CFG.held.map((h, i) => `<div class="line"><div class="info"><b>${esc(h.cust || "طلب معلّق")} · <span class="num">${m2(totals(h).total)}</span></b><small>${timeOf(new Date(h.at))} · ${h.lines.map(l => l.name).join("، ")}</small></div><button class="btn sm pri" data-hr="${i}">استرجاع</button><button class="btn sm" data-hd="${i}">🗑️</button></div>`).join("") : `<div class="empty">ما فيه طلبات معلّقة</div>`}</div>`);
+  const h = ov.querySelector("#hnow"); if (h) h.onclick = () => { CFG.held.push({...CART, at: new Date().toISOString()}); saveCfg(); CART = newCart(); closeModal(ov); refreshCart(); toast("⏸️ انعلّق الطلب"); };
+  ov.querySelectorAll("[data-hr]").forEach(b => b.onclick = async () => { if (CART.lines.length && !(await confirmBox("عندك طلب مفتوح — نعلّقه ونسترجع المعلّق؟", "نعم"))) return; if (CART.lines.length) CFG.held.push({...CART, at: new Date().toISOString()}); const x = CFG.held.splice(+b.dataset.hr, 1)[0]; delete x.at; CART = x; saveCfg(); closeModal(ov); refreshCart(); });
+  ov.querySelectorAll("[data-hd]").forEach(b => b.onclick = () => { CFG.held.splice(+b.dataset.hd, 1); saveCfg(); closeModal(ov); holdModal(); refreshCart(); });
+}
+
+/* ---------------- numbering ---------------- */
+function nextNo(peek){ const d = dayOf(); const n = CFG.seq.day === d ? CFG.seq.n + 1 : 1; if (!peek) { CFG.seq = {day: d, n}; CFG.serial++; saveCfg(); } return n; }
+
+/* ---------------- payment ---------------- */
+function payModal(){
+  const t = totals(), st = {m: "cash", recv: "", cashPart: "", ref: ""};
+  const draw = () => {
+    const recv = r2(parseFloat(st.recv)), cp = r2(parseFloat(st.cashPart));
+    let ok = false, info = "";
+    if (st.m === "cash") { ok = recv >= t.total; info = !st.recv ? `<div class="change">اكتب المبلغ المستلم أو اختر من الأزرار</div>` : ok ? `<div class="change ok">الباقي للعميل<b class="num">${m2(recv - t.total)} ${cur()}</b></div>` : `<div class="change bad">المبلغ ناقص<b class="num">${m2(t.total - recv)} ${cur()}</b></div>`; }
+    if (st.m === "card") { ok = true; info = `<div class="note">💳 اطلب من العميل يدفع على <b>جهاز الشبكة</b> بمبلغ <b class="num">${m2(t.total)} ${cur()}</b>.<br>بعد ما يطلع «مقبولة» اضغط تأكيد.</div><label class="f" style="margin-top:12px"><span>رقم العملية أو آخر ٤ أرقام (اختياري — للمطابقة)</span><input id="pref" class="num" value="${esc(st.ref)}"></label>`; }
+    if (st.m === "split") { ok = cp > 0 && cp < t.total; info = `<label class="f"><span>الجزء النقدي (${cur()})</span><input class="bigin num" id="pcp" inputmode="decimal" value="${esc(st.cashPart)}"></label>${ok ? `<div class="change ok">على الشبكة<b class="num">${m2(t.total - cp)} ${cur()}</b></div>` : `<div class="change">النقدي لازم يكون أقل من الإجمالي</div>`}`; }
+    const q = [...new Set([t.total, Math.ceil(t.total / 5) * 5, Math.ceil(t.total / 10) * 10, 50, 100, 200, 500].filter(v => v >= t.total))].slice(0, 8);
+    ov.querySelector(".modal").innerHTML = `<div class="mh"><b>💳 الدفع</b><button class="x" data-close>×</button></div><div class="mb">
+      <div class="paytot"><small>المطلوب</small><b class="num">${m2(t.total)} ${cur()}</b></div>
+      <div class="tabs3"><button data-pm="cash" class="${st.m === "cash" ? "on" : ""}">💵 كاش</button><button data-pm="card" class="${st.m === "card" ? "on" : ""}">💳 شبكة</button><button data-pm="split" class="${st.m === "split" ? "on" : ""}">🔀 مختلط</button></div>
+      ${st.m === "cash" ? `<input class="bigin num" id="precv" inputmode="decimal" placeholder="المبلغ المستلم" value="${esc(st.recv)}"><div class="quick">${q.map(v => `<button data-q="${v}" class="num">${v === t.total ? "بالضبط" : v}</button>`).join("")}</div>` : ""}
+      ${info}</div><div class="mf"><button class="btn" data-close>رجوع</button><button class="btn ok" id="pgo" ${ok ? "" : "disabled"} style="font-size:19px">✅ تأكيد الدفع</button></div>`;
+    ov.querySelectorAll("[data-pm]").forEach(b => b.onclick = () => { st.m = b.dataset.pm; draw(); });
+    ov.querySelectorAll("[data-q]").forEach(b => b.onclick = () => { st.recv = String(b.dataset.q); draw(); });
+    const pr = ov.querySelector("#precv"); if (pr) { pr.oninput = () => { st.recv = pr.value; const pos = pr.selectionStart; draw(); const x = ov.querySelector("#precv"); x.focus(); x.setSelectionRange(pos, pos); }; }
+    const pc = ov.querySelector("#pcp"); if (pc) { pc.oninput = () => { st.cashPart = pc.value; const pos = pc.selectionStart; draw(); const x = ov.querySelector("#pcp"); x.focus(); x.setSelectionRange(pos, pos); }; }
+    const rf = ov.querySelector("#pref"); if (rf) rf.oninput = () => st.ref = rf.value.slice(0, 30);
+    ov.querySelector("#pgo").onclick = async () => {
+      ov.querySelector("#pgo").disabled = true;
+      const pay = st.m === "cash" ? {method: "cash", cash: t.total, card: 0, recv, change: r2(recv - t.total)} : st.m === "card" ? {method: "card", cash: 0, card: t.total, ref: st.ref} : {method: "split", cash: cp, card: r2(t.total - cp), ref: st.ref};
+      const o = await saveOrder(pay); closeModal(ov); afterPay(o);
+    };
+  };
+  const ov = modal(""); draw();
+}
+async function saveOrder(pay){
+  const t = totals(), now = new Date(), no = nextNo(false);
+  const o = {id: "o_" + uid(), serial: `CD-${dayOf(now).replace(/-/g, "")}-${pad(CFG.serial, 4)}`, no, day: dayOf(now), at: now.toISOString(), user: USER.id, userName: USER.name, shift: SH().id,
+    type: CART.type, cust: CART.cust.trim(), lines: CART.lines.map(({key, ...l}) => l), sub: t.sub, disc: t.disc, discNote: CART.disc ? (CART.disc.type === "pct" ? CART.disc.v + "%" : "مبلغ") + " · " + CART.disc.by : "",
+    total: t.total, vat: t.vat, vatRate: CFG.settings.vat.on ? CFG.settings.vat.rate : 0, pay, status: "paid"};
+  await DB.put("orders", o); CART = newCart(); return o;
+}
+function afterPay(o){
+  refreshCart();
+  if (CFG.settings.autoTicket) printDoc(ticketHTML(o));
+  if (CFG.settings.autoPrint) setTimeout(() => printDoc(receiptHTML(o), {drawer: o.pay.cash > 0}), CFG.settings.autoTicket ? 800 : 0);
+  const ov = modal(`<div class="mh"><b>✅ تم الدفع — طلب #${o.no}</b><button class="x" data-close>×</button></div><div class="mb">
+    ${o.pay.method === "cash" && o.pay.change > 0 ? `<div class="change ok" style="margin-bottom:12px">أعطِ العميل الباقي<b class="num">${m2(o.pay.change)} ${cur()}</b></div>` : ""}
+    <div style="max-height:46vh;overflow:auto;background:var(--bg);padding:12px;border-radius:14px">${receiptHTML(o)}</div></div>
+    <div class="mf"><button class="btn" id="ptk">🧾 تذكرة الباريستا</button><button class="btn pri" id="prc">🖨️ طباعة الإيصال</button><button class="btn ok" data-close>طلب جديد ➜</button></div>`);
+  ov.querySelector("#prc").onclick = () => printDoc(receiptHTML(o), {drawer: o.pay.cash > 0 && !CFG.settings.autoPrint});
+  ov.querySelector("#ptk").onclick = () => printDoc(ticketHTML(o));
+}
+
+/* ---------------- receipt / ticket / print ---------------- */
+const PAYN = {cash: "كاش", card: "شبكة", split: "مختلط"};
+function zatcaQR(o){   // ZATCA phase-1 TLV: 1 seller · 2 VAT no · 3 time · 4 total incl. VAT · 5 VAT
+  const enc = new TextEncoder(), parts = [CFG.settings.name, CFG.settings.vat.number, new Date(o.at).toISOString().replace(/\.\d{3}Z$/, "Z"), m2(o.total), m2(o.vat)];
+  const bytes = []; parts.forEach((v, i) => { const b = enc.encode(String(v)); bytes.push(i + 1, b.length, ...b); });
+  let s = ""; bytes.forEach(b => s += String.fromCharCode(b)); return btoa(s);
+}
+function receiptHTML(o){
+  const S = CFG.settings, V = o.vatRate > 0;
+  return `<div class="rcpt ${S.paper === 58 ? "w58" : ""}"><div class="c"><h2>${esc(S.name)}</h2>${S.nameEn ? `<div>${esc(S.nameEn)}</div>` : ""}<div>${esc(S.branch)}</div>${S.phone ? `<div class="num">${esc(S.phone)}</div>` : ""}${S.cr ? `<div>س.ت: <span class="num">${esc(S.cr)}</span></div>` : ""}
+    ${V ? `<div style="font-weight:800;margin-top:4px">فاتورة ضريبية مبسطة</div><div>الرقم الضريبي: <span class="num">${esc(S.vat.number)}</span></div>` : `<div style="font-weight:800;margin-top:4px">إيصال بيع</div>`}</div>
+    <div class="hr"></div><table><tr><td>رقم الطلب</td><td class="p"><b style="font-size:16px">#${o.no}</b></td></tr><tr><td>الفاتورة</td><td class="p num">${o.serial}</td></tr><tr><td>التاريخ</td><td class="p num">${fmtDT(o.at)}</td></tr><tr><td>النوع</td><td class="p">${o.type === "takeaway" ? "سفري" : "محلي"}</td></tr>${o.cust ? `<tr><td>العميل</td><td class="p">${esc(o.cust)}</td></tr>` : ""}<tr><td>الكاشير</td><td class="p">${esc(o.userName)}</td></tr></table>
+    <div class="hr"></div><table>${o.lines.map(l => `<tr><td>${l.qty} × ${esc(l.name)}${l.size ? ` (${esc(l.size)})` : ""}${l.opts.length ? `<div class="o">${esc(l.opts.map(x => x.n).join("، "))}</div>` : ""}${l.note ? `<div class="o">📝 ${esc(l.note)}</div>` : ""}</td><td class="p num">${m2(l.unit * l.qty)}</td></tr>`).join("")}</table>
+    <div class="hr"></div><table><tr><td>المجموع</td><td class="p num">${m2(o.sub)}</td></tr>${o.disc ? `<tr><td>الخصم</td><td class="p num">-${m2(o.disc)}</td></tr>` : ""}
+    ${V ? `<tr><td>الإجمالي بدون الضريبة</td><td class="p num">${m2(o.total - o.vat)}</td></tr><tr><td>ضريبة القيمة المضافة ${o.vatRate}٪</td><td class="p num">${m2(o.vat)}</td></tr>` : ""}
+    <tr class="tot"><td>الإجمالي${V ? " شامل الضريبة" : ""}</td><td class="p num">${m2(o.total)} ر.س</td></tr>
+    <tr><td>الدفع</td><td class="p">${PAYN[o.pay.method]}${o.pay.method === "split" ? ` (كاش <span class="num">${m2(o.pay.cash)}</span> + شبكة <span class="num">${m2(o.pay.card)}</span>)` : ""}</td></tr>
+    ${o.pay.method === "cash" ? `<tr><td>المستلم</td><td class="p num">${m2(o.pay.recv)}</td></tr><tr><td>الباقي</td><td class="p num">${m2(o.pay.change)}</td></tr>` : ""}</table>
+    ${o.status === "void" ? `<div class="hr"></div><div class="c" style="font-weight:800;font-size:16px">*** ملغي ***</div>` : ""}
+    ${V ? `<div class="qr">${qrSVG(zatcaQR(o))}</div>` : ""}
+    <div class="hr"></div><div class="c">${esc(S.footer)}</div></div>`;
+}
+function ticketHTML(o){
+  return `<div class="rcpt ${CFG.settings.paper === 58 ? "w58" : ""}"><div class="c" style="font-weight:700">تذكرة تحضير — ${o.type === "takeaway" ? "🛍️ سفري" : "🪑 محلي"}</div><div class="big num">#${o.no}</div>${o.cust ? `<div class="c" style="font-size:17px;font-weight:800">${esc(o.cust)}</div>` : ""}<div class="c num">${timeOf(new Date(o.at))}</div>
+    <div class="hr"></div>${o.lines.map(l => `<div style="font-size:16px;font-weight:800;margin-top:6px">${l.qty} × ${esc(l.name)}${l.size ? ` — ${esc(l.size)}` : ""}</div>${l.opts.length ? `<div style="font-size:14px">• ${esc(l.opts.map(x => x.n).join(" • "))}</div>` : ""}${l.note ? `<div style="font-size:14px;font-weight:700">📝 ${esc(l.note)}</div>` : ""}`).join("")}<div class="hr"></div></div>`;
+}
+function sysPrint(html){ const p = $("#print"); p.innerHTML = html; setTimeout(() => { try { window.print(); } catch (e) { toast("ما قدرت أطبع — تأكد من الطابعة", 1); } }, 60); }
+let PQ = Promise.resolve();   // network prints go one after another
+function printDoc(html, opt = {}){
+  const P = CFG.settings.printer || {};
+  if (P.mode !== "epson" || !P.ip) return sysPrint(html);
+  PQ = PQ.then(() => EP.print(html, {drawer: opt.drawer && P.drawer})).then(() => opt.quiet || toast("🖨️ انطبع")).catch(e => { toast("⚠️ " + EP.why(e) + " — بفتح نافذة الطباعة العادية", 1); sysPrint(html); });
+  return PQ;
+}
+function qrSVG(text){
+  try { const q = new QRLib.QRCode(-1, QRLib.ECL.M); q.addData(text); q.make(); const n = q.getModuleCount(); let d = "";
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c} ${r}h1v1h-1z`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 ${n + 4} ${n + 4}" shape-rendering="crispEdges"><rect x="-2" y="-2" width="${n + 4}" height="${n + 4}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+  } catch (e) { return ""; }
+}
+
+/* =====================================================================
+   طباعة مباشرة على طابعات Epson عبر الشبكة (ePOS-Print) — بدون نافذة الطباعة
+   يرسم الإيصال كصورة (يحفظ العربي كما هو) ويرسلها لعنوان IP الطابعة
+   ===================================================================== */
+const EP = {
+  url(){ const P = CFG.settings.printer || {}, proto = P.proto || (location.protocol === "https:" ? "https" : "http");
+    return `${proto}://${P.ip}${P.port ? ":" + P.port : ""}/cgi-bin/epos/service.cgi?devid=${encodeURIComponent(P.devid || "local_printer")}&timeout=15000`; },
+  /* render receipt HTML → 1-bit raster rows */
+  async raster(html){
+    const dots = CFG.settings.paper === 58 ? 384 : 576, S = 2, w = dots / S;
+    const box = document.createElement("div"); box.style.cssText = `position:fixed;top:0;left:-20000px;width:${w}px;background:#fff`; box.innerHTML = html.replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, "");
+    const r0 = box.firstElementChild; if (r0) { r0.style.width = w + "px"; r0.style.padding = "0 10px"; r0.style.margin = "0"; r0.style.boxSizing = "border-box"; }
+    document.body.appendChild(box);
+    try { if (document.fonts && document.fonts.ready) await document.fonts.ready; } catch (e) {}
+    const B = box.getBoundingClientRect(), H = Math.ceil(B.height * S) + 8;
+    const cv = document.createElement("canvas"); cv.width = dots; cv.height = H; const g = cv.getContext("2d");
+    g.fillStyle = "#fff"; g.fillRect(0, 0, dots, H); g.fillStyle = "#000"; g.strokeStyle = "#000";
+    // borders (separator lines)
+    box.querySelectorAll("*").forEach(el => { const cs = getComputedStyle(el), R = el.getBoundingClientRect();
+      [["Top", R.top], ["Bottom", R.bottom - parseFloat(cs.borderBottomWidth)]].forEach(([k, y]) => { const bw = parseFloat(cs["border" + k + "Width"]); if (bw > 0 && cs["border" + k + "Style"] !== "none") {
+        const yy = (y - B.top) * S, x0 = (R.left - B.left) * S, x1 = (R.right - B.left) * S;
+        if (cs["border" + k + "Style"] === "dashed" || cs["border" + k + "Style"] === "dotted") { for (let x = x0; x < x1; x += 12) g.fillRect(x, yy, 7, Math.max(2, bw * S)); } else g.fillRect(x0, yy, x1 - x0, Math.max(2, bw * S)); } }); });
+    // QR codes (svg paths from qrSVG)
+    box.querySelectorAll("svg").forEach(sv => { const R = sv.getBoundingClientRect(), vb = (sv.getAttribute("viewBox") || "").split(/\s+/).map(Number); if (vb.length < 4) return;
+      const k = R.width / vb[2] * S, ox = (R.left - B.left) * S - vb[0] * k, oy = (R.top - B.top) * S - vb[1] * k, p = sv.querySelector("path"); if (!p) return;
+      (p.getAttribute("d").match(/M\d+ \d+/g) || []).forEach(m => { const [c, r] = m.slice(1).split(" ").map(Number); g.fillRect(Math.floor(ox + c * k), Math.floor(oy + r * k), Math.ceil(k), Math.ceil(k)); }); });
+    // text, word by word at the browser's own layout positions (keeps Arabic shaping & RTL)
+    const tw = document.createTreeWalker(box, NodeFilter.SHOW_TEXT); let n;
+    while ((n = tw.nextNode())) { const t = n.nodeValue; if (!t.trim()) continue; const cs = getComputedStyle(n.parentElement);
+      g.font = `${cs.fontWeight} ${parseFloat(cs.fontSize) * S}px ${cs.fontFamily}`; g.textBaseline = "middle"; g.textAlign = "center";
+      const re = /\S+/g; let m; while ((m = re.exec(t))) { const rg = document.createRange(); rg.setStart(n, m.index); rg.setEnd(n, m.index + m[0].length);
+        const R = rg.getBoundingClientRect(); if (!R.width) continue; g.direction = /[؀-ۿ]/.test(m[0]) ? "rtl" : "ltr";
+        g.fillText(m[0], (R.left + R.width / 2 - B.left) * S, (R.top + R.height / 2 - B.top) * S, R.width * S + 4); } }
+    box.remove();
+    // threshold → packed bits (1 = black)
+    const px = g.getImageData(0, 0, dots, H).data, bpr = dots / 8, out = new Uint8Array(bpr * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < dots; x++) { const i = (y * dots + x) * 4; if (px[i] * .299 + px[i + 1] * .587 + px[i + 2] * .114 < 150) out[y * bpr + (x >> 3)] |= 0x80 >> (x & 7); }
+    let s = ""; for (let i = 0; i < out.length; i += 8192) s += String.fromCharCode.apply(null, out.subarray(i, i + 8192));
+    return {w: dots, h: H, b64: btoa(s)};
+  },
+  async send(body){
+    const xml = `<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">${body}</epos-print></s:Body></s:Envelope>`;
+    const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 20000);
+    try { const r = await fetch(this.url(), {method: "POST", headers: {"Content-Type": "text/xml; charset=utf-8", "If-Modified-Since": "Thu, 01 Jan 1970 00:00:00 GMT", "SOAPAction": '""'}, body: xml, signal: ctl.signal});
+      const t = await r.text(); if (!/success="true"/.test(t)) { const c = (t.match(/code="([^"]*)"/) || [])[1] || ("HTTP " + r.status); throw new Error(c); } return true;
+    } finally { clearTimeout(tm); }
+  },
+  async print(html, opt = {}){
+    const R = await this.raster(html);
+    return this.send(`${opt.drawer ? `<pulse drawer="drawer_1" time="pulse_100"/>` : ""}<text align="center"/><image width="${R.w}" height="${R.h}" color="color_1" mode="mono">${R.b64}</image><feed line="3"/><cut type="feed"/>`);
+  },
+  why(e){ const m = String(e && e.message || e);
+    if (/EPTR_COVER_OPEN|cover/i.test(m)) return "غطاء الطابعة مفتوح";
+    if (/EPTR_REC_EMPTY|paper/i.test(m)) return "الورق خلص";
+    if (/EX_ENPC_TIMEOUT|DeviceNotFound|SchemaError/i.test(m)) return "الطابعة ما ردّت (" + m + ")";
+    return "ما وصلت للطابعة — تأكد إن الآيباد والطابعة على نفس الواي فاي وإن عنوان IP صحيح"; }
+};
+
+/* =====================================================================
+   الإدارة: الطلبات · إغلاق الوردية · التقارير · الإعدادات · النسخ الاحتياطي
+   ===================================================================== */
+const TYPEN = {local: "محلي", takeaway: "سفري"};
+const live = o => o.status !== "void";
+
+/* ---------------- orders ---------------- */
+let ODAY = null;
+async function ordersPage(){
+  ODAY = ODAY || dayOf();
+  const L = (await DB.days(ODAY, ODAY)).sort((a, b) => b.at.localeCompare(a.at));
+  const sum = L.filter(live).reduce((a, o) => a + o.total, 0);
+  $("#pg").innerHTML = `<div class="wrap"><div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">🧾 طلبات اليوم</h3><div class="row"><input type="date" id="oday" value="${ODAY}" style="min-height:44px;border-radius:12px;border:1.5px solid var(--line);padding:4px 10px"><input id="ofind" placeholder="رقم الطلب…" style="min-height:44px;border-radius:12px;border:1.5px solid var(--line);padding:4px 10px;width:140px"></div></div>
+    <p style="color:var(--mut);margin-top:6px">${L.filter(live).length} طلب · <b class="num">${m2(sum)} ${cur()}</b>${L.some(o => !live(o)) ? ` · ${L.filter(o => !live(o)).length} ملغي` : ""}</p></div>
+    <div class="card" style="padding:6px 10px;overflow:auto"><table class="t" id="otbl"><tr><th>#</th><th>الوقت</th><th>الأصناف</th><th>النوع</th><th>الدفع</th><th>المبلغ</th><th>الحالة</th></tr>
+    ${L.map(o => `<tr class="click" data-o="${o.id}" data-no="${o.no}"><td><b>#${o.no}</b></td><td class="num">${timeOf(new Date(o.at))}</td><td>${o.lines.reduce((a, l) => a + l.qty, 0)} · ${esc(o.lines.slice(0, 2).map(l => l.name).join("، "))}${o.lines.length > 2 ? "…" : ""}</td><td>${TYPEN[o.type]}</td><td>${PAYN[o.pay.method]}</td><td class="num"><b>${m2(o.total)}</b></td><td>${live(o) ? `<span class="tag g">مدفوع</span>` : `<span class="tag r">ملغي</span>`}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">ما فيه طلبات في هذا اليوم</td></tr>`}</table></div></div>`;
+  $("#oday").onchange = e => { ODAY = e.target.value || dayOf(); ordersPage(); };
+  $("#ofind").oninput = e => { const v = e.target.value.trim(); $$("#otbl tr[data-no]").forEach(r => r.style.display = !v || r.dataset.no === v ? "" : "none"); };
+  $$("[data-o]").forEach(r => r.onclick = async () => orderModal(await DB.get("orders", r.dataset.o)));
+}
+function orderModal(o){
+  const ov = modal(`<div class="mh"><b>طلب #${o.no} · <span class="num">${o.serial}</span></b><button class="x" data-close>×</button></div><div class="mb">
+    ${o.status === "void" ? `<div class="note red" style="margin-bottom:12px">❌ ملغي — ${esc(o.voidBy || "")} · ${o.voidAt ? fmtDT(o.voidAt) : ""}<br>السبب: ${esc(o.voidReason || "")}</div>` : ""}
+    <div style="background:var(--bg);padding:12px;border-radius:14px">${receiptHTML(o)}</div></div>
+    <div class="mf"><button class="btn" id="otk">🧾 تذكرة</button><button class="btn pri" id="orp">🖨️ إعادة طباعة</button>${o.status !== "void" ? `<button class="btn warn" id="ovd">❌ إلغاء / استرجاع</button>` : ""}</div>`, null);
+  ov.querySelector("#orp").onclick = () => printDoc(receiptHTML(o));
+  ov.querySelector("#otk").onclick = () => printDoc(ticketHTML(o));
+  const v = ov.querySelector("#ovd"); if (v) v.onclick = async () => {
+    if (!(await askManager(`إلغاء طلب #${o.no} بمبلغ ${m2(o.total)} ${cur()} يحتاج موافقة المدير`))) return;
+    const why = await promptBox("سبب الإلغاء", "مثال: العميل غيّر رأيه / خطأ في الطلب"); if (!why) return;
+    o.status = "void"; o.voidAt = new Date().toISOString(); o.voidBy = USER.name; o.voidReason = why; o.voidShift = SH() ? SH().id : o.shift;
+    await DB.put("orders", o); closeModal(ov); toast(`❌ انلغى طلب #${o.no} — رجّع للعميل ${m2(o.total)} ${cur()} ${o.pay.method === "card" ? "على الشبكة" : o.pay.method === "split" ? "(كاش + شبكة)" : "كاش"}`); ordersPage();
+  };
+}
+function promptBox(title, ph){ return new Promise(res => { const ov = modal(`<div class="mh"><b>${esc(title)}</b><button class="x" data-close>×</button></div><div class="mb"><label class="f"><input id="pbx" placeholder="${esc(ph || "")}"></label></div><div class="mf"><button class="btn" data-close>رجوع</button><button class="btn pri" id="pbok">حفظ</button></div>`, () => res(null)); const i = ov.querySelector("#pbx"); setTimeout(() => i.focus(), 50); ov.querySelector("#pbok").onclick = () => { const v = i.value.trim(); if (v.length < 2) return toast("اكتب السبب", 1); closeModal(ov); res(v); }; }); }
+
+/* ---------------- shift summary + close ---------------- */
+async function shiftSummary(sh){
+  const all = await DB.days(dayOf(new Date(sh.openAt)), dayOf());
+  const mine = all.filter(o => o.shift === sh.id), paid = mine.filter(live), voidedHere = all.filter(o => o.status === "void" && o.voidShift === sh.id && o.shift !== sh.id);
+  const cash = r2(paid.reduce((a, o) => a + o.pay.cash, 0)), card = r2(paid.reduce((a, o) => a + o.pay.card, 0));
+  const refundCash = r2(voidedHere.reduce((a, o) => a + o.pay.cash, 0));   // voids of earlier shifts paid back from this drawer
+  return {count: paid.length, voids: mine.filter(o => !live(o)).length + voidedHere.length, sales: r2(cash + card), cash, card, disc: r2(paid.reduce((a, o) => a + o.disc, 0)), refundCash, expected: r2(sh.openCash + cash - refundCash)};
+}
+async function closeShiftPage(){
+  const sh = SH(), S = await shiftSummary(sh);
+  $("#pg").innerHTML = `<div class="wrap" style="max-width:640px"><div class="card"><h3>🕐 إغلاق الوردية</h3><p style="color:var(--mut)">فُتحت ${fmtDT(sh.openAt)} بواسطة ${esc(sh.openBy)}</p></div>
+    <div class="kpis"><div class="kpi"><small>المبيعات</small><b class="num">${m2(S.sales)}</b></div><div class="kpi"><small>عدد الطلبات</small><b class="num">${S.count}</b></div><div class="kpi"><small>كاش</small><b class="num">${m2(S.cash)}</b></div><div class="kpi"><small>شبكة</small><b class="num">${m2(S.card)}</b></div></div>
+    <div class="card"><table class="t"><tr><td>فكّة بداية الوردية</td><td class="num">${m2(sh.openCash)}</td></tr><tr><td>+ مبيعات الكاش</td><td class="num">${m2(S.cash)}</td></tr>${S.refundCash ? `<tr><td>− مرتجعات كاش لطلبات سابقة</td><td class="num">${m2(S.refundCash)}</td></tr>` : ""}<tr><td><b>المفروض في الدرج</b></td><td class="num"><b>${m2(S.expected)}</b></td></tr></table>
+      <label class="f" style="margin-top:14px"><span>كم عدّيت كاش في الدرج فعلياً؟</span><input class="bigin num" id="cnt" inputmode="decimal" placeholder="0.00"></label><div id="cdiff"></div>
+      <label class="f"><span>ملاحظات (اختياري)</span><input id="cnote"></label>
+      <button class="btn warn" style="width:100%;min-height:56px;font-size:18px" id="cgo">إغلاق الوردية وطباعة التقرير</button></div></div>`;
+  const diff = () => { const v = parseFloat($("#cnt").value); if (isNaN(v)) return $("#cdiff").innerHTML = ""; const d = r2(v - S.expected); $("#cdiff").innerHTML = `<div class="change ${d === 0 ? "ok" : "bad"}" style="margin-bottom:12px">${d === 0 ? "✅ الدرج مطابق" : d > 0 ? "زيادة في الدرج" : "عجز في الدرج"}<b class="num">${m2(Math.abs(d))} ${cur()}</b></div>`; };
+  $("#cnt").oninput = diff;
+  $("#cgo").onclick = async () => { const v = r2(parseFloat($("#cnt").value)); if (isNaN(v)) return toast("اكتب الكاش اللي عدّيته", 1);
+    if (!(await confirmBox(`تقفل الوردية؟ ${r2(v - S.expected) !== 0 ? `<br><b style="color:var(--red)">فيه فرق ${m2(v - S.expected)} ${cur()}</b>` : ""}`, "إغلاق"))) return;
+    const done = {...sh, status: "closed", closeAt: new Date().toISOString(), closeBy: USER.name, counted: v, expected: S.expected, diff: r2(v - S.expected), note: $("#cnote").value.trim(), sum: S};
+    await DB.put("shifts", done); CFG.shift = null; saveCfg(); printDoc(zHTML(done)); toast("✅ انقفلت الوردية"); setTimeout(() => { USER = null; VIEW = "pos"; render(); }, 600); };
+}
+function zHTML(s){ const S = s.sum;
+  return `<div class="rcpt ${CFG.settings.paper === 58 ? "w58" : ""}"><div class="c"><h2>${esc(CFG.settings.name)}</h2><div style="font-weight:800">تقرير إغلاق الوردية</div></div><div class="hr"></div>
+    <table><tr><td>الفتح</td><td class="p num">${fmtDT(s.openAt)}</td></tr><tr><td>الإغلاق</td><td class="p num">${fmtDT(s.closeAt)}</td></tr><tr><td>فتحها</td><td class="p">${esc(s.openBy)}</td></tr><tr><td>قفلها</td><td class="p">${esc(s.closeBy)}</td></tr></table><div class="hr"></div>
+    <table><tr><td>عدد الطلبات</td><td class="p num">${S.count}</td></tr><tr><td>الملغي</td><td class="p num">${S.voids}</td></tr><tr><td>الخصومات</td><td class="p num">${m2(S.disc)}</td></tr><tr><td>كاش</td><td class="p num">${m2(S.cash)}</td></tr><tr><td>شبكة</td><td class="p num">${m2(S.card)}</td></tr><tr class="tot"><td>المبيعات</td><td class="p num">${m2(S.sales)}</td></tr></table><div class="hr"></div>
+    <table><tr><td>الفكّة</td><td class="p num">${m2(s.openCash)}</td></tr>${S.refundCash ? `<tr><td>مرتجعات كاش</td><td class="p num">-${m2(S.refundCash)}</td></tr>` : ""}<tr><td>المفروض</td><td class="p num">${m2(s.expected)}</td></tr><tr><td>المعدود</td><td class="p num">${m2(s.counted)}</td></tr><tr class="tot"><td>الفرق</td><td class="p num">${m2(s.diff)}</td></tr></table>${s.note ? `<div class="hr"></div><div>${esc(s.note)}</div>` : ""}</div>`; }
+
+/* ---------------- reports ---------------- */
+let RR = {from: null, to: null};
+async function reportsPage(){
+  const d = dayOf(); RR.from = RR.from || d; RR.to = RR.to || d;
+  const all = await DB.days(RR.from, RR.to), L = all.filter(live), V = all.filter(o => !live(o));
+  const sales = r2(L.reduce((a, o) => a + o.total, 0)), cnt = L.length, cash = r2(L.reduce((a, o) => a + o.pay.cash, 0)), card = r2(L.reduce((a, o) => a + o.pay.card, 0)), disc = r2(L.reduce((a, o) => a + o.disc, 0));
+  const items = {}, cats = {}, hours = Array(24).fill(0), users = {}, types = {local: 0, takeaway: 0};
+  L.forEach(o => { hours[new Date(o.at).getHours()] += o.total; users[o.userName] = r2((users[o.userName] || 0) + o.total); types[o.type] = r2(types[o.type] + o.total);
+    const f = o.sub ? (o.total / o.sub) : 1;   // spread order discount over its lines
+    o.lines.forEach(l => { const k = l.name + (l.size ? " · " + l.size : ""); items[k] = items[k] || {q: 0, v: 0}; items[k].q += l.qty; items[k].v = r2(items[k].v + l.unit * l.qty * f);
+      const c = (CFG.cats.find(x => x.id === l.cat) || {name: "أخرى"}).name; cats[c] = r2((cats[c] || 0) + l.unit * l.qty * f); }); });
+  const top = Object.entries(items).sort((a, b) => b[1].v - a[1].v), mx = Math.max(1, ...hours), h0 = hours.findIndex(v => v > 0), h1 = 23 - [...hours].reverse().findIndex(v => v > 0);
+  const preset = [["اليوم", d, d], ["أمس", dayOf(new Date(Date.now() - 864e5)), dayOf(new Date(Date.now() - 864e5))], ["٧ أيام", dayOf(new Date(Date.now() - 6 * 864e5)), d], ["هذا الشهر", d.slice(0, 8) + "01", d]];
+  $("#pg").innerHTML = `<div class="wrap"><div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">📊 التقارير</h3><div class="row">${preset.map(([n, a, b]) => `<button class="chip ${RR.from === a && RR.to === b ? "on" : ""}" data-rp="${a}|${b}">${n}</button>`).join("")}
+      <input type="date" id="rf" value="${RR.from}" style="min-height:44px;border-radius:12px;border:1.5px solid var(--line);padding:4px 8px"><input type="date" id="rt" value="${RR.to}" style="min-height:44px;border-radius:12px;border:1.5px solid var(--line);padding:4px 8px"></div></div></div>
+    <div class="kpis"><div class="kpi"><small>المبيعات</small><b class="num">${m2(sales)}</b></div><div class="kpi"><small>عدد الطلبات</small><b class="num">${cnt}</b></div><div class="kpi"><small>متوسط الطلب</small><b class="num">${m2(cnt ? sales / cnt : 0)}</b></div><div class="kpi"><small>كاش / شبكة</small><b class="num" style="font-size:20px">${m2(cash)} / ${m2(card)}</b></div><div class="kpi"><small>الخصومات</small><b class="num">${m2(disc)}</b></div><div class="kpi"><small>الملغي</small><b class="num">${V.length} · ${m2(V.reduce((a, o) => a + o.total, 0))}</b></div></div>
+    ${CFG.settings.vat.on ? `<div class="card"><b>الضريبة المحصّلة:</b> <span class="num">${m2(L.reduce((a, o) => a + o.vat, 0))} ${cur()}</span></div>` : ""}
+    <div class="card"><h3>⏰ المبيعات حسب الساعة</h3>${cnt ? `<div class="bars" style="margin-bottom:22px">${hours.slice(h0, h1 + 1).map((v, i) => `<div style="height:${Math.max(2, v / mx * 100)}%" title="${m2(v)}"><span class="num">${h0 + i}</span></div>`).join("")}</div>` : `<div class="empty">ما فيه مبيعات في الفترة</div>`}</div>
+    <div class="row" style="align-items:stretch"><div class="card grow" style="min-width:300px"><h3>🏆 الأصناف الأكثر مبيعاً</h3><table class="t"><tr><th>الصنف</th><th>الكمية</th><th>المبيعات</th></tr>${top.slice(0, 15).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${v.q}</td><td class="num">${m2(v.v)}</td></tr>`).join("") || `<tr><td colspan="3" class="empty">—</td></tr>`}</table></div>
+      <div class="card grow" style="min-width:260px"><h3>📂 حسب القسم</h3><table class="t">${Object.entries(cats).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${m2(v)}</td></tr>`).join("") || `<tr><td class="empty">—</td></tr>`}</table>
+        <h3 style="margin-top:14px">👤 حسب الكاشير</h3><table class="t">${Object.entries(users).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${m2(v)}</td></tr>`).join("") || `<tr><td class="empty">—</td></tr>`}</table>
+        <h3 style="margin-top:14px">🪑 محلي / سفري</h3><table class="t"><tr><td>محلي</td><td class="num">${m2(types.local)}</td></tr><tr><td>سفري</td><td class="num">${m2(types.takeaway)}</td></tr></table></div></div>
+    <div class="card row"><button class="btn pri" id="xo">⬇️ تصدير الطلبات (Excel)</button><button class="btn" id="xi">⬇️ تصدير الأصناف (Excel)</button><button class="btn" id="xs">🖨️ طباعة ملخص</button></div></div>`;
+  $$("[data-rp]").forEach(b => b.onclick = () => { [RR.from, RR.to] = b.dataset.rp.split("|"); reportsPage(); });
+  $("#rf").onchange = e => { RR.from = e.target.value; if (RR.to < RR.from) RR.to = RR.from; reportsPage(); };
+  $("#rt").onchange = e => { RR.to = e.target.value; if (RR.to < RR.from) RR.from = RR.to; reportsPage(); };
+  $("#xo").onclick = () => csv(`طلبات ${RR.from} إلى ${RR.to}`, [["رقم الفاتورة", "رقم الطلب", "التاريخ", "الكاشير", "النوع", "العميل", "الأصناف", "المجموع", "الخصم", "الإجمالي", "الضريبة", "طريقة الدفع", "كاش", "شبكة", "الحالة", "سبب الإلغاء"], ...all.sort((a, b) => a.at.localeCompare(b.at)).map(o => [o.serial, o.no, fmtDT(o.at), o.userName, TYPEN[o.type], o.cust, o.lines.map(l => `${l.qty}× ${l.name}${l.size ? " " + l.size : ""}`).join(" | "), m2(o.sub), m2(o.disc), m2(o.total), m2(o.vat), PAYN[o.pay.method], m2(o.pay.cash), m2(o.pay.card), live(o) ? "مدفوع" : "ملغي", o.voidReason || ""])]);
+  $("#xi").onclick = () => csv(`أصناف ${RR.from} إلى ${RR.to}`, [["الصنف", "الكمية", "المبيعات"], ...top.map(([k, v]) => [k, v.q, m2(v.v)])]);
+  $("#xs").onclick = () => printDoc(`<div class="rcpt ${CFG.settings.paper === 58 ? "w58" : ""}"><div class="c"><h2>${esc(CFG.settings.name)}</h2><div style="font-weight:800">ملخص المبيعات</div><div class="num">${RR.from} → ${RR.to}</div></div><div class="hr"></div><table><tr><td>الطلبات</td><td class="p num">${cnt}</td></tr><tr><td>كاش</td><td class="p num">${m2(cash)}</td></tr><tr><td>شبكة</td><td class="p num">${m2(card)}</td></tr><tr><td>الخصومات</td><td class="p num">${m2(disc)}</td></tr><tr class="tot"><td>المبيعات</td><td class="p num">${m2(sales)}</td></tr></table><div class="hr"></div><table>${top.slice(0, 12).map(([k, v]) => `<tr><td>${v.q} × ${esc(k)}</td><td class="p num">${m2(v.v)}</td></tr>`).join("")}</table></div>`);
+}
+function csv(name, rows){
+  const s = "﻿" + rows.map(r => r.map(c => { const v = String(c ?? ""); return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }).join(",")).join("\r\n");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([s], {type: "text/csv;charset=utf-8"})); a.download = `${CFG.settings.nameEn || "pos"} - ${name}.csv`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+
+/* ---------------- settings (manager) ---------------- */
+let STAB = "store";
+function settingsPage(){
+  if (!isMgr()) { VIEW = "pos"; return render(); }
+  const T = [["store", "🏪 المتجر"], ["menu", "📋 المنيو"], ["groups", "➕ الإضافات"], ["users", "👥 المستخدمين"], ["print", "🖨️ الطباعة والضريبة"], ["data", "💾 البيانات"]];
+  $("#pg").innerHTML = `<div class="wrap"><div class="stabs">${T.map(([k, t]) => `<button class="chip ${STAB === k ? "on" : ""}" data-st="${k}">${t}</button>`).join("")}</div><div id="sbody"></div></div>`;
+  $$("[data-st]").forEach(b => b.onclick = () => { STAB = b.dataset.st; settingsPage(); });
+  ({store: setStore, menu: setMenu, groups: setGroups, users: setUsers, print: setPrint, data: setData})[STAB]();
+}
+const S$ = () => CFG.settings;
+function setStore(){
+  const S = S$();
+  $("#sbody").innerHTML = `<div class="card"><h3>بيانات المتجر (تظهر في الإيصال)</h3>
+    <label class="f"><span>اسم المقهى</span><input id="s_name" value="${esc(S.name)}"></label><label class="f"><span>الاسم بالإنجليزي</span><input id="s_en" value="${esc(S.nameEn)}" dir="ltr"></label>
+    <label class="f"><span>الفرع / العنوان</span><input id="s_br" value="${esc(S.branch)}"></label><label class="f"><span>رقم التواصل</span><input id="s_ph" value="${esc(S.phone)}" dir="ltr" inputmode="tel"></label>
+    <label class="f"><span>رقم السجل التجاري (اختياري)</span><input id="s_cr" value="${esc(S.cr)}" dir="ltr"></label><label class="f"><span>رسالة أسفل الإيصال</span><input id="s_ft" value="${esc(S.footer)}"></label>
+    <label class="toggle"><input type="checkbox" id="s_dp" ${S.discPin ? "checked" : ""}> الخصم يحتاج رمز المدير</label>
+    <button class="btn pri" id="s_save">حفظ</button></div>`;
+  $("#s_save").onclick = () => { Object.assign(S, {name: $("#s_name").value.trim() || "كوفي دوفي", nameEn: $("#s_en").value.trim(), branch: $("#s_br").value.trim(), phone: $("#s_ph").value.trim(), cr: $("#s_cr").value.trim(), footer: $("#s_ft").value.trim(), discPin: $("#s_dp").checked}); saveCfg(); toast("✅ انحفظ"); render(); };
+}
+function setMenu(){
+  const cat = CFG.cats.find(c => c.id === CAT) || CFG.cats[0]; CAT = cat ? cat.id : null;
+  $("#sbody").innerHTML = `<div class="card"><h3>الأقسام</h3><div class="row">${CFG.cats.map(c => `<button class="chip ${c.id === CAT ? "on" : ""}" data-mc="${c.id}">${c.icon || ""} ${esc(c.name)}</button>`).join("")}<button class="btn sm" id="ncat">+ قسم</button>${cat ? `<button class="btn sm" id="rcat">✏️ تعديل القسم</button><button class="btn sm" id="dcat">🗑️ حذف القسم</button>` : ""}</div></div>
+    ${cat ? `<div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">أصناف «${esc(cat.name)}»</h3><button class="btn ok sm" id="nitem">+ صنف جديد</button></div>
+      ${CFG.items.filter(i => i.cat === cat.id).map(i => `<div class="line" style="cursor:pointer" data-ei="${i.id}"><span style="font-size:26px">${i.icon || "☕"}</span><div class="info"><b>${esc(i.name)} ${i.active ? "" : `<span class="tag r">موقوف</span>`}</b><small class="num">${i.sizes.length ? i.sizes.map(s => `${s.n} ${m2(s.p)}`).join(" · ") : m2(i.price) + " " + cur()}</small><small>${i.groups.map(g => (CFG.groups.find(x => x.id === g) || {}).name).filter(Boolean).join("، ")}</small></div><span class="btn sm">تعديل</span></div>`).join("") || `<div class="empty">ما فيه أصناف — أضف أول صنف</div>`}</div>` : ""}`;
+  $$("[data-mc]").forEach(b => b.onclick = () => { CAT = b.dataset.mc; setMenu(); });
+  $("#ncat").onclick = () => catModal(null);
+  if ($("#rcat")) $("#rcat").onclick = () => catModal(cat);
+  if ($("#dcat")) $("#dcat").onclick = async () => { const n = CFG.items.filter(i => i.cat === cat.id).length; if (!(await confirmBox(`تحذف قسم «${esc(cat.name)}»${n ? ` و${n} صنف فيه` : ""}؟`, "حذف", 1))) return; CFG.items = CFG.items.filter(i => i.cat !== cat.id); CFG.cats = CFG.cats.filter(c => c.id !== cat.id); CAT = null; saveCfg(); setMenu(); };
+  if ($("#nitem")) $("#nitem").onclick = () => itemEditor({id: uid(), cat: cat.id, icon: "☕", name: "", price: 0, sizes: [], groups: [], active: true}, true);
+  $$("[data-ei]").forEach(b => b.onclick = () => itemEditor(JSON.parse(JSON.stringify(CFG.items.find(i => i.id === b.dataset.ei))), false));
+}
+function catModal(c){
+  const ov = modal(`<div class="mh"><b>${c ? "تعديل القسم" : "قسم جديد"}</b><button class="x" data-close>×</button></div><div class="mb"><label class="f"><span>الاسم</span><input id="cn" value="${esc(c ? c.name : "")}"></label><label class="f"><span>أيقونة (إيموجي)</span><input id="ci" value="${esc(c ? c.icon : "☕")}" maxlength="4"></label></div><div class="mf"><button class="btn" data-close>رجوع</button><button class="btn pri" id="cok">حفظ</button></div>`);
+  ov.querySelector("#cok").onclick = () => { const n = ov.querySelector("#cn").value.trim(); if (!n) return toast("اكتب اسم القسم", 1); if (c) { c.name = n; c.icon = ov.querySelector("#ci").value.trim(); } else { const id = uid(); CFG.cats.push({id, name: n, icon: ov.querySelector("#ci").value.trim()}); CAT = id; } saveCfg(); closeModal(ov); setMenu(); };
+}
+function itemEditor(it, isNew){
+  const draw = () => {
+    ov.querySelector(".modal").innerHTML = `<div class="mh"><b>${isNew ? "صنف جديد" : "تعديل صنف"}</b><button class="x" data-close>×</button></div><div class="mb">
+      <div class="row"><label class="f" style="width:90px"><span>أيقونة</span><input id="ii" value="${esc(it.icon)}" maxlength="4"></label><label class="f grow"><span>الاسم</span><input id="in" value="${esc(it.name)}"></label></div>
+      <label class="f"><span>القسم</span><select id="ic">${CFG.cats.map(c => `<option value="${c.id}" ${c.id === it.cat ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>
+      <label class="toggle"><input type="checkbox" id="ihs" ${it.sizes.length ? "checked" : ""}> له أحجام بأسعار مختلفة</label>
+      ${it.sizes.length ? `<div class="grp">${it.sizes.map((s, i) => `<div class="row" style="margin-bottom:6px"><input class="grow" data-sn="${i}" value="${esc(s.n)}" style="min-height:44px;border-radius:10px;border:1.5px solid var(--line);padding:4px 10px"><input data-sp="${i}" class="num" inputmode="decimal" value="${s.p}" style="width:110px;min-height:44px;border-radius:10px;border:1.5px solid var(--line);padding:4px 10px"><button class="btn sm" data-sd="${i}">✕</button></div>`).join("")}<button class="btn sm" id="isa">+ حجم</button></div>`
+        : `<label class="f"><span>السعر (${cur()})</span><input id="ip" class="num" inputmode="decimal" value="${it.price}"></label>`}
+      <div class="grp"><h4>الإضافات المتاحة لهذا الصنف</h4><div class="opts">${CFG.groups.map(g => `<button class="opt ${it.groups.includes(g.id) ? "on" : ""}" data-ig="${g.id}">${esc(g.name)}</button>`).join("")}</div></div>
+      <label class="toggle"><input type="checkbox" id="ia" ${it.active ? "checked" : ""}> متوفّر للبيع</label></div>
+      <div class="mf">${isNew ? "" : `<button class="btn warn" id="idel">🗑️</button>`}<button class="btn" data-close>رجوع</button><button class="btn pri" id="iok">حفظ</button></div>`;
+    const grab = () => { it.icon = ov.querySelector("#ii").value.trim(); it.name = ov.querySelector("#in").value.trim(); it.cat = ov.querySelector("#ic").value; it.active = ov.querySelector("#ia").checked;
+      if (ov.querySelector("#ip")) it.price = r2(parseFloat(ov.querySelector("#ip").value)); ov.querySelectorAll("[data-sn]").forEach(x => it.sizes[+x.dataset.sn].n = x.value.trim()); ov.querySelectorAll("[data-sp]").forEach(x => it.sizes[+x.dataset.sp].p = r2(parseFloat(x.value))); };
+    ov.querySelector("#ihs").onchange = e => { grab(); it.sizes = e.target.checked ? [{n: "صغير", p: it.price}, {n: "وسط", p: r2(it.price + 2)}, {n: "كبير", p: r2(it.price + 4)}] : []; if (!e.target.checked && it.sizes.length === 0) {} draw(); };
+    const sa = ov.querySelector("#isa"); if (sa) sa.onclick = () => { grab(); it.sizes.push({n: "حجم", p: 0}); draw(); };
+    ov.querySelectorAll("[data-sd]").forEach(b => b.onclick = () => { grab(); it.sizes.splice(+b.dataset.sd, 1); draw(); });
+    ov.querySelectorAll("[data-ig]").forEach(b => b.onclick = () => { grab(); const k = it.groups.indexOf(b.dataset.ig); k >= 0 ? it.groups.splice(k, 1) : it.groups.push(b.dataset.ig); draw(); });
+    const dl = ov.querySelector("#idel"); if (dl) dl.onclick = async () => { if (!(await confirmBox(`تحذف «${esc(it.name)}»؟ (الطلبات السابقة ما تتأثر)`, "حذف", 1))) return; CFG.items = CFG.items.filter(i => i.id !== it.id); saveCfg(); closeModal(ov); setMenu(); };
+    ov.querySelector("#iok").onclick = () => { grab(); if (!it.name) return toast("اكتب اسم الصنف", 1);
+      if (it.sizes.length) { if (it.sizes.some(s => !s.n || !(s.p >= 0) || isNaN(s.p))) return toast("عبّ اسم وسعر كل حجم", 1); it.price = Math.min(...it.sizes.map(s => s.p)); } else if (!(it.price >= 0) || isNaN(it.price)) return toast("اكتب سعر صحيح", 1);
+      const k = CFG.items.findIndex(i => i.id === it.id); if (k >= 0) CFG.items[k] = it; else CFG.items.push(it); CAT = it.cat; saveCfg(); closeModal(ov); toast("✅ انحفظ الصنف"); setMenu(); };
+  };
+  const ov = modal(""); draw();
+}
+function setGroups(){
+  $("#sbody").innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">مجموعات الإضافات (حليب، سكر، شوت…)</h3><button class="btn ok sm" id="ng">+ مجموعة</button></div>
+    ${CFG.groups.map(g => `<div class="line" style="cursor:pointer" data-eg="${g.id}"><div class="info"><b>${esc(g.name)} <span class="tag">${g.multi ? "اختيار متعدد" : "اختيار واحد"}</span></b><small>${g.choices.map(c => c.n + (c.p ? ` (+${m2(c.p)})` : "")).join(" · ")}</small></div><span class="btn sm">تعديل</span></div>`).join("")}</div>`;
+  $("#ng").onclick = () => groupEditor({id: uid(), name: "", multi: false, choices: [{n: "", p: 0}]}, true);
+  $$("[data-eg]").forEach(b => b.onclick = () => groupEditor(JSON.parse(JSON.stringify(CFG.groups.find(g => g.id === b.dataset.eg))), false));
+}
+function groupEditor(g, isNew){
+  const draw = () => { ov.querySelector(".modal").innerHTML = `<div class="mh"><b>${isNew ? "مجموعة جديدة" : "تعديل المجموعة"}</b><button class="x" data-close>×</button></div><div class="mb">
+      <label class="f"><span>الاسم</span><input id="gn" value="${esc(g.name)}" placeholder="مثال: نوع الحليب"></label><label class="toggle"><input type="checkbox" id="gm" ${g.multi ? "checked" : ""}> يقدر العميل يختار أكثر من خيار</label>
+      <div class="grp"><h4>الخيارات والسعر الإضافي</h4>${g.choices.map((c, i) => `<div class="row" style="margin-bottom:6px"><input class="grow" data-cn="${i}" value="${esc(c.n)}" style="min-height:44px;border-radius:10px;border:1.5px solid var(--line);padding:4px 10px"><input data-cp="${i}" class="num" inputmode="decimal" value="${c.p}" style="width:100px;min-height:44px;border-radius:10px;border:1.5px solid var(--line);padding:4px 10px"><button class="btn sm" data-cd="${i}">✕</button></div>`).join("")}<button class="btn sm" id="gca">+ خيار</button></div></div>
+      <div class="mf">${isNew ? "" : `<button class="btn warn" id="gdel">🗑️</button>`}<button class="btn" data-close>رجوع</button><button class="btn pri" id="gok">حفظ</button></div>`;
+    const grab = () => { g.name = ov.querySelector("#gn").value.trim(); g.multi = ov.querySelector("#gm").checked; ov.querySelectorAll("[data-cn]").forEach(x => g.choices[+x.dataset.cn].n = x.value.trim()); ov.querySelectorAll("[data-cp]").forEach(x => g.choices[+x.dataset.cp].p = r2(parseFloat(x.value) || 0)); };
+    ov.querySelector("#gca").onclick = () => { grab(); g.choices.push({n: "", p: 0}); draw(); };
+    ov.querySelectorAll("[data-cd]").forEach(b => b.onclick = () => { grab(); g.choices.splice(+b.dataset.cd, 1); draw(); });
+    const dl = ov.querySelector("#gdel"); if (dl) dl.onclick = async () => { if (!(await confirmBox(`تحذف مجموعة «${esc(g.name)}»؟`, "حذف", 1))) return; CFG.groups = CFG.groups.filter(x => x.id !== g.id); CFG.items.forEach(i => i.groups = i.groups.filter(x => x !== g.id)); saveCfg(); closeModal(ov); setGroups(); };
+    ov.querySelector("#gok").onclick = () => { grab(); g.choices = g.choices.filter(c => c.n); if (!g.name || !g.choices.length) return toast("اكتب اسم المجموعة وخيار واحد على الأقل", 1); const k = CFG.groups.findIndex(x => x.id === g.id); if (k >= 0) CFG.groups[k] = g; else CFG.groups.push(g); saveCfg(); closeModal(ov); setGroups(); };
+  };
+  const ov = modal(""); draw();
+}
+function setUsers(){
+  $("#sbody").innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">المستخدمين</h3><button class="btn ok sm" id="nu">+ كاشير جديد</button></div>
+    ${CFG.users.some(u => (u.role === "manager" && u.pin === "1234") || (u.role === "cashier" && u.pin === "0000")) ? `<div class="note red" style="margin:10px 0">⚠️ فيه رموز دخول افتراضية — غيّرها الحين عشان ما يدخل أحد بدون إذن.</div>` : ""}
+    ${CFG.users.map(u => `<div class="line"><span style="font-size:24px">${u.role === "manager" ? "⭐" : "👤"}</span><div class="info"><b>${esc(u.name)}</b><small>${u.role === "manager" ? "مدير — كل الصلاحيات" : "كاشير — بيع فقط"}</small></div><button class="btn sm" data-uu="${u.id}">تعديل</button></div>`).join("")}</div>`;
+  $("#nu").onclick = () => userEditor({id: "u_" + uid(), name: "", role: "cashier", pin: ""}, true);
+  $$("[data-uu]").forEach(b => b.onclick = () => userEditor({...CFG.users.find(u => u.id === b.dataset.uu)}, false));
+}
+function userEditor(u, isNew){
+  const ov = modal(`<div class="mh"><b>${isNew ? "مستخدم جديد" : "تعديل " + esc(u.name)}</b><button class="x" data-close>×</button></div><div class="mb">
+    <label class="f"><span>الاسم</span><input id="un" value="${esc(u.name)}"></label><label class="f"><span>الصلاحية</span><select id="ur"><option value="cashier" ${u.role === "cashier" ? "selected" : ""}>كاشير</option><option value="manager" ${u.role === "manager" ? "selected" : ""}>مدير</option></select></label>
+    <label class="f"><span>رمز الدخول (٤ إلى ٦ أرقام)</span><input id="up" class="num" inputmode="numeric" value="" placeholder="${isNew ? "" : "اتركه فاضي لو ما تبي تغيّره"}"></label></div>
+    <div class="mf">${isNew ? "" : `<button class="btn warn" id="udel">🗑️</button>`}<button class="btn" data-close>رجوع</button><button class="btn pri" id="uok">حفظ</button></div>`);
+  const dl = ov.querySelector("#udel"); if (dl) dl.onclick = async () => { if (u.id === USER.id) return toast("ما تقدر تحذف نفسك", 1); if (u.role === "manager" && CFG.users.filter(x => x.role === "manager").length < 2) return toast("لازم يبقى مدير واحد على الأقل", 1); if (!(await confirmBox(`تحذف «${esc(u.name)}»؟`, "حذف", 1))) return; CFG.users = CFG.users.filter(x => x.id !== u.id); saveCfg(); closeModal(ov); setUsers(); };
+  ov.querySelector("#uok").onclick = () => { const n = ov.querySelector("#un").value.trim(), r = ov.querySelector("#ur").value, p = ov.querySelector("#up").value.trim();
+    if (!n) return toast("اكتب الاسم", 1); if ((isNew || p) && !/^\d{4,6}$/.test(p)) return toast("الرمز لازم يكون من ٤ إلى ٦ أرقام", 1);
+    if (p && CFG.users.some(x => x.id !== u.id && x.pin === p)) return toast("هذا الرمز مستخدم لشخص ثاني — اختر رمز مختلف", 1);
+    if (!isNew && u.role === "manager" && r !== "manager" && CFG.users.filter(x => x.role === "manager").length < 2) return toast("لازم يبقى مدير واحد على الأقل", 1);
+    const k = CFG.users.findIndex(x => x.id === u.id), nu = {...u, name: n, role: r, pin: p || u.pin}; if (k >= 0) CFG.users[k] = nu; else CFG.users.push(nu); if (USER.id === nu.id) USER = nu; saveCfg(); closeModal(ov); toast("✅ انحفظ"); setUsers(); };
+}
+function setPrint(){
+  const S = S$(), V = S.vat, P = S.printer;
+  $("#sbody").innerHTML = `<div class="card"><h3>🖨️ الطباعة</h3><label class="f"><span>عرض ورق الطابعة</span><select id="pw"><option value="80" ${S.paper === 80 ? "selected" : ""}>٨٠ مم (الأشهر)</option><option value="58" ${S.paper === 58 ? "selected" : ""}>٥٨ مم</option></select></label>
+      <label class="toggle"><input type="checkbox" id="pa" ${S.autoPrint ? "checked" : ""}> اطبع الإيصال تلقائياً بعد كل دفع</label><label class="toggle"><input type="checkbox" id="pt" ${S.autoTicket ? "checked" : ""}> اطبع تذكرة الباريستا تلقائياً</label>
+      <div class="note" style="margin-top:10px">💡 الطباعة تمر عبر نافذة الطباعة في الجهاز. على <b>ويندوز</b>: عرّف الطابعة الحرارية واجعلها الطابعة الافتراضية، وفعّل من إعدادات تعريفها «فتح درج الكاش عند الطباعة». على <b>الآيباد</b>: تحتاج طابعة تدعم الطباعة عبر الشبكة (AirPrint) — طابعات USB ما تشتغل مع الآيباد.</div>
+      <h4 style="margin:16px 0 8px">طريقة الاتصال بالطابعة</h4>
+      <div class="opts" id="pmode"><button class="opt ${P.mode !== "epson" ? "on" : ""}" data-pm2="system">🖨️ نافذة الطباعة (AirPrint / ويندوز)</button><button class="opt ${P.mode === "epson" ? "on" : ""}" data-pm2="epson">📶 Epson عبر الواي فاي (IP)</button></div>
+      <div id="epbox" style="${P.mode === "epson" ? "" : "display:none"}">
+        <div class="row"><label class="f grow"><span>عنوان IP الطابعة</span><input id="pip" class="num" dir="ltr" inputmode="decimal" placeholder="192.168.1.50" value="${esc(P.ip || "")}"></label><label class="f" style="width:110px"><span>المنفذ (اختياري)</span><input id="pport" class="num" dir="ltr" inputmode="numeric" placeholder="تلقائي" value="${esc(P.port || "")}"></label></div>
+        <label class="toggle"><input type="checkbox" id="pdr" ${P.drawer ? "checked" : ""}> افتح درج الكاش تلقائياً مع إيصالات الكاش</label>
+        <div class="note" style="font-size:13.5px">📌 <b>أول مرة فقط:</b> اضغط «افتح صفحة الطابعة»، وإذا طلع تحذير أمان اضغط «إظهار التفاصيل ← زيارة الموقع» (هذا طبيعي لأن الطابعة داخل محلك)، ثم ارجع هنا واضغط «طباعة تجريبية».<br>عنوان IP يطلع في ورقة تطبعها الطابعة لما تضغط زر الـ Feed مع تشغيلها.</div>
+        <div class="row" style="margin-top:8px"><button class="btn" id="popen">🌐 افتح صفحة الطابعة</button></div></div>
+      <div class="row" style="margin-top:12px"><button class="btn" id="ptest">🧪 طباعة تجريبية</button><button class="btn pri" id="psave">حفظ</button></div></div>
+    <div class="card"><h3>🧾 ضريبة القيمة المضافة</h3>
+      <div class="note ${V.on ? "green" : ""}">${V.on ? `✅ الضريبة مفعّلة — الأسعار شاملة الضريبة ${V.rate}٪، والإيصال يطلع «فاتورة ضريبية مبسطة» مع رمز QR حسب متطلبات هيئة الزكاة (المرحلة الأولى).` : `الضريبة <b>موقوفة</b> — الإيصال يطلع «إيصال بيع» بدون ضريبة. <b>لا تفعّلها إلا بعد تسجيلك رسمياً في ضريبة القيمة المضافة</b>، لأن غير المسجّل ما يحق له يحصّل ضريبة.`}</div>
+      <label class="toggle" style="margin-top:10px"><input type="checkbox" id="von" ${V.on ? "checked" : ""}> المقهى مسجّل في الضريبة — فعّل الضريبة</label>
+      <label class="f"><span>الرقم الضريبي (١٥ رقم يبدأ وينتهي بـ ٣)</span><input id="vno" class="num" inputmode="numeric" value="${esc(V.number)}" maxlength="15"></label>
+      <div class="note red" style="font-size:13.5px">⚠️ إذا وصلك من هيئة الزكاة إشعار «مرحلة الربط والتكامل» (المرحلة الثانية)، تحتاج ربط مباشر مع منصة «فاتورة» — هذا غير مشمول هنا ويحتاج تطوير إضافي.</div>
+      <button class="btn pri" id="vsave" style="margin-top:10px">حفظ إعدادات الضريبة</button></div>`;
+  let mode = P.mode || "system";
+  $$("[data-pm2]").forEach(b => b.onclick = () => { mode = b.dataset.pm2; $$("[data-pm2]").forEach(x => x.classList.toggle("on", x === b)); $("#epbox").style.display = mode === "epson" ? "" : "none"; });
+  const grabP = () => { const ip = $("#pip").value.trim(), port = $("#pport").value.trim();
+    if (mode === "epson" && !/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) { toast("اكتب عنوان IP صحيح مثل 192.168.1.50", 1); return false; }
+    if (port && !/^\d{2,5}$/.test(port)) { toast("المنفذ أرقام فقط", 1); return false; }
+    S.paper = +$("#pw").value; S.autoPrint = $("#pa").checked; S.autoTicket = $("#pt").checked; Object.assign(P, {mode, ip, port, drawer: $("#pdr").checked}); saveCfg(); return true; };
+  $("#popen").onclick = () => { const ip = $("#pip").value.trim(); if (!ip) return toast("اكتب عنوان IP أول", 1); window.open(`${location.protocol === "https:" ? "https" : "http"}://${ip}${$("#pport").value.trim() ? ":" + $("#pport").value.trim() : ""}/`, "_blank"); };
+  $("#psave").onclick = () => { if (grabP()) toast("✅ انحفظ"); };
+  $("#ptest").onclick = () => grabP() && printDoc(`<div class="rcpt ${+$("#pw").value === 58 ? "w58" : ""}"><div class="c"><h2>${esc(S.name)}</h2><div>طباعة تجريبية ✓</div><div class="num">${fmtDT(new Date().toISOString())}</div></div><div class="hr"></div><div class="c">إذا ظهر هذا الإيصال كامل وواضح، الطابعة جاهزة</div></div>`);
+  $("#vsave").onclick = async () => { const on = $("#von").checked, no = $("#vno").value.trim();
+    if (on && !/^3\d{13}3$/.test(no)) return toast("الرقم الضريبي لازم يكون ١٥ رقم يبدأ بـ 3 وينتهي بـ 3", 1);
+    if (on && !V.on && !(await confirmBox("تأكد إن المقهى مسجّل فعلياً في ضريبة القيمة المضافة.<br>من الحين الأسعار تعتبر شاملة الضريبة والإيصال يصير فاتورة ضريبية مبسطة.", "نعم، مسجّل"))) return;
+    V.on = on; V.number = no; saveCfg(); toast("✅ انحفظ"); setPrint(); };
+}
+function setData(){
+  $("#sbody").innerHTML = `<div class="card"><h3>💾 النسخ الاحتياطي</h3><p style="color:var(--mut);margin-bottom:10px">البيانات محفوظة على هذا الجهاز فقط. صدّر نسخة احتياطية بشكل دوري (يُفضّل أسبوعياً) واحفظها في مكان آمن — لو انمسح المتصفح أو ضاع الجهاز تسترجع منها.</p>
+      <div class="row"><button class="btn pri" id="bk">⬇️ تنزيل نسخة احتياطية كاملة</button><label class="btn">⬆️ استرجاع نسخة<input type="file" id="rs" accept=".json,application/json" hidden></label></div></div>
+    <div class="card"><h3>⚠️ منطقة الخطر</h3><div class="row"><button class="btn warn" id="wipe">مسح كل المبيعات</button><button class="btn warn" id="reset">إرجاع المنيو والإعدادات للأصل</button></div></div>`;
+  $("#bk").onclick = async () => { const data = {app: "coffee-doffee-pos", v: 1, at: new Date().toISOString(), cfg: CFG, orders: await DB.all("orders"), shifts: await DB.all("shifts")};
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], {type: "application/json"})); a.download = `coffee-doffee-backup-${dayOf()}.json`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); toast("✅ تنزّلت النسخة"); };
+  $("#rs").onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const d = JSON.parse(await f.text()); if (d.app !== "coffee-doffee-pos" || !d.cfg) throw 0;
+      if (!(await confirmBox(`تسترجع نسخة ${fmtDT(d.at)}؟<br>فيها ${d.orders.length} طلب. الطلبات الحالية تُدمج معها.`, "استرجاع"))) return;
+      CFG = d.cfg; saveCfg(); for (const o of d.orders) await DB.put("orders", o); for (const s of d.shifts || []) await DB.put("shifts", s); toast("✅ انسترجعت النسخة"); USER = null; render(); } catch (x) { toast("الملف غير صالح", 1); } };
+  $("#wipe").onclick = async () => { if (!(await confirmBox("تمسح <b>كل</b> الطلبات والورديات من هذا الجهاز؟ ما يمكن التراجع. نزّل نسخة احتياطية قبل.", "مسح نهائي", 1))) return; await DB.clear("orders"); await DB.clear("shifts"); CFG.shift = null; CFG.seq = {day: "", n: 0}; CFG.serial = 0; saveCfg(); toast("انمسحت المبيعات"); USER = null; render(); };
+  $("#reset").onclick = async () => { if (!(await confirmBox("ترجع المنيو والإعدادات والمستخدمين للأصل؟ (المبيعات تبقى)", "إرجاع", 1))) return; const sh = CFG.shift, seq = CFG.seq, serial = CFG.serial; CFG = seed(); CFG.shift = sh; CFG.seq = seq; CFG.serial = serial; saveCfg(); USER = null; render(); };
+}
+
+/* ---------------- boot ---------------- */
+(async () => { await DB.open(); render(); })();
+
+</script>
+</body>
+</html>
