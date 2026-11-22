@@ -2473,12 +2473,12 @@ function reqsModal(){
   const L = CL.reqs, pk = r => r.pickup ? `<span class="tag">⏰ ${esc(r.pickup)}</span>` : "";
   const ov = modal(`<div class="mh"><b>📥 طلبات المتدربين (${L.length})</b><button class="x" data-close>×</button></div><div class="mb">
     ${L.length ? L.map(r => `<div class="card" style="padding:12px;margin-bottom:10px;border:1.5px solid ${r.status === "new" ? "var(--gold)" : "var(--line)"}">
-      <div class="row" style="justify-content:space-between"><b>🎓 ${esc(r.name || "متدرب")} · <span class="num">${esc(r.num)}</span></b><span class="tag ${r.status === "ready" ? "g" : ""}">${RQS[r.status]}</span></div>
+      <div class="row" style="justify-content:space-between"><b>🎓 ${esc(r.name || "متدرب")} · <span class="num">${esc(r.num)}</span>${(CFG.noshow || {})[r.num] ? ` <span class="tag r">⚠️ ما استلم ${(CFG.noshow || {})[r.num]} طلب قبل</span>` : ""}${dayOf(new Date(r.at)) !== dayOf() ? ` <span class="tag r">طلب من يوم سابق</span>` : ""}</b><span class="tag ${r.status === "ready" ? "g" : ""}">${RQS[r.status]}</span></div>
       <div style="color:var(--mut);font-size:13.5px;margin:4px 0">${timeOf(new Date(r.at))} ${pk(r)}</div>
       <div>${(r.items || []).map(x => `<div><b>${x.qty} × ${esc(x.name)}</b>${x.size ? " · " + esc(x.size) : ""}${(x.opts || []).length ? `<small style="color:var(--mut)"> — ${esc(x.opts.map(o => o.n).join("، "))}</small>` : ""}${x.note ? `<small> 📝 ${esc(x.note)}</small>` : ""}</div>`).join("")}</div>
       ${r.note ? `<div class="note" style="margin-top:8px">💬 ${esc(r.note)}</div>` : ""}
       <div class="row" style="margin-top:10px">${r.status === "new" ? `<button class="btn ok sm" data-acc="${r.id}">✅ قبول وطباعة تذكرة</button><button class="btn sm warn" data-rej="${r.id}">❌ رفض</button>`
-        : r.status === "accepted" ? `<button class="btn ok sm" data-rdy2="${r.id}">🔔 جاهز — أرسل له إشعار</button>` : `<button class="btn pri sm" data-take="${r.id}">💵 استلم ودفع</button><button class="btn sm" data-rdy2="${r.id}">🔔 ذكّره</button>`}</div></div>`).join("")
+        : r.status === "accepted" ? `<button class="btn ok sm" data-rdy2="${r.id}">🔔 جاهز — أرسل له إشعار</button><button class="btn sm warn" data-ns="${r.id}">🚫 إلغاء</button>` : `<button class="btn pri sm" data-take="${r.id}">💵 استلم ودفع</button><button class="btn sm" data-rdy2="${r.id}">🔔 ذكّره</button><button class="btn sm warn" data-ns="${r.id}">🚫 ما جاء</button>`}</div></div>`).join("")
       : `<div class="empty"><div class="big">📥</div>ما فيه طلبات${(CFG.preorder || {}).on ? "" : "<br><small>استقبال الطلبات مقفول — افتحه من الإعدادات ← السحابة</small>"}</div>`}</div>`, null, true);
   REQOV = ov;
   const R = id => CL.reqs.find(x => x.id === id), again = () => { if (ov.isConnected) { closeModal(ov); reqsModal(); } };
@@ -2492,6 +2492,11 @@ function reqsModal(){
   ov.querySelectorAll("[data-rdy2]").forEach(b => b.onclick = async () => { const r = R(b.dataset.rdy2); b.disabled = true;
     if (r.status !== "ready") await CL.setReq(r, {status: "ready", readyAt: new Date().toISOString()}); else await CL.setReq(r, {remind: (r.remind || 0) + 1});
     again(); const x = await push(r); if (x.ok && x.sent) toast(`🔔 وصل إشعار للمتدرب ${r.num}`); });
+  ov.querySelectorAll("[data-ns]").forEach(b => b.onclick = async () => { const r = R(b.dataset.ns), late = r.status === "ready";
+    const why = await promptBox(late ? "المتدرب ما جاء يستلم — سبب الإلغاء" : "سبب إلغاء الطلب (يوصل للمتدرب)", late ? "مثال: ما استلم الطلب لين آخر الدوام" : "مثال: الصنف خلص"); if (!why) return;
+    await CL.setReq(r, {status: "noshow", reason: why, doneAt: new Date().toISOString(), late});
+    if (late) { CFG.noshow = CFG.noshow || {}; CFG.noshow[r.num] = (CFG.noshow[r.num] || 0) + 1; saveCfg(); }
+    again(); push(r); toast("🚫 انلغى الطلب"); });
   ov.querySelectorAll("[data-take]").forEach(b => b.onclick = async () => { const r = R(b.dataset.take);
     if (CART.lines.length) { if (!(await confirmBox("عندك طلب مفتوح — أعلّقه وأفتح طلب المتدرب؟", "نعم"))) return; CFG.held.push({...CART, at: new Date().toISOString()}); saveCfg(); }
     CART = newCart(); CART.lines = reqLines(r); CART.type = "takeaway"; CART.cust = r.name || ""; CART.osos = {num: r.num}; CART.reqId = r.id;

@@ -3871,7 +3871,7 @@ function faqSearch(q){
   }).filter(x => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 3).map(x => x.f);
 }
 /* ---------- ☕ كوفي دوفي: اطلب من داخل البوابة وهو في المحاضرة، ويوصله إشعار لما يجهز ---------- */
-const CF_ST = {new: ["⏳ وصل للكاشير", ""], accepted: ["☕ يتجهز", ""], ready: ["✅ جاهز — تفضّل استلمه", "p"], done: ["تم الاستلام", ""], rejected: ["❌ معتذرين", "a"], cancelled: ["ألغيته", ""]};
+const CF_ST = {new: ["⏳ وصل للكاشير", ""], accepted: ["☕ يتجهز", ""], ready: ["✅ جاهز — تفضّل استلمه", "p"], done: ["تم الاستلام", ""], rejected: ["❌ معتذرين", "a"], cancelled: ["ألغيته", ""], noshow: ["🚫 انلغى", "a"]};
 function studentCoffee(el){
   const M = S.cfMenu || {}, B = S.cfBasket = S.cfBasket || [], m2 = v => (Math.round((v || 0) * 100) / 100).toFixed(2);
   const cats = (M.cats || []).filter(c => (M.items || []).some(i => i.cat === c.id)); S.cfCat = S.cfCat && cats.some(c => c.id === S.cfCat) ? S.cfCat : (cats[0] || {}).id;
