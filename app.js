@@ -1170,10 +1170,12 @@ const tsMs = t => !t ? 0 : t.toMillis ? t.toMillis() : t.seconds ? t.seconds * 1
 const dtLocal = ms => ms ? new Date(ms - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
 const fmtDT = ms => ms ? new Date(ms).toLocaleString("ar-SA-u-ca-gregory-nu-latn", {weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit"}) : "—";
 const exTotal = e => (e.qs || []).reduce((a, q) => a + (Number(q.p) || 0), 0);
-function exState(e, now = Date.now()){
+/* a student's own closing time: the exam's, or later if the trainer reopened it for that student (exams.extra[num]) */
+const exEnd = (e, num) => Math.max(tsMs(e.end), num ? tsMs((e.extra || {})[num]) : 0);
+function exState(e, now = Date.now(), num){
   if (e.status === "draft") return "draft";
   if (e.status === "closed") return "ended";
-  return now < tsMs(e.start) ? "soon" : now < tsMs(e.end) ? "open" : "ended";
+  return now < tsMs(e.start) ? "soon" : now < exEnd(e, num) ? "open" : "ended";
 }
 const EXST = {draft: ["مسودة", ""], soon: ["قادم", "e"], open: ["مفتوح الحين", "p"], ended: ["انتهى", "a"]};
 function exAuto(e, key, ans){
@@ -1188,7 +1190,17 @@ function seeded(arr, seed){
   for (let i = a.length - 1; i > 0; i--) { h = Math.imul(h ^ (h >>> 15), 2246822507) >>> 0; h = Math.imul(h ^ (h >>> 13), 3266489909) >>> 0; const j = h % (i + 1); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
-const subDeadline = (e, sub) => Math.min(tsMs(sub.startedAt) + (Number(e.mins) || 0) * 60000, tsMs(e.end));
+const subDeadline = (e, sub) => Math.min(tsMs(sub.startedAt) + (Number(e.mins) || 0) * 60000, exEnd(e, sub.num));
+/* question order for one student: always mixed. The first question rotates with the student's place in the list,
+   so two students with neighbouring numbers never start with the same question; the rest is shuffled per student,
+   and a retake (exams.retakes[num]) gives a fresh order */
+function exOrder(e, allQ, num){
+  if (allQ.length < 2) return allQ;
+  const base = seeded(allQ, e.id), nums = [...(e.memberNums || [])].sort(), rank = Math.max(0, nums.indexOf(num)), round = Number((e.retakes || {})[num]) || 0;
+  const k = (rank + round) % base.length;
+  return [base[k], ...seeded(base.filter((_, i) => i !== k), e.id + num + round)];
+}
+const exOptSeed = (e, q, num) => q.id + num + (Number((e.retakes || {})[num]) || 0);
 
 /* trainer and administration: the exams of one course */
 function watchExams(gid){
@@ -1208,7 +1220,7 @@ function examsTab(g){
   return `<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">الاختبارات</h2>${RO() ? "" : `<button class="btn pri" id="exNew">+ اختبار جديد</button>`}</div>
     <p class="muted" style="margin:6px 0 0">الطالب يدخل الاختبار من بوابته في الوقت اللي تحدده، وعنده مدة محددة من لحظة ما يبدأ. الاختيار من متعدد والصح والخطأ يتصححون لحالهم، والمقالي تصححه أنت.</p></div>
   <div class="list">${!list ? `<div class="card empty">جاري التحميل…</div>` : list.map(e => { const s = exState(e); return `<div class="item" style="flex-wrap:wrap">
-      <div class="grow"><div class="t">${esc(e.title)} <span class="pill ${EXST[s][1]}">${EXST[s][0]}</span>${e.resultsOut ? ` <span class="pill p">النتائج ظاهرة للطلاب</span>` : ""}</div>
+      <div class="grow"><div class="t">${esc(e.title)} <span class="pill ${EXST[s][1]}">${EXST[s][0]}</span>${e.resultsOut ? ` <span class="pill p">النتائج ظاهرة للطلاب</span>` : ""}${e.audience === "some" ? ` <span class="pill">لـ ${(e.memberNums || []).length} طالب محدّد</span>` : ""}${(n => n ? ` <span class="pill e">مفتوح من جديد لـ ${n} طالب</span>` : "")(Object.values(e.extra || {}).filter(t => tsMs(t) > Date.now()).length)}</div>
       <div class="muted">${(e.qs || []).length} سؤال · ${exTotal(e)} درجة · ${e.mins} دقيقة · من ${esc(fmtDT(tsMs(e.start)))} إلى ${esc(fmtDT(tsMs(e.end)))}</div></div>
       <button class="btn sm pri" data-exres="${e.id}">النتائج والتصحيح</button>${RO() ? "" : `<button class="btn sm" data-exed="${e.id}">تعديل</button>`}</div>`; }).join("") || `<div class="card empty">ما فيه اختبارات لهذا المقرر.</div>`}</div>`;
 }
@@ -1223,6 +1235,8 @@ async function examEditor(g, e){
   if (e) { try { const k = await getDoc(ref("examKeys/" + e.id)); key = k.exists() ? (k.data().ans || {}) : {}; } catch (x) { console.error(x); return toast("تعذّر فتح الاختبار"); } }
   const now = Date.now(), d = e ? JSON.parse(JSON.stringify({...e, start: tsMs(e.start), end: tsMs(e.end)})) : {title: "", mins: 30, start: now + 3600e3, end: now + 3 * 3600e3, shuffle: true, qs: [], status: "draft"};
   d.qs.forEach(q => { q.k = key[q.id]; });
+  d.audience = d.audience === "some" ? "some" : "all"; d.pick = d.pick || [];
+  S._exExtra = e ? {extra: e.extra || {}, retakes: e.retakes || {}} : {extra: {}, retakes: {}};   // kept as real Timestamps, not the JSON copy
   S._exEd = {g, d, isNew: !e};
   examEditorRender();
 }
@@ -1230,7 +1244,9 @@ function exSync(){
   const ed = S._exEd; if (!ed) return; const d = ed.d, v = s => { const x = $(s); return x ? x.value : ""; };
   d.title = v("#exT").trim(); d.mins = Math.max(1, Math.min(600, Math.round(Number(v("#exM")) || 0)));
   d.start = v("#exS") ? new Date(v("#exS")).getTime() : 0; d.end = v("#exE") ? new Date(v("#exE")).getTime() : 0;
-  d.shuffle = !!($("#exSh") || {}).checked;
+  d.shuffle = true;   // always: every student gets a different order
+  const aud = document.querySelector('input[name="exAud"]:checked'); if (aud) d.audience = aud.value;
+  const picks = document.querySelectorAll("[data-pick]"); if (picks.length) d.pick = [...picks].filter(x => x.checked).map(x => x.dataset.pick);
   d.qs.forEach((q, i) => {
     q.q = v(`#qq${i}`).trim(); q.p = Math.max(0, Number(v(`#qp${i}`)) || 0);
     if (q.t === "mc") { q.o = q.o.map((_, j) => v(`#qo${i}_${j}`).trim()); const c = document.querySelector(`input[name="qk${i}"]:checked`); q.k = c ? Number(c.value) : undefined; }
@@ -1247,7 +1263,13 @@ function examEditorRender(){
       <label class="f grow" for="exE">ويقفل<input type="datetime-local" id="exE" value="${dtLocal(d.end)}"></label>
       <label class="f" for="exM" style="width:130px">المدة (دقيقة)<input type="number" id="exM" min="1" max="600" value="${d.mins}"></label>
     </div>
-    <label class="row" style="gap:6px;margin:6px 0"><input type="checkbox" id="exSh" ${d.shuffle ? "checked" : ""}> رتّب الأسئلة والخيارات بشكل مختلف لكل طالب</label>
+    <div class="notice" style="margin:6px 0">🔀 ترتيب الأسئلة والخيارات يختلف تلقائياً لكل طالب، والطلاب اللي أرقامهم متتالية ما يطلع لهم نفس السؤال الأول.</div>
+    ${(() => { const stu = (g.students || []).filter(s => s.sid).slice().sort((a, b) => (a.name || "").localeCompare(b.name || "", "ar")), some = d.audience === "some";
+      return `<div class="card" style="margin:8px 0;padding:12px"><b>مين يدخل الاختبار؟</b>
+      <div class="row" style="gap:16px;margin:6px 0;flex-wrap:wrap"><label class="row" style="gap:6px;cursor:pointer"><input type="radio" name="exAud" value="all" ${some ? "" : "checked"}> كل طلاب المقرر (${stu.length})</label><label class="row" style="gap:6px;cursor:pointer"><input type="radio" name="exAud" value="some" ${some ? "checked" : ""}> طلاب محدّدين فقط</label></div>
+      ${some ? `<p class="muted" style="margin:4px 0">شيل علامة أي طالب ما تبيه يدخل (مثلاً محروم وحرمانه ما انرفع للنظام). اللي ما تحدّده ما يشوف الاختبار أبداً.</p>
+        <div class="row" style="gap:6px"><button class="btn sm" id="exPickAll">تحديد الكل</button><button class="btn sm" id="exPickNone">إلغاء الكل</button><span class="muted">محدّد: <b id="exPickN">${d.pick.length}</b> من ${stu.length}</span></div>
+        <div style="max-height:230px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:4px 8px;margin-top:6px">${stu.map(s => `<label class="row" style="gap:8px;padding:5px 0;cursor:pointer;border-bottom:1px dashed var(--line)"><input type="checkbox" data-pick="${esc(s.sid)}" ${d.pick.includes(s.sid) ? "checked" : ""}> <span class="grow">${esc(s.name)}</span> <span class="muted">${esc(s.sid)}</span></label>`).join("") || `<span class="muted">ما فيه طلاب بأرقام تدريبية في المقرر.</span>`}</div>` : ""}</div>`; })()}
     <div class="list" style="margin-top:8px">${d.qs.map((q, i) => `<div class="card" style="margin:0;padding:12px">
       <div class="row" style="justify-content:space-between"><b>سؤال ${i + 1} · ${EXQ[q.t]}</b><span class="row" style="gap:6px"><label class="row" style="gap:4px">الدرجة<input type="number" id="qp${i}" min="0" step="0.5" value="${q.p}" style="width:70px"></label><button class="btn sm danger" data-qdel="${i}">حذف</button></span></div>
       <textarea id="qq${i}" style="min-height:52px;margin-top:6px" placeholder="نص السؤال">${esc(q.q || "")}</textarea>
@@ -1262,7 +1284,12 @@ function examEditorRender(){
       ${S._exEd.isNew ? "" : `<button class="btn danger" id="exDel">حذف الاختبار</button>`}
     </div>`;
   $("#modal").classList.add("on");
-  $("#exX").onclick = () => { S._exEd = null; closeModal(); };
+  $("#exX").onclick = () => { S._exEd = null; S._exExtra = null; closeModal(); };
+  document.querySelectorAll('input[name="exAud"]').forEach(r => r.onchange = () => { exSync(); if (d.audience === "some" && !d.pick.length) d.pick = (g.students || []).map(s => s.sid).filter(Boolean); examEditorRender(); });
+  const pickN = () => { const n = $("#exPickN"); if (n) n.textContent = document.querySelectorAll("[data-pick]:checked").length; };
+  document.querySelectorAll("[data-pick]").forEach(x => x.onchange = pickN);
+  if ($("#exPickAll")) $("#exPickAll").onclick = () => { document.querySelectorAll("[data-pick]").forEach(x => x.checked = true); pickN(); };
+  if ($("#exPickNone")) $("#exPickNone").onclick = () => { document.querySelectorAll("[data-pick]").forEach(x => x.checked = false); pickN(); };
   document.querySelectorAll("[data-qadd]").forEach(b => b.onclick = () => { exSync(); const t = b.dataset.qadd; d.qs.push({id: Math.random().toString(36).slice(2, 8), t, q: "", p: t === "es" ? 5 : 1, ...(t === "mc" ? {o: ["", "", "", ""]} : {})}); examEditorRender(); });
   document.querySelectorAll("[data-qdel]").forEach(b => b.onclick = () => { exSync(); d.qs.splice(Number(b.dataset.qdel), 1); examEditorRender(); });
   document.querySelectorAll("[data-oadd]").forEach(b => b.onclick = () => { exSync(); d.qs[Number(b.dataset.oadd)].o.push(""); examEditorRender(); });
@@ -1281,13 +1308,18 @@ function examEditorRender(){
     const qs = d.qs.map(q => ({id: q.id, t: q.t, q: q.q.slice(0, 2000), p: q.p, ...(q.t === "mc" ? {o: q.o.map(o => o.slice(0, 400))} : {})}));
     const ans = {}; d.qs.forEach(q => { if (q.t !== "es") ans[q.id] = q.k; });
     const st = status || d.status;
-    const ex = {gid: g.id, tid: g.trainerId || "", course: g.course || "", title: d.title, mins: d.mins, start: Timestamp.fromMillis(d.start), end: Timestamp.fromMillis(d.end), shuffle: d.shuffle, nq: qs.length, total: exTotal(d), status: st,
-      memberNums: st === "draft" ? [] : [...(g.memberNums || [])], resultsOut: !!d.resultsOut, updatedAt: new Date().toISOString(), by: S.me || S.adminRole || ""};
+    if (st === "open" && d.end <= Date.now()) return toast("وقت «ويقفل» فات — غيّره لوقت جاي عشان ينفتح الاختبار");
+    const grp = g.memberNums || [], kept = S._exExtra || {extra: {}, retakes: {}};
+    const pick = d.audience === "some" ? d.pick.filter(n => grp.includes(n)) : [];
+    if (d.audience === "some" && st !== "draft" && !pick.length) return toast("اختر طالب واحد على الأقل يدخل الاختبار");
+    const mem = st === "draft" ? [] : [...new Set([...(d.audience === "some" ? pick : grp), ...Object.keys(kept.extra || {}).filter(n => grp.includes(n))])];
+    const ex = {gid: g.id, tid: g.trainerId || "", course: g.course || "", title: d.title, mins: d.mins, start: Timestamp.fromMillis(d.start), end: Timestamp.fromMillis(d.end), shuffle: true, nq: qs.length, total: exTotal(d), status: st,
+      memberNums: mem, audience: d.audience, pick, extra: kept.extra || {}, retakes: kept.retakes || {}, resultsOut: !!d.resultsOut, updatedAt: new Date().toISOString(), by: S.me || S.adminRole || ""};
     try {
       const b = writeBatch(db); b.set(ref("exams/" + id), ex); b.set(ref("examQs/" + id), {gid: g.id, tid: g.trainerId || "", qs}); b.set(ref("examKeys/" + id), {gid: g.id, tid: g.trainerId || "", ans}); await b.commit();
       logAction(st === "draft" ? "حفظ اختبار" : "نشر اختبار", `${g.course} · ${d.title}`);
       if (st !== "draft" && d.status === "draft") notify("exam", id);
-      toast(st === "draft" ? "انحفظ كمسودة" : "انحفظ، والطلاب يشوفونه في بوابتهم"); S._exEd = null; closeModal();
+      toast(st === "draft" ? "انحفظ كمسودة" : d.audience === "some" ? `انحفظ، ويشوفه ${mem.length} طالب محدّد` : "انحفظ، والطلاب يشوفونه في بوابتهم"); S._exEd = null; S._exExtra = null; closeModal();
     } catch (x) { handleWriteErr(x); }
   };
   if ($("#exPub")) $("#exPub").onclick = () => save("open");
@@ -1316,9 +1348,13 @@ function examResults(g){
   const stu = (g.students || []).slice().sort((a, b) => (a.name || "").localeCompare(b.name || "", "ar"));
   const now = Date.now();
   const stTxt = s => !s ? `<span class="pill">ما دخل</span>` : s.done ? `<span class="pill p">سلّم</span>` : now < subDeadline(e, s) ? `<span class="pill e">يحل الحين</span>` : `<span class="pill l">انتهى وقته</span>`;
+  const pub = e.status !== "draft", mem = e.memberNums || [], ext = e.extra || {}, rt = e.retakes || {};
+  if (!S._reSel || S._reSel.eid !== e.id) S._reSel = {eid: e.id, nums: new Set(), until: "", wipe: true, open: false};
+  const sel = S._reSel, canRe = !RO() && pub;
   const rows = stu.map(st => { const s = byNum[st.sid]; const auto = s && key ? exAuto(e, key, s.ans) : null; const esSum = s ? es.reduce((a, q) => a + (Number((s.es || {})[q.id]) || 0), 0) : 0;
-    return `<div class="item" style="display:block">
-      <div class="row" style="justify-content:space-between"><div><b>${esc(st.name)}</b> <span class="muted">${esc(st.sid || "")}</span> ${stTxt(s)}${s && s.away ? ` <span class="pill a" title="خرج من صفحة الاختبار">خرج ${s.away} مرة</span>` : ""}</div>
+    const out = pub && st.sid && !mem.includes(st.sid), xt = st.sid ? tsMs(ext[st.sid]) : 0;
+    return `<div class="item" style="display:block${out ? ";opacity:.6" : ""}">
+      <div class="row" style="justify-content:space-between"><div>${canRe && st.sid ? `<input type="checkbox" data-rsel="${esc(st.sid)}" ${sel.nums.has(st.sid) ? "checked" : ""} style="margin-left:6px;width:17px;height:17px;vertical-align:middle" title="حدّد لإعادة الفتح">` : ""}<b>${esc(st.name)}</b> <span class="muted">${esc(st.sid || "")}</span> ${out ? `<span class="pill a">مستبعد من الاختبار</span>` : stTxt(s)}${s && s.away ? ` <span class="pill a" title="خرج من صفحة الاختبار">خرج ${s.away} مرة</span>` : ""}${xt > now ? ` <span class="pill e">مفتوح له حتى ${esc(fmtDT(xt))}</span>` : ""}${st.sid && rt[st.sid] ? ` <span class="pill" title="عدد مرات إعادة الاختبار">أعاد ${rt[st.sid]}×</span>` : ""}</div>
       <div><b>${s ? (auto === null ? "…" : auto + esSum) : "—"}</b> <span class="muted">/ ${total}</span>${s && s.graded ? ` <span class="pill p">مصحّح</span>` : ""}</div></div>
       ${s && es.length ? es.map(q => `<div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:6px"><div class="muted">${esc(q.q)} (${q.p} درجة)</div><div style="white-space:pre-wrap;margin:4px 0">${esc((s.ans || {})[q.id] || "— ما كتب شي —")}</div>
         ${RO() ? `<span>${Number((s.es || {})[q.id]) || 0}</span>` : `<label class="row" style="gap:6px">الدرجة<input type="number" min="0" max="${q.p}" step="0.5" data-esg="${esc(s.id)}|${q.id}" value="${(s.es || {})[q.id] ?? ""}" style="width:80px"></label>`}</div>`).join("") : ""}
@@ -1327,6 +1363,13 @@ function examResults(g){
   return `<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><button class="btn sm" id="exBack">→ الاختبارات</button><span class="pill ${EXST[exState(e)][1]}">${EXST[exState(e)][0]}</span></div>
     <h2 style="margin:10px 0 4px">${esc(e.title)}</h2><p class="muted" style="margin:0">${done} من ${stu.length} دخلوا · ${total} درجة · ${es.length ? `فيه ${es.length} سؤال مقالي يحتاج تصحيح` : "كل الأسئلة تتصحح لحالها"}</p>
     ${RO() ? "" : `<div class="row" style="margin-top:10px;gap:6px"><button class="btn pri" id="exGrade">حفظ التصحيح</button><button class="btn ${e.resultsOut ? "" : "gold"}" id="exOut">${e.resultsOut ? "إخفاء النتائج عن الطلاب" : "إظهار النتائج للطلاب"}</button><button class="btn" id="exXls">Excel</button></div>`}
+    ${canRe ? `<details id="reBox" style="margin-top:12px;border:1px solid var(--gold);border-radius:12px;padding:10px 12px" ${sel.open ? "open" : ""}><summary style="cursor:pointer;font-weight:700">🔁 إعادة فتح الاختبار لطالب أو أكثر</summary>
+      <p class="muted" style="margin:8px 0">حدّد الطلاب من المربعات جنب الأسماء تحت، أو استخدم التحديد السريع. باقي الطلاب ما يتأثرون، ولو الاختبار مقفل يبقى مقفل عليهم.</p>
+      <div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" data-rq="all">كل المسجّلين</button><button class="btn sm" data-rq="none">اللي ما دخلوا</button><button class="btn sm" data-rq="late">اللي انتهى وقتهم بدون تسليم</button><button class="btn sm" data-rq="done">اللي سلّموا</button><button class="btn sm" data-rq="clear">إلغاء التحديد</button></div>
+      <div class="row" style="margin-top:8px;align-items:flex-end;gap:10px;flex-wrap:wrap"><label class="f grow" for="reUntil" style="margin:0">مفتوح لهم حتى<input type="datetime-local" id="reUntil" value="${sel.until || dtLocal(now + Math.max((Number(e.mins) || 0) + 30, 60) * 60000)}"></label>
+        <span class="muted" style="padding-bottom:10px">مدة الاختبار لكل طالب تبقى ${e.mins} دقيقة من لحظة ما يبدأ</span></div>
+      <label class="row" style="gap:6px;margin:8px 0;cursor:pointer"><input type="checkbox" id="reWipe" ${sel.wipe ? "checked" : ""}> اللي عنده محاولة سابقة تنمسح ويعيد من البداية بترتيب أسئلة جديد (درجته القديمة تنحفظ في السجل)</label>
+      <button class="btn gold" id="reGo">🔁 افتح الاختبار للمحدّدين (<span id="reN">${sel.nums.size}</span>)</button></details>` : ""}
   </div><div class="list">${subs === null ? `<div class="card empty">جاري التحميل…</div>` : rows || `<div class="card empty">ما فيه طلاب في المقرر.</div>`}</div>`;
 }
 function bindExamResults(g){
@@ -1354,6 +1397,54 @@ function bindExamResults(g){
       return [st.sid || "", st.name, s ? (s.done ? "سلّم" : "ما سلّم") : "ما دخل", auto, esSum, s ? (auto === "" ? "" : auto + esSum) : "", exTotal(e), s ? (s.away || 0) : ""]; });
     excelDownload(`نتائج ${e.title} - ${g.course}`, [{title: "النتائج", rows: [[INST_AR], [`${g.course} · ${e.title}`], [], ["الرقم", "الاسم", "الحالة", "التلقائي", "المقالي", "المجموع", "من", "خرج من الصفحة"], ...rows], widths: [12, 26, 10, 10, 10, 10, 8, 12]}]);
   };
+  bindReopen(g, e, key, es);
+}
+/* reopen an exam for chosen students: a personal closing time (exams.extra[num]), and their old attempt wiped so they start again */
+function bindReopen(g, e, key, es){
+  const sel = S._reSel; if (!sel || sel.eid !== e.id || !$("#reBox")) return;
+  const cnt = () => { const n = $("#reN"); if (n) n.textContent = sel.nums.size; };
+  $("#reBox").ontoggle = () => { sel.open = $("#reBox").open; };
+  $("#reUntil").onchange = () => { sel.until = $("#reUntil").value; };
+  $("#reWipe").onchange = () => { sel.wipe = $("#reWipe").checked; };
+  document.querySelectorAll("[data-rsel]").forEach(x => x.onchange = () => { if (x.checked) sel.nums.add(x.dataset.rsel); else sel.nums.delete(x.dataset.rsel); cnt(); });
+  const byNum = {}; ((S.exSubs || {}).list || []).forEach(s => byNum[s.num] = s);
+  const nums = (g.students || []).map(s => s.sid).filter(Boolean), mem = e.memberNums || [];
+  document.querySelectorAll("[data-rq]").forEach(b => b.onclick = () => {
+    const q = b.dataset.rq, now = Date.now();
+    const pick = q === "clear" ? [] : nums.filter(n => mem.includes(n)).filter(n => { const s = byNum[n];
+      return q === "all" ? true : q === "none" ? !s : q === "done" ? s && s.done : q === "late" ? s && !s.done && now >= subDeadline(e, s) : false; });
+    sel.nums = new Set(pick); document.querySelectorAll("[data-rsel]").forEach(x => x.checked = sel.nums.has(x.dataset.rsel)); cnt();
+    if (q !== "clear" && !pick.length) toast("ما فيه طلاب بهالحالة");
+  });
+  $("#reGo").onclick = async ev => {
+    const list = [...sel.nums], now = Date.now(), until = new Date($("#reUntil").value).getTime();
+    if (!list.length) return toast("حدّد طالب واحد على الأقل من المربعات");
+    if (!until || until < now + 5 * 60000) return toast("خلّ وقت القفل بعد ٥ دقائق على الأقل من الحين");
+    if (now < tsMs(e.start)) return toast("الاختبار ما بدأ للحين — يقدرون يدخلونه في وقته");
+    const wipe = $("#reWipe").checked, had = list.filter(n => byNum[n]), blocked = wipe ? [] : had;
+    const name = n => ((g.students || []).find(s => s.sid === n) || {}).name || n;
+    if (!ev.target.dataset.sure) { ev.target.dataset.sure = 1; ev.target.textContent = `متأكد؟ ينفتح لـ ${list.length} طالب حتى ${fmtDT(until)}${wipe && had.length ? ` وتنمسح محاولة ${had.length}` : ""}`; return; }
+    const extra = {...(e.extra || {})}, retakes = {...(e.retakes || {})};
+    list.forEach(n => { extra[n] = Timestamp.fromMillis(until); });
+    const patch = {extra, memberNums: [...new Set([...(e.memberNums || []), ...list])], updatedAt: new Date().toISOString(), by: S.me || S.adminRole || ""};
+    if (e.audience === "some") patch.pick = [...new Set([...(e.pick || []), ...list])];
+    if (e.status === "closed") { patch.status = "open"; patch.end = Timestamp.fromMillis(Math.min(tsMs(e.end), now)); }   // stays shut for everyone else
+    const old = [];
+    if (wipe) had.forEach(n => { const s = byNum[n]; retakes[n] = (Number(retakes[n]) || 0) + 1;
+      const sc = s.graded ? s.score : key ? exAuto(e, key, s.ans) + es.reduce((a, q) => a + (Number((s.es || {})[q.id]) || 0), 0) : "؟";
+      old.push(`${name(n)} (${n}): ${s.done ? "سلّم" : "ما سلّم"} ${sc}/${exTotal(e)}`); });
+    patch.retakes = retakes;
+    ev.target.disabled = true;
+    try {
+      const b = writeBatch(db); b.set(ref("exams/" + e.id), patch, {merge: true});
+      if (wipe) had.forEach(n => b.delete(ref(`examSubs/${e.id}_${n}`)));
+      await b.commit();
+      logAction("إعادة فتح اختبار", `${g.course} · ${e.title} · ${list.map(name).join("، ")} · حتى ${fmtDT(until)}${old.length ? " · المحاولات الممسوحة: " + old.join(" | ") : ""}`);
+      S._reSel = {eid: e.id, nums: new Set(), until: "", wipe: true, open: false};
+      toast(`انفتح الاختبار لـ ${list.length} طالب حتى ${fmtDT(until)}${blocked.length ? ` · تنبيه: ${blocked.length} عندهم محاولة سابقة وما انمسحت فما يقدرون يعيدون` : ""}`);
+      render();
+    } catch (x) { handleWriteErr(x); ev.target.disabled = false; delete ev.target.dataset.sure; }
+  };
 }
 
 /* student: list, take, results */
@@ -1361,9 +1452,10 @@ function studentExams(el){
   const list = (S.myExams || []).filter(e => e.status !== "draft").sort((a, b) => tsMs(b.start) - tsMs(a.start)), now = Date.now();
   if (S.exTake) { const e = list.find(x => x.id === S.exTake); if (e) return studentTakeExam(el, e); S.exTake = null; }
   el.innerHTML = `<div class="card"><h2 style="margin:0">الاختبارات</h2><p class="muted" style="margin:6px 0 0">الاختبار يفتح في وقته. أول ما تضغط «ابدأ» يبدأ العداد، وإجاباتك تنحفظ أول بأول.</p></div>
-  <div class="list">${list.map(e => { const s = (S.mySubs || {})[e.id], st = exState(e, now), dl = s ? subDeadline(e, s) : 0, live = s && !s.done && now < dl && st === "open";
+  <div class="list">${list.map(e => { const s = (S.mySubs || {})[e.id], st = exState(e, now, S.myNum), dl = s ? subDeadline(e, s) : 0, live = s && !s.done && now < dl && st === "open";
     const res = e.resultsOut && s && s.graded ? `<b>${s.score}</b> / ${e.total}` : e.resultsOut && s ? "النتيجة تحت التصحيح" : "";
-    return `<div class="item" style="flex-wrap:wrap"><div class="grow"><div class="t">${esc(e.title)}</div><div class="muted">${esc(e.course || "")} · ${e.nq || 0} سؤال · ${e.mins} دقيقة · ${st === "soon" ? "يفتح " + esc(fmtDT(tsMs(e.start))) : "يقفل " + esc(fmtDT(tsMs(e.end)))}</div>${res ? `<div style="margin-top:4px">النتيجة: ${res}</div>` : ""}</div>
+    const mine = tsMs((e.extra || {})[S.myNum]) > tsMs(e.end);
+    return `<div class="item" style="flex-wrap:wrap"><div class="grow"><div class="t">${esc(e.title)}${mine && st === "open" ? ` <span class="pill e">انفتح لك من جديد</span>` : ""}</div><div class="muted">${esc(e.course || "")} · ${e.nq || 0} سؤال · ${e.mins} دقيقة · ${st === "soon" ? "يفتح " + esc(fmtDT(tsMs(e.start))) : "يقفل " + esc(fmtDT(exEnd(e, S.myNum)))}</div>${res ? `<div style="margin-top:4px">النتيجة: ${res}</div>` : ""}</div>
       ${st === "open" && !s ? `<button class="btn pri" data-exstart="${e.id}">ابدأ الاختبار</button>` : live ? `<button class="btn gold" data-excont="${e.id}">كمّل الاختبار</button>` : s ? `<span class="pill p">${s.done ? "سلّمت" : "انتهى وقتك"}</span>` : st === "soon" ? `<span class="pill e">قادم</span>` : `<span class="pill a">فاتك</span>`}</div>`; }).join("") || `<div class="card empty">ما فيه اختبارات للحين.</div>`}</div>`;
   el.querySelectorAll("[data-exstart]").forEach(b => b.onclick = async () => {
     const e = list.find(x => x.id === b.dataset.exstart); if (!e) return;
@@ -1386,9 +1478,9 @@ function studentTakeExam(el, e){
     return;
   }
   S._exAns = S._exAns && S._exAns.eid === e.id ? S._exAns : {eid: e.id, ans: {...(s.ans || {})}};
-  const allQ = S._exQs[e.id], ans = S._exAns.ans, qs = e.shuffle ? seeded(allQ, e.id + S.myNum) : allQ;
+  const allQ = S._exQs[e.id], ans = S._exAns.ans, qs = exOrder(e, allQ, S.myNum);
   el.innerHTML = `<div class="card" style="position:sticky;top:0;z-index:5"><div class="row" style="justify-content:space-between;align-items:center"><div><b>${esc(e.title)}</b><div class="muted">${esc(e.course || "")} · ${e.total} درجة</div></div><div style="font-size:22px;font-weight:700" id="exClock">--:--</div></div><div class="muted" id="exSaved" style="font-size:13px">إجاباتك تنحفظ أول بأول</div></div>
-  ${qs.map((q, i) => { const opts = q.t === "mc" ? (e.shuffle ? seeded(q.o.map((o, j) => [o, j]), q.id + S.myNum) : q.o.map((o, j) => [o, j])) : null;
+  ${qs.map((q, i) => { const opts = q.t === "mc" ? seeded(q.o.map((o, j) => [o, j]), exOptSeed(e, q, S.myNum)) : null;
     return `<div class="card"><div class="row" style="justify-content:space-between"><b>سؤال ${i + 1}</b><span class="muted">${q.p} درجة</span></div><p style="white-space:pre-wrap;margin:6px 0 10px;font-size:16px">${esc(q.q)}</p>
     ${q.t === "mc" ? opts.map(([o, j]) => `<label class="item" style="cursor:pointer;gap:10px;margin:4px 0"><input type="radio" name="a${q.id}" value="${j}" data-exa="${q.id}" ${String(ans[q.id]) === String(j) ? "checked" : ""}><span>${esc(o)}</span></label>`).join("") : ""}
     ${q.t === "tf" ? `<div class="row" style="gap:10px">${[["true", "صح"], ["false", "خطأ"]].map(([v, l]) => `<label class="item" style="cursor:pointer;gap:10px;flex:1"><input type="radio" name="a${q.id}" value="${v}" data-exa="${q.id}" ${String(ans[q.id]) === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>` : ""}
@@ -1603,7 +1695,7 @@ function studentCamp(el){
       </div>
     </div>
     ${ex ? `<div class="card" style="border:1px solid var(--gold)"><div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-      <div><b>${esc(ex.title)}</b><div class="muted">${(ex.nq || 0)} سؤال · ${ex.mins} دقيقة · ${exState(ex) === "open" ? "متاح الآن" : exState(ex) === "soon" ? "يفتح " + esc(fmtDT(tsMs(ex.start))) : "مقفل"}</div></div>
+      <div><b>${esc(ex.title)}</b><div class="muted">${(ex.nq || 0)} سؤال · ${ex.mins} دقيقة · ${exState(ex, Date.now(), S.myNum) === "open" ? "متاح الآن" : exState(ex, Date.now(), S.myNum) === "soon" ? "يفتح " + esc(fmtDT(tsMs(ex.start))) : "مقفل"}</div></div>
       ${sub && sub.done ? `<span class="pill p">سلّمت${ex.resultsOut && sub.graded ? ` · ${sub.score}/${ex.total}` : ""}</span>` : `<button class="btn pri" id="campGoExam">${sub ? "كمّل الاختبار" : "ابدأ الاختبار النظري"}</button>`}</div></div>` : ""}
     <div class="card"><h2 style="margin:0 0 4px">المنهج · ١٢ أسبوعاً</h2><p class="muted" style="margin:0 0 10px">كل أسبوع فيه نظري وتطبيقي. التطبيق كله على مختبر معزول قانوني. المقاطع تظهر تحت كل أسبوع لما يرفعها المدرب.</p>
       <div class="list">${CAMP_WEEKS.map(([n, t, d, pr]) => { const vids = by[n] || []; return `<details class="wk" style="border:1px solid var(--line);border-radius:12px;margin:8px 0;background:var(--card)">
@@ -1682,7 +1774,7 @@ const EXC_ST = {pending: "قيد المراجعة", accepted: "مقبول", reje
 const EXC_PILL = {pending: "l", accepted: "p", rejected: "a"};
 function studentTabs(){
   const open = Object.values(S.groups).filter(g => g.evalOpen && !(S.myEvals || []).some(e => e.groupId === g.id)).length;
-  const tabs = [["home", "الرئيسية"], ...(campOn() ? [["camp", "🛡️ معسكر الأمن السيبراني"]] : []), ["card", "بطاقتي"], ["att", "حضوري"], ["exams", "الاختبارات" + ((S.myExams || []).some(e => exState(e) === "open" && !(S.mySubs || {})[e.id]) ? " (1)" : "")], ["exc", "الأعذار"], ["warn", "الإنذارات" + ((S.myWarn || []).length ? ` (${S.myWarn.length})` : "")], ["eval", "التقييم" + (open ? ` (${open})` : "")], ["areq", "طلبات الأكاديمية" + ((S.myAReq || []).some(r => r.status === "done" && r.reply && !r.seen) ? " (1)" : "")], ["freq", "طلبات المالية" + ((S.myFReq || []).some(r => r.type === "invoice" && r.status === "approved" && !r.seen) ? " (1)" : "")], ...(S.survey && S.survey.open ? [["survey", "الاستبيان" + (S.surveyDone === S.survey.id ? "" : " (1)")]] : [])];
+  const tabs = [["home", "الرئيسية"], ...(campOn() ? [["camp", "🛡️ معسكر الأمن السيبراني"]] : []), ["card", "بطاقتي"], ["att", "حضوري"], ["exams", "الاختبارات" + ((S.myExams || []).some(e => exState(e, Date.now(), S.myNum) === "open" && !(S.mySubs || {})[e.id]) ? " (1)" : "")], ["exc", "الأعذار"], ["warn", "الإنذارات" + ((S.myWarn || []).length ? ` (${S.myWarn.length})` : "")], ["eval", "التقييم" + (open ? ` (${open})` : "")], ["areq", "طلبات الأكاديمية" + ((S.myAReq || []).some(r => r.status === "done" && r.reply && !r.seen) ? " (1)" : "")], ["freq", "طلبات المالية" + ((S.myFReq || []).some(r => r.type === "invoice" && r.status === "approved" && !r.seen) ? " (1)" : "")], ...(S.survey && S.survey.open ? [["survey", "الاستبيان" + (S.surveyDone === S.survey.id ? "" : " (1)")]] : [])];
   return `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k, v]) => `<button class="tab ${(S.sTab || "home") === k ? "on" : ""}" data-stab="${k}">${v}</button>`).join("")}</div></div>`;
 }
 function bindStudentTabs(app){ app.querySelectorAll("[data-stab]").forEach(b => b.onclick = () => { S.sTab = b.dataset.stab; render(); window.scrollTo(0, 0); }); }
