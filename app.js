@@ -131,6 +131,19 @@ async function checkPayReturn(){   // back from Tap's page: ?pay=pi…
     } catch (e) {} await new Promise(r => setTimeout(r, 2500)); }
   toast("الدفع قيد المعالجة — بيظهر خلال دقائق إذا انخصم المبلغ");
 }
+/* new version of the portal arrived in the background → offer a one-tap refresh (never interrupts typing) */
+function updBar(){
+  if (document.querySelector("#updBar")) return;
+  const b = document.createElement("div"); b.id = "updBar"; b.setAttribute("role", "status");
+  b.style.cssText = "position:fixed;inset-inline:12px;bottom:14px;z-index:9999;max-width:480px;margin:auto;background:#1F5136;color:#fff;padding:12px 16px;border-radius:14px;display:flex;gap:10px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.25)";
+  b.innerHTML = `<span style="flex:1">✨ نزل تحديث جديد للبوابة</span><button style="background:#fff;color:#1F5136;border:0;border-radius:10px;padding:8px 14px;font:inherit;font-weight:700;cursor:pointer">تحديث</button><button aria-label="لاحقاً" style="background:transparent;color:#fff;border:0;font-size:18px;cursor:pointer">×</button>`;
+  b.children[1].onclick = () => location.reload(); b.children[2].onclick = () => b.remove(); document.body.appendChild(b);
+}
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.type === "asas-updated") updBar(); });
+  const chk = () => caches.open("asas-v3").then(c => c.match("__asas_updated")).then(r => r && r.text()).then(t => { if (Number(t) > performance.timeOrigin) updBar(); }).catch(() => {});
+  setTimeout(chk, 1500); setTimeout(chk, 6000);   // the newer copy may have arrived while this page was starting
+}
 function notify(kind, id, delay = 0){
   if (!(S.site || {}).pushUrl || !S.authUser || !id) return;
   const k = kind + "/" + id; clearTimeout(NT[k]);

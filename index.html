@@ -20,6 +20,14 @@
 <script>try{if(localStorage.getItem("asasTheme")==="dark")document.documentElement.dataset.theme="dark"}catch(e){}</script>
 <meta name="robots" content="noindex">
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com">
+<link rel="preconnect" href="https://identitytoolkit.googleapis.com">
+<link rel="modulepreload" href="./app.js?v=75">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js">
+<link rel="modulepreload" href="./config.js">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Reem+Kufi:wght@600;700&display=swap" rel="stylesheet">
 <style>
 /* Layout: a single green header band, then one working column of cards; trainer view is a roll-call list, admin view is tabs. Light theme by default, dark on request (toggle in the header). */
@@ -234,7 +242,7 @@ tr:nth-child(even) td{background:#FAFBFA}
 <div class="modal" id="modal" role="dialog" aria-modal="true"><div class="box" id="modalBox"></div></div>
 <div class="toast" id="toast" role="status"></div>
 
-<script type="module" src="./app.js?v=74"></script>
+<script type="module" src="./app.js?v=75"></script>
 <script>
 (function(){
   var b = document.getElementById("themeBtn"), root = document.documentElement;
