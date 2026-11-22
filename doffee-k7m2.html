@@ -1862,7 +1862,7 @@ function sysPrint(html){ const p = $("#print"); p.innerHTML = html; setTimeout((
 let PQ = Promise.resolve();   // network prints go one after another
 function printDoc(html, opt = {}){
   const P = CFG.settings.printer || {};
-  const D = P.mode === "epson" && P.ip ? EP : (P.mode === "usb" || P.mode === "rawbt") ? ESC : null;
+  const D = P.mode === "epson" && P.ip ? EP : ["usb", "rawbt", "bt"].includes(P.mode) ? ESC : null;
   if (!D) return sysPrint(html);
   PQ = PQ.then(() => D.print(html, {drawer: opt.drawer && P.drawer})).then(() => opt.quiet || P.mode === "rawbt" || toast("🖨️ انطبع")).catch(e => { toast("⚠️ " + D.why(e), 1); });
   return PQ;
@@ -1976,6 +1976,32 @@ const ESC = {
     for (let i = 0; i < u8.length; i += 16384) { const r = await this.dev.transferOut(this.ep, u8.subarray(i, i + 16384)); if (r.status !== "ok") throw new Error("USB " + r.status); }
   },
 
+  /* ---------- ③ Bluetooth (BLE) — Chrome on Android / Windows / Mac ---------- */
+  BLE_SV: ["000018f0-0000-1000-8000-00805f9b34fb", "e7810a71-73ae-499d-8c15-faa9aef0c3f2", "49535343-fe7d-4ae5-8fa9-9fafd205e455", "0000ff00-0000-1000-8000-00805f9b34fb", "0000ffe0-0000-1000-8000-00805f9b34fb", "0000fee7-0000-1000-8000-00805f9b34fb", "0000ae30-0000-1000-8000-00805f9b34fb", "0000ff80-0000-1000-8000-00805f9b34fb"],
+  btOK: () => !!(navigator.bluetooth && navigator.bluetooth.requestDevice),
+  bt: null, ch: null,
+  async btPick(){                                            // must run from a button tap
+    if (!this.btOK()) throw new Error("NOBT");
+    const d = await navigator.bluetooth.requestDevice({acceptAllDevices: true, optionalServices: this.BLE_SV});
+    await this.btAttach(d); CFG.settings.printer.btName = d.name || "Bluetooth"; saveCfg(); return CFG.settings.printer.btName;
+  },
+  async btAttach(d){
+    const srv = await d.gatt.connect(); let ch = null;
+    for (const u of this.BLE_SV) { let s; try { s = await srv.getPrimaryService(u); } catch (x) { continue; }
+      for (const c of await s.getCharacteristics()) if (c.properties.writeWithoutResponse || c.properties.write) { ch = c; break; } if (ch) break; }
+    if (!ch) { try { for (const s of await srv.getPrimaryServices()) { for (const c of await s.getCharacteristics()) if (c.properties.writeWithoutResponse || c.properties.write) { ch = c; break; } if (ch) break; } } catch (x) {} }
+    if (!ch) { d.gatt.disconnect(); throw new Error("NOBLE"); }
+    this.bt = d; this.ch = ch; d.addEventListener("gattserverdisconnected", () => { this.ch = null; });
+  },
+  async btSend(u8){
+    if (!this.ch) { let d = this.bt; if (!d && navigator.bluetooth.getDevices) { const L = await navigator.bluetooth.getDevices(); d = L.find(x => x.name === CFG.settings.printer.btName) || L[0]; }
+      if (!d) throw new Error("NOBTPAIR"); try { await this.btAttach(d); } catch (x) { throw new Error("NOBTPAIR"); } }
+    const fast = this.ch.properties.writeWithoutResponse, N = fast ? 128 : 180;
+    for (let i = 0, k = 0; i < u8.length; i += N, k++) { const part = u8.slice(i, i + N);
+      if (fast) await this.ch.writeValueWithoutResponse(part); else await this.ch.writeValueWithResponse(part);
+      if (fast && k % 16 === 15) await new Promise(r => setTimeout(r, 25)); }   // let small printer buffers breathe
+  },
+
   /* ---------- ② RawBT bridge app ---------- */
   rawbt(u8){
     const url = "intent:base64," + this.b64(u8) + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
@@ -1985,6 +2011,7 @@ const ESC = {
   async print(html, opt = {}){
     const u8 = await this.bytes(html, opt), P = CFG.settings.printer;
     if (P.mode === "rawbt") return this.rawbt(u8);
+    if (P.mode === "bt") return this.btSend(u8).catch(x => { if (x.message === "NOBTPAIR") btReconnect(html, opt); throw x; });
     return this.usbSend(u8);
   },
   why(e){ const m = String(e && e.message || e);
@@ -1992,9 +2019,20 @@ const ESC = {
     if (m === "NOPAIR") return "ما فيه طابعة USB مربوطة — من الإعدادات اضغط «ربط الطابعة»";
     if (m === "BUSY") return "الطابعة مشغولة بتطبيق ثاني — سكّر التطبيق أو افصل الكيبل وركّبه";
     if (m === "NOEP") return "الجهاز اللي اخترته مو طابعة";
+    if (m === "NOBT") return /Brave/i.test(navigator.userAgent) || navigator.brave ? "متصفح Brave يقفل البلوتوث — افتح الكاشير من Chrome" : "هذا المتصفح ما يدعم البلوتوث — افتح الكاشير من Chrome";
+    if (m === "NOBTPAIR") return "الطابعة مو متصلة بالبلوتوث — اضغط «اتصال بالطابعة»";
+    if (m === "NOBLE") return "الجهاز اللي اخترته ما يقبل طباعة بالبلوتوث — تأكد إنك اخترت الطابعة";
     if (/NotFoundError|No device selected/i.test(m)) return "ما اخترت طابعة";
+    if (/Access denied|SecurityError|NetworkError/i.test(m)) return /Windows/i.test(navigator.userAgent) ? "ويندوز ماسك الطابعة بتعريفه — غيّر تعريفها إلى WinUSB ببرنامج Zadig، أو استخدم «نافذة الطباعة»" : "الطابعة مشغولة أو ما سمح النظام بالوصول لها — افصل الكيبل وركّبه وجرّب من جديد";
     return "ما وصلت للطابعة — تأكد من الكيبل والتشغيل (" + m + ")"; }
 };
+
+/* after a page reload Chrome may need one tap to reconnect the Bluetooth printer */
+function btReconnect(html, opt){
+  if (document.querySelector("#btre")) return;
+  const ov = modal(`<div class="mh"><b>🔵 اتصال بالطابعة</b><button class="x" data-close>×</button></div><div class="mb"><p>الطابعة تحتاج اتصال بالبلوتوث (مرة وحدة بعد فتح الكاشير).</p></div><div class="mf"><button class="btn" data-close>لاحقاً</button><button class="btn pri" id="btre">🔵 اتصال بالطابعة واطبع</button></div>`);
+  ov.querySelector("#btre").onclick = async () => { try { await ESC.btPick(); closeModal(ov); toast("✅ اتصلت الطابعة"); printDoc(html, opt); } catch (x) { toast(ESC.why(x), 1); } };
+}
 
 /* =====================================================================
    বাংলা — واجهة العامل بالبنغالي + دليل المشروبات بالصور + الملاحظات الجاهزة
@@ -2808,13 +2846,16 @@ function setPrint(){
       <label class="toggle"><input type="checkbox" id="pa" ${S.autoPrint ? "checked" : ""}> اطبع الإيصال تلقائياً بعد كل دفع</label><label class="toggle"><input type="checkbox" id="pt" ${S.autoTicket ? "checked" : ""}> اطبع تذكرة الباريستا تلقائياً</label><label class="toggle"><input type="checkbox" id="ptb" ${S.ticketBN !== false ? "checked" : ""}> تذكرة الباريستا بالعربي + البنغالي (বাংলা)</label>
       <div class="note" style="margin-top:10px">💡 الطباعة تمر عبر نافذة الطباعة في الجهاز. على <b>ويندوز</b>: عرّف الطابعة الحرارية واجعلها الطابعة الافتراضية، وفعّل من إعدادات تعريفها «فتح درج الكاش عند الطباعة». على <b>الآيباد</b>: تحتاج طابعة تدعم الطباعة عبر الشبكة (AirPrint) — طابعات USB ما تشتغل مع الآيباد.</div>
       <h4 style="margin:16px 0 8px">طريقة الاتصال بالطابعة</h4>
-      <div class="opts" id="pmode">${[["usb", "🔌 USB مباشر (Chrome)"], ["rawbt", "📱 تطبيق RawBT (أندرويد)"], ["system", "🖨️ نافذة الطباعة (AirPrint / ويندوز)"], ["epson", "📶 Epson عبر IP"]].map(([k, t]) => `<button class="opt ${(P.mode || "system") === k ? "on" : ""}" data-pm2="${k}">${t}</button>`).join("")}</div>
+      <div class="opts" id="pmode">${[["usb", "🔌 USB مباشر (Chrome)"], ["bt", "🔵 بلوتوث (Chrome)"], ["rawbt", "📱 تطبيق RawBT (أندرويد)"], ["system", "🖨️ نافذة الطباعة (AirPrint / ويندوز)"], ["epson", "📶 Epson عبر IP"]].map(([k, t]) => `<button class="opt ${(P.mode || "system") === k ? "on" : ""}" data-pm2="${k}">${t}</button>`).join("")}</div>
       <div id="usbbox" class="pbx" data-for="usb" style="${P.mode === "usb" ? "" : "display:none"}">
         <div class="note" style="font-size:13.5px">لطابعات <b>رواء وCityPOS وXprinter</b> وأي طابعة ESC/POS. وصّل الطابعة بالتابلت بكيبل <b>USB-OTG</b>، وافتح الكاشير من متصفح <b>Chrome</b>، واضغط «ربط الطابعة» واختر الطابعة من القائمة. تربطها مرة وحدة بس.</div>
         <div class="row" style="margin-top:8px"><button class="btn" id="upick">🔗 ربط الطابعة</button><span id="uname" style="color:var(--mut)">${P.usbName ? "✅ مربوطة: " + esc(P.usbName) : ESC.usbOK() ? "ما فيه طابعة مربوطة" : "⚠️ هذا المتصفح ما يدعم USB — افتح الكاشير من Chrome"}</span></div></div>
+      <div class="pbx" data-for="bt" style="${P.mode === "bt" ? "" : "display:none"}">
+        <div class="note" style="font-size:13.5px">لطابعات رواء وأي طابعة فيها <b>BLE</b>. شغّل البلوتوث في الجهاز، وافتح الكاشير من <b>Chrome</b>، واضغط «اتصال بالطابعة» واختر اسمها من القائمة (مثل <b dir="ltr">PRT-FT-RB-624</b>). ما يحتاج إقران من إعدادات الجهاز.</div>
+        <div class="row" style="margin-top:8px"><button class="btn" id="bpick">🔵 اتصال بالطابعة</button><span id="bname" style="color:var(--mut)">${P.btName ? "✅ آخر طابعة: " + esc(P.btName) : ESC.btOK() ? "ما فيه طابعة متصلة" : "⚠️ هذا المتصفح ما يدعم البلوتوث — افتح الكاشير من Chrome"}</span></div></div>
       <div class="pbx" data-for="rawbt" style="${P.mode === "rawbt" ? "" : "display:none"}">
         <div class="note" style="font-size:13.5px">إذا ما عندك Chrome: نزّل تطبيق <b>RawBT</b> على التابلت، وافتح التطبيق وعرّف فيه طابعتك (USB أو بلوتوث أو واي فاي بعنوان IP)، وفعّل من إعداداته <b>Auto print / بدون تأكيد</b>. بعدها كل إيصال من الكاشير يروح للتطبيق ويطبع.</div></div>
-      <label class="toggle pbx" data-for="usb rawbt epson" style="${["usb", "rawbt", "epson"].includes(P.mode) ? "" : "display:none"}"><input type="checkbox" id="pdr" ${P.drawer ? "checked" : ""}> افتح درج الكاش تلقائياً مع إيصالات الكاش</label>
+      <label class="toggle pbx" data-for="usb bt rawbt epson" style="${["usb", "bt", "rawbt", "epson"].includes(P.mode) ? "" : "display:none"}"><input type="checkbox" id="pdr" ${P.drawer ? "checked" : ""}> افتح درج الكاش تلقائياً مع إيصالات الكاش</label>
       <div id="epbox" class="pbx" data-for="epson" style="${P.mode === "epson" ? "" : "display:none"}">
         <div class="row"><label class="f grow"><span>عنوان IP الطابعة</span><input id="pip" class="num" dir="ltr" inputmode="decimal" placeholder="192.168.1.50" value="${esc(P.ip || "")}"></label><label class="f" style="width:110px"><span>المنفذ (اختياري)</span><input id="pport" class="num" dir="ltr" inputmode="numeric" placeholder="تلقائي" value="${esc(P.port || "")}"></label></div>
         <div class="note" style="font-size:13.5px">📌 <b>أول مرة فقط:</b> اضغط «افتح صفحة الطابعة»، وإذا طلع تحذير أمان اضغط «إظهار التفاصيل ← زيارة الموقع» (هذا طبيعي لأن الطابعة داخل محلك)، ثم ارجع هنا واضغط «طباعة تجريبية».<br>عنوان IP يطلع في ورقة تطبعها الطابعة لما تضغط زر الـ Feed مع تشغيلها.</div>
@@ -2828,6 +2869,7 @@ function setPrint(){
       <button class="btn pri" id="vsave" style="margin-top:10px">حفظ إعدادات الضريبة</button></div>`;
   let mode = P.mode || "system";
   $$("[data-pm2]").forEach(b => b.onclick = () => { mode = b.dataset.pm2; $$("[data-pm2]").forEach(x => x.classList.toggle("on", x === b)); $$(".pbx").forEach(x => x.style.display = x.dataset.for.split(" ").includes(mode) ? "" : "none"); });
+  $("#bpick").onclick = async () => { try { const n = await ESC.btPick(); $("#bname").textContent = "✅ متصلة: " + n; toast("✅ اتصلت الطابعة بالبلوتوث"); } catch (e) { toast(ESC.why(e), 1); } };
   $("#upick").onclick = async () => { try { const n = await ESC.pick(); $("#uname").textContent = "✅ مربوطة: " + n; toast("✅ انربطت الطابعة"); } catch (e) { toast(ESC.why(e), 1); } };
   const grabP = () => { const ip = $("#pip").value.trim(), port = $("#pport").value.trim();
     if (mode === "epson" && !/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) { toast("اكتب عنوان IP صحيح مثل 192.168.1.50", 1); return false; }
