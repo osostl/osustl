@@ -557,6 +557,7 @@ if (!configured) {
   onAuthStateChanged(auth, user => {
     stopAll();
     S.authUser = user; S.role = null; S.adminRole = null; S.me = null; S.myNum = null; S.authReady = true;
+    if (S.cfUnsub) { try { S.cfUnsub(); } catch {} } S.cfUnsub = null; S.cfMine = []; S.cfMenu = undefined; S.cfOffers = undefined; S.cfBasket = []; S.cfNote = "";
     if (!user) { if (["trainer","admin","student"].includes(S.view)) S.view = "home"; render(); return; }
     const local = (user.email || "").split("@")[0];
     const role = Object.keys(ROLE_EMAIL).find(k => ROLE_EMAIL[k] === user.email);
@@ -1776,7 +1777,7 @@ const EXC_ST = {pending: "قيد المراجعة", accepted: "مقبول", reje
 const EXC_PILL = {pending: "l", accepted: "p", rejected: "a"};
 function studentTabs(){
   const open = Object.values(S.groups).filter(g => g.evalOpen && !(S.myEvals || []).some(e => e.groupId === g.id)).length;
-  const tabs = [["home", "الرئيسية"], ...(campOn() ? [["camp", "🛡️ معسكر الأمن السيبراني"]] : []), ["card", "بطاقتي"], ["att", "حضوري"], ["exams", "الاختبارات" + ((S.myExams || []).some(e => exState(e, Date.now(), S.myNum) === "open" && !(S.mySubs || {})[e.id]) ? " (1)" : "")], ["exc", "الأعذار"], ["warn", "الإنذارات" + ((S.myWarn || []).length ? ` (${S.myWarn.length})` : "")], ["eval", "التقييم" + (open ? ` (${open})` : "")], ["areq", "طلبات الأكاديمية" + ((S.myAReq || []).some(r => r.status === "done" && r.reply && !r.seen) ? " (1)" : "")], ["freq", "طلبات المالية" + ((S.myFReq || []).some(r => r.type === "invoice" && r.status === "approved" && !r.seen) ? " (1)" : "")], ...(S.survey && S.survey.open ? [["survey", "الاستبيان" + (S.surveyDone === S.survey.id ? "" : " (1)")]] : [])];
+  const tabs = [["home", "الرئيسية"], ...(campOn() ? [["camp", "🛡️ معسكر الأمن السيبراني"]] : []), ...(S.cfMenu ? [["coffee", "☕ كوفي دوفي" + ((S.cfMine || []).some(r => r.status === "ready") ? " (جاهز)" : "")]] : []), ["card", "بطاقتي"], ["att", "حضوري"], ["exams", "الاختبارات" + ((S.myExams || []).some(e => exState(e, Date.now(), S.myNum) === "open" && !(S.mySubs || {})[e.id]) ? " (1)" : "")], ["exc", "الأعذار"], ["warn", "الإنذارات" + ((S.myWarn || []).length ? ` (${S.myWarn.length})` : "")], ["eval", "التقييم" + (open ? ` (${open})` : "")], ["areq", "طلبات الأكاديمية" + ((S.myAReq || []).some(r => r.status === "done" && r.reply && !r.seen) ? " (1)" : "")], ["freq", "طلبات المالية" + ((S.myFReq || []).some(r => r.type === "invoice" && r.status === "approved" && !r.seen) ? " (1)" : "")], ...(S.survey && S.survey.open ? [["survey", "الاستبيان" + (S.surveyDone === S.survey.id ? "" : " (1)")]] : [])];
   return `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k, v]) => `<button class="tab ${(S.sTab || "home") === k ? "on" : ""}" data-stab="${k}">${v}</button>`).join("")}</div></div>`;
 }
 function bindStudentTabs(app){ app.querySelectorAll("[data-stab]").forEach(b => b.onclick = () => { S.sTab = b.dataset.stab; render(); window.scrollTo(0, 0); }); }
@@ -1790,7 +1791,8 @@ function myCourseStats(){
 function renderStudent(app){
   const st = S.myStudent;
   if (!st) { app.innerHTML = `<div class="notice err">ما لقينا سجلك. تواصل مع الشؤون الأكاديمية.</div>`; return; }
-  if ((S.sTab || "home") !== "home") { app.innerHTML = studentTabs() + `<div id="sb"></div>`; bindStudentTabs(app); ({camp: studentCamp, card: studentCard, att: studentAtt, exams: studentExams, exc: studentExc, warn: studentWarn, eval: studentEval, fin: studentFinReq, areq: studentAcReq, freq: studentFinReq, survey: studentSurvey})[S.sTab]($("#sb")); return; }
+  if (S.cfMenu === undefined) { S.cfMenu = null; getDoc(ref("coffeePub/menu")).then(d => { if (d.exists() && (d.data().items || []).length) { S.cfMenu = d.data(); if (S.view === "student") render(); } }).catch(() => {}); }
+  if ((S.sTab || "home") !== "home") { app.innerHTML = studentTabs() + `<div id="sb"></div>`; bindStudentTabs(app); ({coffee: studentCoffee, camp: studentCamp, card: studentCard, att: studentAtt, exams: studentExams, exc: studentExc, warn: studentWarn, eval: studentEval, fin: studentFinReq, areq: studentAcReq, freq: studentFinReq, survey: studentSurvey})[S.sTab]($("#sb")); return; }
   const gs = Object.values(S.groups).sort((a,b) => (a.course||"").localeCompare(b.course||"","ar"));
   const res = {}; S.myResults.forEach(r => res[r.groupId] = r);
   const cards = gs.map(g => {
@@ -3867,6 +3869,55 @@ function faqSearch(q){
     const tq = new Set(faqTok(f.q).map(faqKey)), ta = new Set(faqTok(f.a).map(faqKey));
     return {f, score: qs.reduce((n, w) => n + (tq.has(w) ? 2 : ta.has(w) ? 1 : 0), 0)};
   }).filter(x => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 3).map(x => x.f);
+}
+/* ---------- ☕ كوفي دوفي: اطلب من داخل البوابة وهو في المحاضرة، ويوصله إشعار لما يجهز ---------- */
+const CF_ST = {new: ["⏳ وصل للكاشير", ""], accepted: ["☕ يتجهز", ""], ready: ["✅ جاهز — تفضّل استلمه", "p"], done: ["تم الاستلام", ""], rejected: ["❌ معتذرين", "a"], cancelled: ["ألغيته", ""]};
+function studentCoffee(el){
+  const M = S.cfMenu || {}, B = S.cfBasket = S.cfBasket || [], m2 = v => (Math.round((v || 0) * 100) / 100).toFixed(2);
+  const cats = (M.cats || []).filter(c => (M.items || []).some(i => i.cat === c.id)); S.cfCat = S.cfCat && cats.some(c => c.id === S.cfCat) ? S.cfCat : (cats[0] || {}).id;
+  const today = new Date().toISOString().slice(0, 10), offers = (S.cfOffers || []).filter(o => o.on && (!o.to || o.to >= today) && (!o.from || o.from <= today));
+  const mine = (S.cfMine || []).slice().sort((x, y) => (y.at || "").localeCompare(x.at || "")), active = mine.find(r => ["new", "accepted", "ready"].includes(r.status));
+  const unit = (it, sz, ops) => (sz ? sz.p : it.price) + ops.reduce((t, o) => t + (o.p || 0), 0), tot = B.reduce((t, b) => t + b.unit * b.qty, 0);
+  el.innerHTML = `${offers.map(o => `<div class="card" style="border:2px solid #c8873a;background:#fff8ef"><h2 style="margin:0 0 4px">🎁 ${esc(o.title)}</h2>${o.text ? `<p style="margin:0">${esc(o.text)}</p>` : ""}${o.to ? `<p class="muted" style="margin:6px 0 0">العرض لين ${esc(o.to)}</p>` : ""}</div>`).join("")}
+    ${mine.length ? `<div class="card"><h2>طلباتي</h2><div class="list">${mine.slice(0, 5).map(r => `<div class="item" style="align-items:flex-start"><div class="grow"><b>${(r.items || []).map(x => `${x.qty}× ${esc(x.name)}${x.size ? " " + esc(x.size) : ""}`).join("، ")}</b><div class="muted">${r.at ? esc(new Date(r.at).toTimeString().slice(0, 5)) : ""} · ${esc(r.pickup || "")}</div>${r.reason ? `<div class="notice err" style="margin-top:6px">${esc(r.reason)}</div>` : ""}</div><span class="pill ${CF_ST[r.status] ? CF_ST[r.status][1] : ""}">${CF_ST[r.status] ? CF_ST[r.status][0] : esc(r.status)}</span>${r.status === "new" ? `<button class="btn sm" data-cfx="${r.id}">إلغاء</button>` : ""}</div>`).join("")}</div></div>` : ""}
+    <div class="card"><h2>☕ ${esc(M.name || "كوفي دوفي")} — اطلب وأنت مكانك</h2>
+    ${!M.open ? `<div class="notice">استقبال الطلبات من البوابة مقفول الحين — تقدر تطلب من الكاشير مباشرة.</div>` : active ? `<div class="notice">عندك طلب قيد التنفيذ — تقدر تطلب طلب ثاني بعد ما تستلمه.</div>` : `
+      <p class="muted" style="margin-top:0">اختار طلبك، ويوصلك إشعار لما يجهز. الدفع عند الاستلام${M.osos ? ` · <b>خصم متدربي أسس ${M.osos}٪</b>` : ""}.</p>
+      <div class="tabs" style="border:0;padding:0;margin-bottom:8px">${cats.map(c => `<button class="tab ${c.id === S.cfCat ? "on" : ""}" data-cfc="${c.id}">${esc(c.icon || "")} ${esc(c.name)}</button>`).join("")}</div>
+      <div class="list">${(M.items || []).filter(i => i.cat === S.cfCat).map(i => `<div class="item" style="cursor:pointer" data-cfi="${i.id}"><span style="font-size:24px">${esc(i.icon || "☕")}</span><div class="grow"><b>${esc(i.name)}</b><div class="muted">${(i.sizes || []).length ? (i.sizes || []).map(s => `${esc(s.n)} ${m2(s.p)}`).join(" · ") : m2(i.price)} ر.س</div></div><span class="btn sm">إضافة</span></div><div id="cfo-${i.id}"></div>`).join("")}</div>
+      ${B.length ? `<h3 style="margin-top:14px">سلتك</h3><div class="list">${B.map((b, k) => `<div class="item"><div class="grow"><b>${b.qty}× ${esc(b.name)}${b.size ? " · " + esc(b.size) : ""}</b>${b.opts.length ? `<div class="muted">${esc(b.opts.map(o => o.n).join("، "))}</div>` : ""}${b.note ? `<div class="muted">📝 ${esc(b.note)}</div>` : ""}</div><span>${m2(b.unit * b.qty)}</span><button class="btn sm" data-cfd="${k}">✕</button></div>`).join("")}</div>
+        <label for="cfN">ملاحظة للكاشير (اختياري)</label><textarea id="cfN" rows="2" maxlength="200" placeholder="مثال: بطلع بعد المحاضرة الساعة ١١">${esc(S.cfNote || "")}</textarea>
+        <label for="cfP">متى بتستلمه؟</label><select id="cfP">${["بعد المحاضرة", "الحين", "بعد ١٥ دقيقة", "بعد ٣٠ دقيقة", "بعد ساعة"].map(p => `<option>${p}</option>`).join("")}</select>
+        <p style="margin:10px 0 0">المجموع التقريبي: <b>${m2(tot)} ر.س</b>${M.osos ? ` <span class="muted">قبل خصم المتدربين ${M.osos}٪</span>` : ""}</p>
+        <div class="row" style="margin-top:10px"><button class="btn pri" id="cfSend">إرسال الطلب للكاشير ☕</button></div>` : ""}`}</div>`;
+  if (!S.cfUnsub) S.cfUnsub = () => {}, S.cfUnsub = onSnapshot(query(collection(db, "coffeeReqs"), where("num", "==", S.myNum)), q => { S.cfMine = q.docs.map(d => ({id: d.id, ...d.data()})); if (S.sTab === "coffee") studentCoffee(el.isConnected ? el : $("#sb")); }, () => {});
+  if (S.cfOffers === undefined) { S.cfOffers = []; getDoc(ref("coffeePub/offers")).then(d => { S.cfOffers = d.exists() ? d.data().items || [] : []; if (S.sTab === "coffee") studentCoffee($("#sb")); }).catch(() => {}); }
+  el.querySelectorAll("[data-cfc]").forEach(b => b.onclick = () => { S.cfCat = b.dataset.cfc; studentCoffee(el); });
+  el.querySelectorAll("[data-cfd]").forEach(b => b.onclick = () => { B.splice(+b.dataset.cfd, 1); studentCoffee(el); });
+  el.querySelectorAll("[data-cfx]").forEach(b => b.onclick = async () => { try { await setDoc(ref("coffeeReqs/" + b.dataset.cfx), {status: "cancelled"}, {merge: true}); toast("انلغى الطلب"); } catch (x) { handleWriteErr(x); } });
+  el.querySelectorAll("[data-cfi]").forEach(row => row.onclick = () => {
+    const it = (M.items || []).find(i => i.id === row.dataset.cfi), box = $("#cfo-" + it.id); if (box.innerHTML) { box.innerHTML = ""; return; }
+    const gs = (it.groups || []).map(g => (M.groups || []).find(x => x.id === g)).filter(Boolean);
+    box.innerHTML = `<div class="card" style="margin:4px 0 10px;background:#faf7f2">${(it.sizes || []).length ? `<label>الحجم</label><select data-sz>${it.sizes.map((s, k) => `<option value="${k}" ${k === Math.min(1, it.sizes.length - 1) ? "selected" : ""}>${esc(s.n)} — ${m2(s.p)}</option>`).join("")}</select>` : ""}
+      ${gs.map(g => `<label>${esc(g.name)}</label>${g.multi ? `<div>${g.choices.map((c, k) => `<label style="display:inline-flex;gap:4px;margin-inline-end:12px;font-weight:400"><input type="checkbox" data-gm="${g.id}" value="${k}"> ${esc(c.n)}${c.p ? ` (+${m2(c.p)})` : ""}</label>`).join("")}</div>` : `<select data-gs="${g.id}">${g.choices.map((c, k) => `<option value="${k}">${esc(c.n)}${c.p ? ` (+${m2(c.p)})` : ""}</option>`).join("")}</select>`}`).join("")}
+      <label>ملاحظة على الصنف</label><input data-nt maxlength="60" placeholder="مثال: ثلج خفيف"><div class="row" style="margin-top:8px"><select data-q style="width:90px">${[1, 2, 3, 4, 5].map(n => `<option>${n}</option>`).join("")}</select><button class="btn pri" data-add>أضف للسلة</button></div></div>`;
+    box.onclick = e => e.stopPropagation();
+    box.querySelector("[data-add]").onclick = () => {
+      if (B.length >= 10) return toast("الحد ١٠ أصناف بالطلب");
+      const sz = (it.sizes || []).length ? it.sizes[+box.querySelector("[data-sz]").value] : null;
+      const ops = gs.flatMap(g => g.multi ? [...box.querySelectorAll(`[data-gm="${g.id}"]:checked`)].map(x => g.choices[+x.value]) : [g.choices[+box.querySelector(`[data-gs="${g.id}"]`).value]]).filter(o => o && !(o.p === 0 && /عادي/.test(o.n)));
+      B.push({id: it.id, name: it.name, size: sz ? sz.n : "", opts: ops.map(o => ({n: o.n, p: o.p || 0})), qty: +box.querySelector("[data-q]").value, note: box.querySelector("[data-nt]").value.trim().slice(0, 60), unit: unit(it, sz, ops)});
+      toast("➕ " + it.name); studentCoffee(el);
+    };
+  });
+  const nt = $("#cfN"); if (nt) nt.oninput = () => S.cfNote = nt.value;
+  const sd = $("#cfSend"); if (sd) sd.onclick = async () => {
+    sd.disabled = true; const id = "cf-" + uid() + uid();
+    try { await setDoc(ref("coffeeReqs/" + id), {num: S.myNum, name: (S.myStudent && S.myStudent.name) || "", items: B.map(b => ({id: b.id, name: b.name, size: b.size, opts: b.opts, qty: b.qty, note: b.note})),
+        note: ($("#cfN").value || "").trim().slice(0, 200), pickup: $("#cfP").value, total: Math.round(tot * 100) / 100, status: "new", at: new Date().toISOString()});
+      S.cfBasket = []; S.cfNote = ""; toast("☕ انرسل طلبك — يوصلك إشعار لما يجهز"); studentCoffee(el); }
+    catch (x) { sd.disabled = false; handleWriteErr(x); }
+  };
 }
 function studentAcReq(el){
   const reqs = (S.myAReq || []).slice().sort((a, b) => (b.at || "").localeCompare(a.at || ""));
