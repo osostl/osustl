@@ -55,6 +55,35 @@ def dir_size(p):
             except OSError: pass
     return n
 
+NET = {"t": 0, "rx": 0, "tx": 0, "rate": {}}
+def net_iface():
+    try:
+        for line in open("/proc/net/route").read().splitlines()[1:]:
+            f = line.split()
+            if f[1] == "00000000": return f[0]
+    except Exception: pass
+    return "eth0"
+def net_bytes(ifc):
+    for line in open("/proc/net/dev"):
+        if line.strip().startswith(ifc + ":"):
+            f = line.split(":", 1)[1].split(); return int(f[0]), int(f[8])
+    return 0, 0
+def net_rate():
+    """megabits per second since the last reading (readings 3+ seconds apart; the portal asks every 20 seconds)"""
+    ifc = net_iface(); rx, tx = net_bytes(ifc); now = time.time()
+    if not NET["t"] or now - NET["t"] > 300:
+        NET.update(t=now, rx=rx, tx=tx); time.sleep(1); rx, tx = net_bytes(ifc); now = time.time()
+    dt = now - NET["t"]
+    if dt >= 1:
+        NET["rate"] = {"netIn": round((rx - NET["rx"]) * 8 / dt / 1e6, 1), "netOut": round((tx - NET["tx"]) * 8 / dt / 1e6, 1)}
+        NET.update(t=now, rx=rx, tx=tx)
+    r = dict(NET["rate"])
+    try:
+        sp = int(open("/sys/class/net/%s/speed" % ifc).read().strip())
+        if sp > 0: r["linkMbps"] = sp
+    except Exception: pass
+    return r
+
 class H(BaseHTTPRequestHandler):
     server_version = "osos-rec"
     def log_message(self, *a): pass
@@ -146,6 +175,9 @@ class H(BaseHTTPRequestHandler):
                 u = shutil.disk_usage(ROOT); out["disk"] = round((u.total - u.free) / u.total * 100); out["diskFreeGB"] = round(u.free / 1024 ** 3); out["diskGB"] = round(u.total / 1024 ** 3)
             except Exception: pass
             out["cores"] = os.cpu_count() or 1
+            # internet in and out of this server, in megabits per second (the first thing to run out with many cameras)
+            try: out.update(net_rate())
+            except Exception: pass
             return self.send(200, out)
         if r == "/stats":
             if not self.t("stats"): return self.send(403, {"error": "ticket"})
