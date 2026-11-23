@@ -136,7 +136,7 @@ class H(BaseHTTPRequestHandler):
                 if not re.match(r"^[\w.+-]+/[\w.+-]+$", ct): ct = "application/octet-stream"
                 fn = quote(str(t.get("fn", "file"))[:150], safe="")
                 self.send_header("Content-Type", ct)
-                self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + fn)
+                self.send_header("Content-Disposition", ("inline" if t.get("inl") else "attachment") + "; filename*=UTF-8''" + fn)
             else:
                 self.send_header("Content-Type", "video/webm")
             self.end_headers(); return
@@ -260,6 +260,11 @@ if "8080/colibri/stats" in s:
     open(p, 'w').write(s); print("load counter moved to the bridge metrics")
 s = open(p).read()
 # the load service sends its own CORS header; a second one from nginx makes browsers refuse the answer
+# files opened by the portal itself (signing, archive) are read from the page, so they need a CORS header
+if "/_osos_rec/" in s and "osos-files-cors" not in s:
+    s = s.replace('add_header Cache-Control "private, no-store" always;', 'add_header Cache-Control "private, no-store" always;\n        add_header Access-Control-Allow-Origin "*" always;  # osos-files-cors', 1)
+    open(p, 'w').write(s); print("file downloads: CORS header added")
+s = open(p).read()
 if "8090/load;" in s and "proxy_hide_header Access-Control-Allow-Origin" not in s:
     s = s.replace("proxy_pass http://127.0.0.1:8090/load;", "proxy_pass http://127.0.0.1:8090/load;\n        proxy_hide_header Access-Control-Allow-Origin;")
     open(p, 'w').write(s); print("load counter: duplicate CORS header fixed")

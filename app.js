@@ -638,12 +638,14 @@ function watchStaffLock(){
 }
 function startData(){
   S.loaded = {trainers: false, groups: false};
-  if (S.role === "admin" && MAILONLY()) { S.loaded = {trainers: true, groups: true}; watchStaffLock(); S.mail = null; mailSubs(); return; }
+  if (S.role === "admin" && MAILONLY()) { S.loaded = {trainers: true, groups: true}; watchStaffLock(); S.mail = null; mailSubs(); watchMemos();
+    S.subs.push(onSnapshot(collection(db, "trainers"), snap => { S.trainers = {}; snap.docs.forEach(d => S.trainers[d.id] = {id: d.id, ...d.data()}); if (isChatTab() && $("#mmList")) memoPaint(); }, () => {}));
+    return; }
   const annDocs = S.role === "admin" ? ["trainers", "students"] : S.role === "trainer" ? ["trainers"] : ["students"];
   annDocs.forEach(k => S.subs.push(onSnapshot(ref("ann/" + k), snap => { S.ann[k] = (snap.exists() && snap.data().items) || []; renderAnn(); }, () => {})));
   sub(collection(db, "trainers"), snap => {
     S.trainers = {}; snap.docs.forEach(d => S.trainers[d.id] = {id: d.id, ...d.data()});
-    if (S.role === "trainer") { const t = Object.values(S.trainers).find(t => t.uid === S.authUser.uid); S.me = t ? t.id : null; if (S.me) { watchMsgs(); watchTrMsgs(); watchStaffReqs(); if (!S.mail && trMe()) mailSubs(); } }
+    if (S.role === "trainer") { const t = Object.values(S.trainers).find(t => t.uid === S.authUser.uid); S.me = t ? t.id : null; if (S.me) { watchMsgs(); watchTrMsgs(); watchStaffReqs(); watchMemos(); if (!S.mail && trMe()) mailSubs(); } }
     S.loaded.trainers = true; afterData();
   });
   if (S.role === "student") {
@@ -683,7 +685,7 @@ function startData(){
     // emergency lock: a session that signed in before its role's lock time leaves at once
     watchStaffLock(); watchMsgs(); watchTasks(); watchTrMsgs(); watchStaffReqs();
     if (!RO()) { S.mail = null; mailSubs(); }
-    if (!RO()) S.subs.push(onSnapshot(collection(db, "memos"), snap => { S.memos = snap.docs.map(d => ({id: d.id, ...d.data()})); afterData(); }, () => {}));
+    watchMemos();
     if (!FIN()) S.subs.push(onSnapshot(collection(db, "acReqs"), snap => { S.aReqs = snap.docs.map(d => ({id: d.id, ...d.data()})); afterData(); }, () => {}));
     if (!FIN()) S.subs.push(onSnapshot(collection(db, "waivers"), snap => { S.waivers = {}; snap.docs.forEach(d => S.waivers[d.id] = d.data()); afterData(); }, () => {}));
     if (SEES_FIN()) startFinance();
@@ -2441,6 +2443,11 @@ function renderTrainer(app){
   if (!t) { app.innerHTML = `<div class="notice err">هذا الحساب غير مربوط بمدرب. تواصل مع الشؤون الأكاديمية.</div>`; return; }
   if (!S.tGroup && S.trmOpen) return trainerMsgs(app);
   if (!S.tGroup && S.sreqOpen) { app.innerHTML = `<div id="srBox"></div>`; return staffReqsView($("#srBox"), true); }
+  if (!S.tGroup && S.trChat) {
+    app.innerHTML = `<div class="card" style="padding:10px 14px"><div class="row" style="justify-content:space-between;align-items:center"><b>💬 المراسلات</b><button class="btn sm" id="tcBack">→ رجوع</button></div></div><div id="tcBox"></div>`;
+    $("#tcBack").onclick = () => { S.trChat = false; S.memoChat = null; render(); };
+    return memosTab($("#tcBox"));
+  }
   if (!S.tGroup && S.trMail && trMe()) {
     if (!S.mail) mailSubs();
     app.innerHTML = `<div class="card" style="padding:10px 14px"><div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div><b>📧 بريدي</b> <span class="muted" dir="ltr">${esc(trAddr(trMe()))}</span></div><button class="btn sm" id="tmBack">→ رجوع</button></div></div><div id="tmBox"></div>`;
@@ -2452,7 +2459,7 @@ function renderTrainer(app){
     const rows = []; gs.forEach(g => (g.sessions || []).forEach(s => rows.push({course: g.course + (s.g ? ` (${s.g === "f" ? "طالبات" : "طلاب"})` : ""), trainer: trainerTitle(t), s})));
     app.innerHTML = `
     <div class="card"><div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div><h2 style="margin:0">أهلاً ${esc(trainerTitle(t))}</h2><p class="muted" style="margin:4px 0 0">اختر المقرر للتحضير أو رصد الدرجات.</p></div>
-      <div class="row" style="gap:6px"><button class="btn ${trmUnread().length ? "gold" : ""}" id="trmOpen">💬 مراسلة الشؤون الأكاديمية${trmBadge()}</button>${trMe() ? `<button class="btn ${trMe() && S.mail && mailUnread().length ? "gold" : ""}" id="tmOpen">📧 بريدي${S.mail ? mailBadge() : ""}</button>` : ""}<button class="btn" id="srOpen">📝 إجازة / عذر طبي${srBadge()}</button></div></div></div>
+      <div class="row" style="gap:6px"><button class="btn ${trmUnread().length ? "gold" : ""}" id="trmOpen">💬 مراسلة الشؤون الأكاديمية${trmBadge()}</button><button class="btn ${memoUnread().length ? "gold" : ""}" id="tcOpen">💬 المراسلات${memoBadge()}</button>${trMe() ? `<button class="btn ${trMe() && S.mail && mailUnread().length ? "gold" : ""}" id="tmOpen">📧 بريدي${S.mail ? mailBadge() : ""}</button>` : ""}<button class="btn" id="srOpen">📝 إجازة / عذر طبي${srBadge()}</button></div></div></div>
     ${gs.length ? `<div class="ggrid">${gs.map(g => `
       <button class="groupcard" data-g="${esc(g.id)}">
         <span style="font-weight:700;color:var(--green)">${esc(g.course)}</span>
@@ -2465,6 +2472,7 @@ function renderTrainer(app){
     $("#trmOpen").onclick = () => { S.trmOpen = true; render(); window.scrollTo(0, 0); };
     $("#srOpen").onclick = () => { S.sreqOpen = true; render(); window.scrollTo(0, 0); };
     if ($("#tmOpen")) $("#tmOpen").onclick = () => { S.trMail = true; render(); window.scrollTo(0, 0); };
+    $("#tcOpen").onclick = () => { S.trChat = true; render(); window.scrollTo(0, 0); };
     return;
   }
   const g = S.groups[S.tGroup];
@@ -3027,11 +3035,11 @@ function writeGroup(gid, d){
 
 function renderAdmin(app){
   if (RO()) {
-    const tabsRO = [["tasks", "المهام" + taskBadge()], ["weekly", "التقرير الأسبوعي"], ["dash", "لوحة اليوم"], ["kpi", "المؤشرات"], ["follow", "المتابعة"], ["report", "التقارير"], ["finance", "المالية"], ["hr", "الموارد البشرية"], ["trmsgs", "رسائل المدربين"], ["sreq", "طلبات الإجازة"], ["logs", "سجل الإدارات"], ["archive", "الأرشيف"]];
+    const tabsRO = [["tasks", "المهام" + taskBadge()], ["memos", "المراسلات" + memoBadge()], ["weekly", "التقرير الأسبوعي"], ["dash", "لوحة اليوم"], ["kpi", "المؤشرات"], ["follow", "المتابعة"], ["report", "التقارير"], ["finance", "المالية"], ["hr", "الموارد البشرية"], ["trmsgs", "رسائل المدربين"], ["sreq", "طلبات الإجازة"], ["logs", "سجل الإدارات"], ["archive", "الأرشيف"]];
     if (!tabsRO.some(([k]) => k === S.aTab)) S.aTab = "tasks";
     app.innerHTML = `<div class="notice">بوابة الجهة الرقابية: تطّلع على كل أعمال المعهد وتصدّرها، وترسل مهام للإدارات وتستلم تقاريرها. التعديل على البيانات يبقى عند الإدارات.</div><div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabsRO.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
     app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
-    ({tasks: tasksTab, weekly: weeklyTab, dash: adminDash, kpi: adminKpi, follow: adminFollow, report: adminReport, finance: adminFinance, hr: hrTab, trmsgs: adminTrMsgs, sreq: staffReqsView, logs: adminLogs, archive: adminArchive})[S.aTab]($("#ab"));
+    ({tasks: tasksTab, memos: memosTab, weekly: weeklyTab, dash: adminDash, kpi: adminKpi, follow: adminFollow, report: adminReport, finance: adminFinance, hr: hrTab, trmsgs: adminTrMsgs, sreq: staffReqsView, logs: adminLogs, archive: adminArchive})[S.aTab]($("#ab"));
     if (["finance", "hr", "logs"].includes(S.aTab)) ownerReadOnly($("#ab"));
     if (RO()) app.querySelectorAll("#ab [data-issue], #issueAll, #cIssue, [data-rc], [data-twa], [data-wabs], [data-warn]").forEach(x => x.remove());
     return;
@@ -3040,11 +3048,11 @@ function renderAdmin(app){
     app.innerHTML = `<div id="ab"></div>`; adminFinance($("#ab")); return;
   }
   if (MAILONLY()) {
-    const mt = [...(S.adminRole === "hr" ? [["hr", "الموارد البشرية"]] : []), ["mail", "البريد" + mailBadge()], ["tasks", "مهام الجهة الرقابية" + taskBadge()], ["sreq", "طلبات الإجازة" + srBadge()]];
+    const mt = [...(S.adminRole === "hr" ? [["hr", "الموارد البشرية"]] : []), ["memos", "المراسلات" + memoBadge()], ["mail", "البريد" + mailBadge()], ["tasks", "مهام الجهة الرقابية" + taskBadge()], ["sreq", "طلبات الإجازة" + srBadge()]];
     if (!mt.some(([k]) => k === S.aTab)) S.aTab = mt[0][0];
     app.innerHTML = `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${mt.map(([k, v]) => `<button class="tab ${S.aTab === k ? "on" : ""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
     app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
-    ({hr: hrTab, mail: mailTab, tasks: tasksTab, sreq: staffReqsView})[S.aTab]($("#ab")); return;
+    ({hr: hrTab, memos: memosTab, mail: mailTab, tasks: tasksTab, sreq: staffReqsView})[S.aTab]($("#ab")); return;
   }
   const tabs = [["dash","لوحة اليوم"],["kpi","المؤشرات"],["groups","المقررات والطلاب"],["students","الطلاب"],["msgs","الرسائل الجماعية"],["trainers","المدربين والرموز"],["grades","الدرجات"],["exams","الاختبارات"],["camp","المعسكر"],["follow","المتابعة"],["excuses","الأعذار"],["areqs","طلبات الطلاب" + ((S.aReqs || []).some(r => r.status === "new") ? ` (${S.aReqs.filter(r => r.status === "new").length})` : "")],["evals","التقييمات"],["report","التقارير"],["courses","الدورات والشهادات"],["sign","طلبات التوقيع"],["tasks","مهام الجهة الرقابية" + taskBadge()],["trmsgs","رسائل المدربين" + trmBadge()],["sreq","طلبات الإجازة" + srBadge()],["memos","المراسلات" + memoBadge()],["mail","البريد" + mailBadge()],...(MEET() ? [["live","المحاضرات والتسجيلات"]] : []),["system","النظام"],...(S.adminRole === "admin" ? [["hr","الموارد البشرية"]] : []),...(SEES_FIN() ? [["finance","المالية" + ((S.fReqs || []).some(r => r.status === "fin_signed") ? ` (${(S.fReqs || []).filter(r => r.status === "fin_signed").length})` : "")]] : []),["archive","الأرشيف"],...(S.adminRole === "admin" ? [["weekly","التقرير الأسبوعي"],["logs","السجل"]] : [])];
   if (!tabs.some(([k]) => k === S.aTab)) S.aTab = "dash";
@@ -4421,36 +4429,121 @@ function mailCompose(el){
   };
 }
 /* ---------- internal messages between general administration, academic affairs and finance ---------- */
-const MEMO_ROLES = ["admin", "academic", "finance"];
-const memoUnread = () => (S.memos || []).filter(m => m.to === S.adminRole && !m.readAt);
+/* ---------- department chat (WhatsApp-like): one conversation with each department, and a group for all of them.
+   memos/{id}: from, to (a department, or "all"), text, at, readAt (direct messages). The general administration
+   and the auditor can read every message; the others only their own and the group's. */
+const CHAT_ROLES = ["admin", "academic", "finance", "hr", "admission", "business", "auditor"];
+const CHAT_TOP = ["admin", "auditor"];                                   // reached only by the departments, never by trainers
+const CHAT_TR_DEPTS = ["academic", "finance", "hr", "admission", "business"];
+const chatMe = () => S.role === "trainer" ? S.me : S.adminRole;
+const chatName = k => CHAT_N[k] || (S.trainers && S.trainers[k] ? trainerTitle(S.trainers[k]) : /^t-/.test(k) ? "مدرب" : k);
+const chatTrainers = () => Object.values(S.trainers || {}).filter(t => t.id !== chatMe() && !(S.disabled || {})[t.id] && !t.disabled).sort((a, b) => String(a.name).localeCompare(String(b.name), "ar")).map(t => t.id);
+function chatContacts(){
+  const me = chatMe();
+  if (S.role === "trainer") return [...CHAT_TR_DEPTS, ...chatTrainers()];
+  if (CHAT_TOP.includes(me)) return ["all", ...CHAT_ROLES.filter(r => r !== me)];
+  return ["all", ...CHAT_ROLES.filter(r => r !== me), ...chatTrainers()];
+}
+const CHAT_N = {all: "👥 كل الإدارات", admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", hr: "الموارد البشرية", admission: "القبول والتسجيل", business: "الشراكات وقطاع الشركات", auditor: "الجهة الرقابية"};
+const MEMO_ROLES = CHAT_ROLES;
+const memoSeenKey = () => "memoSeenAll_" + chatMe();
+const memoSeenAll = () => { try { return localStorage.getItem(memoSeenKey()) || ""; } catch { return ""; } };
+const memoThread = k => { const me = chatMe(); return (S.memos || []).filter(m => k === "all" ? m.to === "all" : (m.from === me && m.to === k) || (m.from === k && m.to === me)).sort((a, b) => String(a.at || "").localeCompare(String(b.at || ""))); };
+const memoUnreadIn = k => { const me = chatMe(); return k === "all" ? memoThread("all").filter(m => m.from !== me && String(m.at || "") > memoSeenAll()) : memoThread(k).filter(m => m.to === me && !m.readAt); };
+const memoUnread = () => chatContacts().flatMap(memoUnreadIn);
 const memoBadge = () => { const n = memoUnread().length; return n ? ` (${n})` : ""; };
+const isChatTab = () => S.role === "trainer" ? !!S.trChat : FIN() ? S.finTab === "memos" : S.aTab === "memos";
+function watchMemos(){
+  if (S._memoSub || !S.authUser) return;
+  if (!(S.role === "trainer" && S.me) && !(S.role === "admin" && CHAT_ROLES.includes(S.adminRole))) return; S._memoSub = true;
+  const me = chatMe(), parts = {}, first = {};
+  const qs = {f: query(collection(db, "memos"), where("from", "==", me)), t: query(collection(db, "memos"), where("to", "==", me)),
+    ...(S.role === "trainer" ? {} : {g: query(collection(db, "memos"), where("to", "==", "all"))})};
+  Object.entries(qs).forEach(([k, q]) => S.subs.push(onSnapshot(q, snap => {
+    const fresh = first[k] ? snap.docChanges().filter(c => c.type === "added").map(c => c.doc.data()).filter(m => m.from !== me && (m.to === me || m.to === "all")) : [];
+    first[k] = true; parts[k] = snap.docs.map(d => ({id: d.id, ...d.data()}));
+    const mp = new Map(); Object.values(parts).flat().forEach(x => mp.set(x.id, x)); S.memos = [...mp.values()];
+    if (fresh.length && !(isChatTab() && S.memoChat === (fresh[0].to === "all" ? "all" : fresh[0].from))) toast("💬 " + (fresh[0].to === "all" ? "كل الإدارات · " : "") + chatName(fresh[0].from) + ": " + String(fresh[0].text || "").slice(0, 60));
+    if (isChatTab() && $("#mmThread")) memoPaint(); else afterData();
+  }, e => console.error(e))));
+  S.subs.push(() => { S._memoSub = false; });
+}
+function memoCss(){
+  if ($("#memoCss")) return;
+  const st = document.createElement("style"); st.id = "memoCss";
+  st.textContent = `.chat{display:grid;grid-template-columns:260px minmax(0,1fr);gap:12px;align-items:start}
+  .chat .cl{padding:6px}.chat .ci{display:flex;gap:8px;align-items:center;width:100%;text-align:start;background:none;border:0;border-radius:10px;padding:10px;cursor:pointer;color:inherit;font:inherit}
+  .chat .ci:hover{background:var(--line)}.chat .ci.on{background:rgba(31,81,54,.12)}.chat .ci .nm{font-weight:700}.chat .ci .lt{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px}
+  .chat .bd{background:#1F5136;color:#fff;border-radius:999px;font-size:12px;min-width:20px;padding:1px 7px;text-align:center;margin-inline-start:auto}
+  .chat .th{height:56vh;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:6px;background:rgba(0,0,0,.025);border-radius:10px}
+  .chat .bb{max-width:78%;padding:7px 11px;border-radius:14px;white-space:pre-wrap;word-break:break-word;line-height:1.7;box-shadow:0 1px 1px rgba(0,0,0,.06)}
+  .chat .bb.me{align-self:flex-start;background:#dcf3e2;color:#111;border-start-start-radius:4px}.chat .bb.ot{align-self:flex-end;background:#fff;color:#111;border-start-end-radius:4px}
+  .chat .bb .mt{font-size:11px;color:#667;margin-top:2px;text-align:end}.chat .bb .wh{font-size:12px;font-weight:700;color:#1F5136}
+  .chat .dy{align-self:center;font-size:12px;color:var(--muted);background:var(--card);padding:2px 10px;border-radius:999px;margin:4px 0}
+  .chat .cmp{display:flex;gap:8px;align-items:flex-end;margin-top:8px}.chat .cmp textarea{flex:1;resize:none;min-height:44px;max-height:140px}
+  @media (max-width:760px){.chat{grid-template-columns:1fr}.chat.open .cl{display:none}.chat:not(.open) .pane{display:none}}`;
+  document.head.appendChild(st);
+}
+function memoListHTML(){
+  const me = chatMe(), q = (S.chatQ || "").trim(), keys = chatContacts().filter(k => !q || chatName(k).includes(q));
+  const last = k => { const t = memoThread(k); return t[t.length - 1]; };
+  const isTr = k => /^t-/.test(k);
+  keys.sort((a, b) => a === "all" ? -1 : b === "all" ? 1 : String((last(b) || {}).at || "").localeCompare(String((last(a) || {}).at || "")) || (isTr(a) - isTr(b)));
+  return keys.map(k => { const l = last(k), n = memoUnreadIn(k).length;
+    return `<button class="ci ${S.memoChat === k ? "on" : ""}" data-mmc="${esc(k)}"><span style="min-width:0;flex:1"><div class="nm">${esc(chatName(k))}</div><div class="lt">${l ? esc((l.from === me ? "أنت: " : k === "all" ? chatName(l.from) + ": " : "") + l.text) : "ابدأ المحادثة"}</div></span>${n ? `<span class="bd">${n}</span>` : ""}</button>`; }).join("") || `<div class="muted" style="padding:8px">ما فيه نتائج.</div>`;
+}
+function memoThreadHTML(k){
+  const me = chatMe(), T = memoThread(k); let day = "";
+  const t = iso => { try { return new Date(iso).toLocaleTimeString("ar-SA-u-nu-latn", {hour: "numeric", minute: "2-digit"}); } catch { return ""; } };
+  return T.map(m => { const d = String(m.at || "").slice(0, 10), sep = d !== day ? `<div class="dy">${esc(d === today() ? "اليوم" : bothDates(d))}</div>` : ""; day = d;
+    const mine = m.from === me;
+    return sep + `<div class="bb ${mine ? "me" : "ot"}">${!mine && k === "all" ? `<div class="wh">${esc(chatName(m.from))}</div>` : ""}${linkify(esc(m.text))}<div class="mt">${esc(t(m.at))}${mine && k !== "all" ? ` <span style="color:${m.readAt ? "#2b8a3e" : "#889"}">${m.readAt ? "✓✓" : "✓"}</span>` : ""}</div></div>`; }).join("")
+    || `<div class="muted" style="margin:auto">${k === "all" ? "رسائل هنا توصل لكل الإدارات." : "ما فيه رسائل للحين. اكتب أول رسالة."}</div>`;
+}
+function memoMarkRead(k){
+  const me = chatMe();
+  if (k === "all") { const l = memoThread("all").slice(-1)[0]; if (l) try { localStorage.setItem(memoSeenKey(), String(l.at || "")); } catch {} return; }
+  memoThread(k).filter(m => m.to === me && !m.readAt).forEach(m => { m.readAt = new Date().toISOString(); setDoc(ref("memos/" + m.id), {readAt: m.readAt}, {merge: true}).catch(() => {}); });
+}
+function memoPaint(){   // refresh the list and the open conversation without touching what is being typed
+  const k = S.memoChat;
+  if ($("#mmList")) { $("#mmList").innerHTML = memoListHTML(); bindMemoList(); }
+  if (k && $("#mmThread")) { const th = $("#mmThread"), atEnd = th.scrollHeight - th.scrollTop - th.clientHeight < 80; th.innerHTML = memoThreadHTML(k); if (atEnd || S._mmJump) { th.scrollTop = th.scrollHeight; S._mmJump = false; } memoMarkRead(k); if ($("#mmList")) { $("#mmList").innerHTML = memoListHTML(); bindMemoList(); } }
+  document.querySelectorAll("[data-at='memos'],[data-ft='memos']").forEach(b => { b.textContent = "المراسلات" + memoBadge(); });
+}
+function bindMemoList(){ document.querySelectorAll("#mmList [data-mmc]").forEach(b => b.onclick = () => { S.memoChat = b.dataset.mmc; S._mmJump = true; render(); setTimeout(() => $("#mmT") && $("#mmT").focus(), 30); }); }
 function memosTab(el){
-  const me = S.adminRole, others = MEMO_ROLES.filter(r => r !== me);
-  const mine = (S.memos || []).filter(m => m.to === me || m.from === me).sort((a, b) => (b.at || "").localeCompare(a.at || ""));
-  const f = S.memoBox || "in", list = mine.filter(m => f === "in" ? m.to === me : m.from === me);
-  const re = S.memoReply ? mine.find(m => m.id === S.memoReply) : null;
-  el.innerHTML = `<div class="card"><h2>رسالة جديدة</h2>
-    ${re ? `<div class="notice" style="margin:0 0 8px">رد على: ${esc(re.text.slice(0, 80))}${re.text.length > 80 ? "…" : ""} <button class="btn sm" id="mmNoRe">إلغاء</button></div>` : ""}
-    <label for="mmTo">إلى</label><select id="mmTo">${others.map(r => `<option value="${r}" ${re && re.from === r ? "selected" : ""}>${ROLES[r]}</option>`).join("")}</select>
-    <label for="mmT">الرسالة</label><textarea id="mmT" rows="3" maxlength="1000" placeholder="مثال: الطالب خالد سدّد كامل الرسوم، تقدرون تصدرون شهادته"></textarea>
-    <div class="row" style="margin-top:10px"><button class="btn pri" id="mmSend">إرسال</button><span class="muted">توصل المستلم إشعار، وتبقى هنا مسجّلة.</span></div></div>
-  <div class="card"><div class="row">${[["in", "الوارد" + (memoUnread().length ? ` (${memoUnread().length} جديدة)` : "")], ["out", "المرسل"]].map(([k, v]) => `<button class="btn sm ${f === k ? "pri" : ""}" data-mmb="${k}">${v}</button>`).join("")}</div></div>
-  <div class="list">${list.map(m => { const parent = m.replyTo && mine.find(x => x.id === m.replyTo); return `<div class="card" style="margin:0 0 10px;${f === "in" && !m.readAt ? "border-inline-start:4px solid var(--g)" : ""}">
-    <div class="row" style="justify-content:space-between"><b>${f === "in" ? "من: " + esc(ROLES[m.from] || m.from) : "إلى: " + esc(ROLES[m.to] || m.to)}</b><span class="muted">${esc(bothDates((m.at || "").slice(0, 10)))} · ${esc((m.at || "").slice(11, 16))}</span></div>
-    ${parent ? `<div class="muted" style="margin-top:6px">ردًا على: ${esc(parent.text.slice(0, 60))}${parent.text.length > 60 ? "…" : ""}</div>` : ""}
-    <p style="margin:8px 0;white-space:pre-wrap">${esc(m.text)}</p>
-    <div class="row">${f === "in" ? `<button class="btn sm" data-mmre="${m.id}">رد</button>` : `<span class="pill ${m.readAt ? "p" : ""}">${m.readAt ? "انقرأت" : "ما انقرأت"}</span>`}</div></div>`; }).join("") || `<div class="card empty">ما فيه رسائل.</div>`}</div>`;
-  if (f === "in") memoUnread().forEach(m => setDoc(ref("memos/" + m.id), {readAt: new Date().toISOString()}, {merge: true}).catch(() => {}));
-  el.querySelectorAll("[data-mmb]").forEach(b => b.onclick = () => { S.memoBox = b.dataset.mmb; render(); });
-  el.querySelectorAll("[data-mmre]").forEach(b => b.onclick = () => { S.memoReply = b.dataset.mmre; render(); window.scrollTo(0, 0); setTimeout(() => $("#mmT") && $("#mmT").focus(), 50); });
-  if ($("#mmNoRe")) $("#mmNoRe").onclick = () => { S.memoReply = null; render(); };
-  $("#mmSend").onclick = async e => {
-    const text = $("#mmT").value.trim(), to = $("#mmTo").value; if (text.length < 2) return toast("اكتب الرسالة");
-    e.target.disabled = true;
-    const id = "mm-" + uid() + uid(), d = {from: me, to, text: text.slice(0, 1000), at: new Date().toISOString(), ...(re ? {replyTo: re.id} : {})};
-    try { await setDoc(ref("memos/" + id), d); notify("memo", id); logAction("رسالة داخلية", ROLES[to]); S.memoReply = null; S.memoBox = "out"; toast("انرسلت"); render(); }
-    catch (x) { e.target.disabled = false; handleWriteErr(x); }
+  watchMemos(); memoCss();
+  if (S.memoChat && !chatContacts().includes(S.memoChat)) S.memoChat = null;
+  const k = S.memoChat, me = chatMe();
+  el.innerHTML = `<div class="chat ${k ? "open" : ""}"><div class="card cl"><div style="padding:6px 8px 8px;font-weight:700">💬 المراسلات</div>
+    ${chatContacts().length > 9 ? `<input type="search" id="chQ" placeholder="بحث بالاسم" value="${esc(S.chatQ || "")}" style="width:100%;margin:0 0 6px">` : ""}
+    <div id="mmList">${memoListHTML()}</div>
+    ${S.role === "trainer" ? `<p class="muted" style="font-size:12px;margin:8px 6px 4px">الإدارة العامة والجهة الرقابية توصلها عن طريق الإدارات. وإذا ما انحلت مشكلتك أرسل لهم من «📧 بريدي».</p>` : ""}</div>
+    <div class="card pane">${k ? `<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px"><b style="font-size:17px">${esc(chatName(k))}</b><button class="btn sm" id="mmBack">→ المحادثات</button></div>
+      <div class="th" id="mmThread"></div>
+      <div class="cmp"><textarea id="mmT" rows="1" maxlength="1000" placeholder="اكتب رسالة… (Enter للإرسال، Shift+Enter لسطر جديد)">${esc(S._mmDraft && S._mmDraft[k] || "")}</textarea><button class="btn pri" id="mmSend">إرسال</button></div>
+      <p class="muted" style="margin:6px 0 0;font-size:12px">${k === "all" ? "توصل لكل الإدارات مع إشعار." : "توصلهم مع إشعار. ✓ انرسلت · ✓✓ انقرأت."}</p>`
+      : `<div class="empty" style="padding:40px 10px">اختر محادثة من القائمة.</div>`}</div></div>`;
+  bindMemoList();
+  if ($("#chQ")) $("#chQ").oninput = e => { S.chatQ = e.target.value; $("#mmList").innerHTML = memoListHTML(); bindMemoList(); };
+  if (!k) return;
+  S._mmJump = true; memoPaint();
+  $("#mmBack").onclick = () => { S.memoChat = null; render(); };
+  const ta = $("#mmT");
+  const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(140, ta.scrollHeight) + "px"; }; grow();
+  ta.oninput = () => { S._mmDraft = S._mmDraft || {}; S._mmDraft[k] = ta.value; grow(); };
+  const send = async () => {
+    const text = ta.value.trim(); if (!text) return;
+    const btn = $("#mmSend"); btn.disabled = true;
+    const id = "mm-" + Date.now().toString(36) + uid(), d = {from: me, to: k, text: text.slice(0, 1000), at: new Date().toISOString()};
+    try { await setDoc(ref("memos/" + id), d); notify("memo", id); ta.value = ""; if (S._mmDraft) S._mmDraft[k] = ""; grow(); S._mmJump = true;
+      if (!(S.memos || []).some(m => m.id === id)) S.memos = [...(S.memos || []), {id, ...d}]; memoPaint(); }
+    catch (x) { handleWriteErr(x); }
+    btn.disabled = false; ta.focus();
   };
+  $("#mmSend").onclick = send;
+  ta.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } };
 }
 
 /* ---------- trainers ↔ academic affairs: one conversation per trainer ----------
@@ -4620,7 +4713,7 @@ function staffReqsView(el, trainerBack){
         file: f ? {name: f.name.slice(0, 100), size: f.size} : null, roles, cur: 0, steps: roles.map(r => ({role: r, st: "pending"})), status: "pending", at: new Date().toISOString()});
       if (data) await setDoc(ref("staffReqFiles/" + id), {rid: id, data, name: f.name.slice(0, 100)});
       notify("sreq", id); if (S.role === "admin") logAction("طلب إجازة", SR_KIND[F.kind]); toast(`انرسل الطلب لـ ${SR_ROLE_N[roles[0]]} ✓`); S._srF = null; render();
-    } catch (x) { e.target.disabled = false; x && ["too-big", "pdf-big"].includes(x.message) ? rcptErr(x) : handleWriteErr(x); }
+    } catch (x) { e.target.disabled = false; x && ["too-big", "pdf-big", "srv-down"].includes(x.message) ? rcptErr(x) : handleWriteErr(x); }
   };
 }
 
@@ -5191,7 +5284,7 @@ function signRequests(el){
   el.innerHTML = `${admin ? "" : `<div class="card"><h2>إرسال مستند للتوقيع والختم</h2>
     <p class="muted" style="margin-top:0">خطاب أو عقد أو أي مستند يحتاج توقيع مدير المعهد والختم. ترفقه هنا، وتقدر تحط توقيعك عليه أول، ويوصل لبوابة الإدارة. لما توقّعه الإدارة وتختمه يرجع لك هنا جاهز للتنزيل.</p>
     <div class="row"><input type="text" id="srT" class="grow" placeholder="عنوان المستند، مثل: خطاب تعريف للمتدربة لجين" maxlength="120"></div>
-    <div class="row" style="margin-top:8px"><label class="f grow" for="srF">المستند (صورة أو PDF، أقل من 600 كيلوبايت)<input type="file" id="srF" accept="image/*,application/pdf"></label></div>${ATT_NOTE}
+    <div class="row" style="margin-top:8px"><label class="f grow" for="srF">المستند (صورة أو PDF، حتى 15 ميجا)<input type="file" id="srF" accept="image/*,application/pdf"></label></div>${ATT_NOTE}
     <label class="f" for="srN" style="margin-top:8px">ملاحظة للإدارة (اختياري)<input type="text" id="srN" maxlength="300"></label>
     <div class="row" style="margin-top:8px"><button class="btn gold" id="srSend">التالي: أحط توقيعي وأرسل</button><button class="btn sm" id="srSend2">أرسل بدون توقيعي</button></div></div>`}
   <div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${[["pending", "بانتظار الإدارة"], ["signed", "موقّعة"], ["rejected", "مرفوضة"], ["all", "الكل"]].map(([k, v]) => `<button class="tab ${f === k ? "on" : ""}" data-srf="${k}">${v} (${k === "all" ? S.signReqs.length : S.signReqs.filter(r => r.status === k).length})</button>`).join("")}</div></div>
@@ -5202,7 +5295,7 @@ function signRequests(el){
       ${admin && r.status === "pending" ? `<button class="btn sm pri" data-srs="${esc(r.id)}">توقيع وختم</button><button class="btn sm danger" data-srr="${esc(r.id)}">رفض</button>` : ""}
       ${!admin && r.status !== "signed" ? `<button class="btn sm danger" data-srx="${esc(r.id)}">حذف</button>` : ""}</div>`).join("") || `<div class="card empty">ما فيه طلبات</div>`}</div>`;
   el.querySelectorAll("[data-srf]").forEach(b => b.onclick = () => { S.srF = b.dataset.srf; render(); });
-  const getFile = async id => { const x = await getDoc(ref("signFiles/" + id)); return x.exists() ? x.data().data : null; };
+  const getFile = async id => { const x = await getDoc(ref("signFiles/" + id)); return x.exists() ? srvData(x.data().data) : null; };
   const ext = d => /^data:application\/pdf/.test(d) ? "pdf" : "jpg";
   el.querySelectorAll("[data-srv]").forEach(b => b.onclick = async () => { const r = S.signReqs.find(x => x.id === b.dataset.srv); try { const d = await getFile(r.id); if (d) openData(d, `${r.title}.${ext(d)}`); else toast(r.filesArchived ? "الملف مؤرشف — موجود في نسخة المرفقات عند الإدارة العامة" : "الملف غير موجود"); } catch (e) { handleWriteErr(e); } });
   el.querySelectorAll("[data-srd]").forEach(b => b.onclick = async () => { const r = S.signReqs.find(x => x.id === b.dataset.srd); try { const d = await getFile(r.id + "_signed"); if (d) openData(d, `${r.title} - موقّع.${ext(d)}`); else toast(r.filesArchived ? "الملف مؤرشف — موجود في نسخة المرفقات عند الإدارة العامة" : "الملف غير موجود"); } catch (e) { handleWriteErr(e); } });
@@ -5219,7 +5312,8 @@ function signRequests(el){
     placeMarks(`توقيع وختم: ${r.title}`, d, async out => {
       if (!out) return;
       const bt = writeBatch(db);
-      bt.set(ref("signFiles/" + r.id + "_signed"), {reqId: r.id, data: out});
+      let kept; try { kept = await keepData(out, r.title + " - موقّع.pdf"); } catch (e) { console.error(e); return toast("ما قدرنا نحفظ الملف الموقّع على سيرفر المعهد، حاول مرة ثانية", 1); }
+      bt.set(ref("signFiles/" + r.id + "_signed"), {reqId: r.id, data: kept});
       bt.set(ref("signReqs/" + r.id), {status: "signed", doneAt: new Date().toISOString()}, {merge: true});
       try { await bt.commit(); notify("sign", r.id); logAction("توقيع وختم مستند", r.title); toast("انوقّع ورجع للمرسل"); } catch (e) { handleWriteErr(e); }
     });
@@ -5229,7 +5323,7 @@ function signRequests(el){
     if (!title) return toast("اكتب عنوان المستند"); if (!file) return toast("اختر المستند");
     let data;
     try {
-      if (file.type === "application/pdf") { if (file.size > 600000) return toast("ملف PDF كبير، لازم أقل من 600 كيلوبايت (يحتاج مكان للتوقيع والختم)"); data = await fileToDataURL(file); }
+      if (file.type === "application/pdf") { if (file.size > 15 * 1024 ** 2) return toast("ملف PDF كبير، لازم أقل من 15 ميجا"); data = await fileToDataURL(file); }
       else data = await compressImage(file);
     } catch { return toast("تعذّر قراءة الملف"); }
     const note = $("#srN").value.trim();
@@ -5237,7 +5331,8 @@ function signRequests(el){
       if (!doc) return;
       const id = "sr-" + uid() + uid(), bt = writeBatch(db);
       bt.set(ref("signReqs/" + id), {title, note, from: S.adminRole, byEmail: S.authUser.email, status: "pending", at: new Date().toISOString()});
-      bt.set(ref("signFiles/" + id), {reqId: id, data: doc});
+      let kept; try { kept = await keepData(doc, title + ".pdf"); } catch (e) { console.error(e); return toast("ما قدرنا نرفع الملف لسيرفر المعهد، حاول مرة ثانية", 1); }
+      bt.set(ref("signFiles/" + id), {reqId: id, data: kept});
       try { await bt.commit(); notify("sign", id); logAction("طلب توقيع", title); toast("انرسل للإدارة"); render(); } catch (e) { handleWriteErr(e); }
     };
     if (withMine) placeMarks(`توقيعك على: ${title}`, data, go); else go(data);
@@ -5381,15 +5476,17 @@ const taskBadge = () => { const n = RO() ? (S.tasks || []).filter(t => t.status 
 const fmtIso = s => { try { return s ? new Date(s).toLocaleString("ar-SA-u-ca-gregory-nu-latn", {timeZone: TZ, day: "numeric", month: "short", hour: "numeric", minute: "2-digit"}) : ""; } catch { return ""; } };
 async function taskFilePut(tid, side, f){
   if (!f) return null;
-  if (f.size > TASK_MAX) throw new Error("big");
-  const data = await fileToDataURL(f), meta = {name: f.name.slice(0, 120), type: f.type || "application/octet-stream", size: f.size, at: new Date().toISOString()};
+  if (f.size > SRV_MAX || (f.size > TASK_MAX && !(S.site || {}).pushUrl)) throw new Error("big");
+  const meta = {name: f.name.slice(0, 120), type: f.type || "application/octet-stream", size: f.size, at: new Date().toISOString()};
+  const data = f.size > SRV_FROM ? await srvPut(f, meta.name, meta.type) : await fileToDataURL(f);
   await setDoc(ref(`taskFiles/${tid}_${side}`), {tid, side, ...meta, data, at: new Date().toISOString()});
   return meta;
 }
 async function taskFileOpen(tid, side){
   try {
     const s = await getDoc(ref(`taskFiles/${tid}_${side}`)); if (!s.exists()) return toast("الملف مو موجود");
-    const x = s.data(), a = document.createElement("a"); a.href = x.data; a.download = x.name || "file"; document.body.appendChild(a); a.click(); a.remove();
+    const x = s.data(); if (isSrv(x.data)) return srvOpen(x.data);
+    const a = document.createElement("a"); a.href = x.data; a.download = x.name || "file"; document.body.appendChild(a); a.click(); a.remove();
   } catch (e) { console.error(e); toast("تعذّر فتح الملف"); }
 }
 function taskCard(t, mode){   // mode: owner | dept | view
@@ -5409,7 +5506,7 @@ function taskCard(t, mode){   // mode: owner | dept | view
       ${t.status === "closed" ? `<button class="btn sm" data-tret="${esc(t.id)}">إعادة فتحها</button>` : ""}
       <span class="grow"></span><button class="btn sm danger" data-tdel="${esc(t.id)}">حذف</button></div>` : ""}
     ${canWork ? `<div style="margin-top:10px"><label class="f" for="trp-${esc(t.id)}">${t.status === "done" ? "تعديل التقرير" : "تقرير الإنجاز"}<textarea id="trp-${esc(t.id)}" rows="3" maxlength="5000" placeholder="وش سويتوا، والنتيجة…">${esc(t.report || "")}</textarea></label>
-      <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center"><input type="file" id="trf-${esc(t.id)}" style="max-width:260px"><span class="muted">ملف اختياري (PDF أو صورة أو Excel) حتى 760 ك.ب</span><span class="grow"></span>
+      <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center"><input type="file" id="trf-${esc(t.id)}" style="max-width:260px"><span class="muted">ملف اختياري (PDF أو صورة أو Excel) حتى 20 ميجا</span><span class="grow"></span>
       <button class="btn pri" data-tdone="${esc(t.id)}">${t.status === "done" ? "تحديث التقرير" : "تسليم: المهمة خلصت"}</button></div>${ATT_NOTE}</div>` : ""}
   </div>`;
 }
@@ -5435,7 +5532,7 @@ function bindTaskCards(el){
       const rfile = f ? await taskFilePut(id, "r", f) : (t.rfile || null);
       await setDoc(ref("tasks/" + id), {status: "done", report, rfile, doneAt: new Date().toISOString(), doneBy: (ROLES[S.adminRole] || S.adminRole)}, {merge: true});
       logAction("تسليم مهمة من الجهة الرقابية", t.title); notify("task", id); toast("تسلّمت المهمة ✓ ووصلت للجهة الرقابية");
-    } catch (e) { console.error(e); toast(e.message === "big" ? "الملف أكبر من 760 ك.ب — صغّره أو ارفعه PDF مضغوط" : "تعذّر التسليم"); b.disabled = false; }
+    } catch (e) { console.error(e); toast(e.message === "big" ? "الملف أكبر من 20 ميجا" : "تعذّر التسليم: " + (e.detail || e.message || "")); b.disabled = false; }
   });
 }
 function tasksTab(el){
@@ -5462,7 +5559,7 @@ function ownerTasks(el){
         <label class="f" for="tkPri" style="width:130px">الأولوية<select id="tkPri"><option value="normal">عادية</option><option value="high">عاجلة</option></select></label></div>
       <label class="f" for="tkT">عنوان المهمة<input type="text" id="tkT" maxlength="150" placeholder="مثال: تقرير بالطلاب المتأخرين في السداد"></label>
       <label class="f" for="tkB">التفاصيل<textarea id="tkB" rows="4" maxlength="3000" placeholder="وش المطلوب بالضبط…"></textarea></label>
-      <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap"><input type="file" id="tkF" style="max-width:260px"><span class="muted">مرفق اختياري حتى 760 ك.ب</span><span class="grow"></span><button class="btn pri" id="tkSend">إرسال المهمة</button></div>${ATT_NOTE}</div>
+      <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap"><input type="file" id="tkF" style="max-width:260px"><span class="muted">مرفق اختياري حتى 20 ميجا</span><span class="grow"></span><button class="btn pri" id="tkSend">إرسال المهمة</button></div>${ATT_NOTE}</div>
     <div class="card"><div class="stats">
       <div class="stat"><div class="n">${all.filter(t => t.status !== "closed").length}</div><div class="l">مفتوحة</div></div>
       <div class="stat"><div class="n" style="color:var(--late, #b7791f)">${cnt("done")}</div><div class="l">بانتظار اعتمادك</div></div>
@@ -5475,7 +5572,7 @@ function ownerTasks(el){
   $("#tkfS").onchange = e => { S.tkS = e.target.value; render(); };
   $("#tkSend").onclick = async e => {
     const title = $("#tkT").value.trim(); if (!title) return toast("اكتب عنوان المهمة");
-    const f = $("#tkF").files[0]; if (f && f.size > TASK_MAX) return toast("المرفق أكبر من 760 ك.ب");
+    const f = $("#tkF").files[0]; if (f && f.size > SRV_MAX) return toast("المرفق أكبر من 20 ميجا");
     e.target.disabled = true;
     const id = "t-" + uid() + uid();
     try {
@@ -5546,7 +5643,7 @@ function attArchiveCard(el){
     for (let i = 0; i < items.length; i++) {
       const it = items[i]; out.textContent = `جاري تجهيز ${i + 1} من ${items.length}…`;
       try { const s = await getDoc(ref(it.path)); if (!s.exists()) { loaded.push(it); continue; }
-        const d = s.data().data, bytes = dataBytes(d), ext = (it.fname.match(/\.[a-z0-9]{2,5}$/i) ? "" : dataExt(d)), name = `${String(i + 1).padStart(3, "0")} - ${safeName(it.dept)} - ${safeName(it.fname)}${ext ? "." + ext : ""}`;
+        const d = await srvData(s.data().data), bytes = dataBytes(d), ext = (it.fname.match(/\.[a-z0-9]{2,5}$/i) ? "" : dataExt(d)), name = `${String(i + 1).padStart(3, "0")} - ${safeName(it.dept)} - ${safeName(it.fname)}${ext ? "." + ext : ""}`;
         files.push({name: name, data: bytes}); total += bytes.length; rows.push([it.kind, it.dept, it.label, (it.date || "").slice(0, 10), name]); loaded.push(it);
       } catch (x) { console.error(x); }
     }
@@ -6420,7 +6517,7 @@ function bindRcpt(root){
   root.querySelectorAll("[data-ratt]").forEach(inp => inp.onchange = async () => {
     const [coll, id] = inp.dataset.ratt.split(":"), f = inp.files[0]; if (!f) return;
     try { toast(isPdfFile(f) ? "جاري رفع ملف PDF…" : "جاري ضغط الصورة ورفعها…"); await saveRcpt(coll, id, await rcptData(f)); logAction("إرفاق إيصال", coll === "payments" ? "دفعة" : "مصروف"); toast("انرفق الإيصال"); inp.value = ""; if (S._finModal && S._finDraw) S._finDraw(); else render(); }
-    catch (e) { inp.value = ""; e && ["too-big", "pdf-big"].includes(e.message) ? rcptErr(e) : handleWriteErr(e); }
+    catch (e) { inp.value = ""; e && ["too-big", "pdf-big", "srv-down"].includes(e.message) ? rcptErr(e) : handleWriteErr(e); }
   });
 }
 async function saveRcpt(coll, id, img){
@@ -6429,18 +6526,51 @@ async function saveRcpt(coll, id, img){
   b.set(ref(`${coll}/${id}`), {hasImg: true}, {merge: true});
   await b.commit();
 }
-/* a receipt is a photo (compressed) or a PDF kept as it is; one Firestore document holds under 1 MB, so a PDF must be under 760 KB */
-const RCPT_PDF_MAX = 760 * 1024;   // one Firestore record holds 1 MB; the file grows by a third when stored
+/* ---- big files live on the classroom server (300 GB). Firestore keeps only a marker "srv:<rid>|<type>|<name>|<size>".
+   Small ones (a compressed photo, a PDF under ~500 KB) stay inside the record as before, and old records keep working. ---- */
+const SRV_MAX = 20 * 1024 ** 2, SRV_FROM = 500 * 1024;
+const isSrv = d => typeof d === "string" && d.startsWith("srv:");
+const srvMeta = d => { const [rid, type, name, size] = String(d).slice(4).split("|"); return {rid, type: type || "application/octet-stream", name: decodeURIComponent(name || "file"), size: Number(size) || 0}; };
+async function srvPut(blob, name, type){
+  if (blob.size > SRV_MAX) throw new Error("srv-big");
+  const t = await pushApi("/files", {action: "up", size: blob.size});
+  const r = await fetch(t.url, {method: "PUT", body: blob}); if (!r.ok) throw new Error("up " + r.status);
+  return `srv:${t.rid}|${type || blob.type || "application/octet-stream"}|${encodeURIComponent(String(name || "file").replace(/\|/g, "-").slice(0, 120))}|${blob.size}`;
+}
+async function srvUrl(d, inline){ const m = srvMeta(d); return (await pushApi("/files", {action: "get", rid: m.rid, name: m.name, type: m.type, inline: !!inline})).url; }
+async function srvData(d){   // a data URL for code that needs the bytes (signing, ZIP archive)
+  if (!isSrv(d)) return d;
+  const m = srvMeta(d), r = await fetch(await srvUrl(d)); if (!r.ok) throw new Error("get " + r.status);
+  const blob = new Blob([await r.arrayBuffer()], {type: m.type});
+  return new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = no; fr.readAsDataURL(blob); });
+}
+async function keepData(d, name){   // a data URL too big for one record goes to the server
+  if (!d || isSrv(d) || d.length < SRV_FROM * 1.37) return d;
+  const m = /^data:([^;,]+)/.exec(d), type = m ? m[1] : "application/octet-stream";
+  return srvPut(new Blob([dataBytes(d)], {type}), name, type);
+}
+async function srvOpen(d){   // download a server file in the same tab (it arrives as an attachment)
+  const a = document.createElement("a"); a.href = await srvUrl(d); a.rel = "noopener"; document.body.appendChild(a); a.click(); a.remove();
+}
+/* a receipt is a photo (compressed) or a PDF kept as it is: a big PDF goes to the classroom server (up to 20 MB) */
+const RCPT_PDF_MAX = 760 * 1024;   // without the server, one Firestore record holds 1 MB
 const isPdfFile = f => f && (f.type === "application/pdf" || /\.pdf$/i.test(f.name || ""));
 async function rcptData(f){
   if (!f) return null;
-  if (isPdfFile(f)) { if (f.size > RCPT_PDF_MAX) throw new Error("pdf-big"); const d = await fileToDataURL(f); return d.replace(/^data:[^;,]*/, "data:application/pdf"); }
+  if (isPdfFile(f)) {
+    if (f.size > SRV_FROM) {
+      try { return await srvPut(f, f.name || "file.pdf", "application/pdf"); }
+      catch (e) { console.error(e); if (f.size > RCPT_PDF_MAX) throw new Error(f.size > SRV_MAX ? "pdf-big" : "srv-down"); }
+    }
+    const d = await fileToDataURL(f); return d.replace(/^data:[^;,]*/, "data:application/pdf");
+  }
   return compressImage(f);
 }
-const rcptErr = e => toast(e && e.message === "pdf-big" ? "ملف PDF أكبر من 760 كيلوبايت. اضغطه (مثلاً من ilovepdf) أو صوّره" : "الصورة كبيرة، صوّرها بدقة أقل");
+const rcptErr = e => toast(e && e.message === "pdf-big" ? "الملف أكبر من 20 ميجا" : e && e.message === "srv-down" ? "ما قدرنا نرفع الملف لسيرفر المعهد الحين. حاول بعد شوي، أو ارفع ملف أصغر من 760 كيلوبايت" : "الصورة كبيرة، صوّرها بدقة أقل", 1);
 const pickedImg = async sel => { const f = $(sel) && $(sel).files[0]; return rcptData(f); };
 const isPdfData = d => /^data:application\/pdf/.test(d || "");
 function openRcptData(w, d){   // shows a stored receipt in a window opened by the click
+  if (isSrv(d)) { srvUrl(d, true).then(u => { w.location.href = u; }).catch(e => { console.error(e); w.close(); toast("تعذّر فتح الملف من سيرفر المعهد"); }); return; }
   if (isPdfData(d)) {
     const b = atob(d.split(",")[1] || ""), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
     const url = URL.createObjectURL(new Blob([u], {type: "application/pdf"}));
@@ -6498,7 +6628,7 @@ function finReceipts(el){
           <tr><td class="n"><b>المرجع</b></td><td class="n">${esc(r.ref || "—")}</td></tr>
           ${r.voided ? `<tr><td class="n"><b>الحالة</b></td><td class="n" style="color:#B3261E"><b>ملغى</b></td></tr>` : ""}
         </tbody></table>
-        <div style="text-align:center;margin-top:12px">${imgs[i] && /^data:image\//.test(imgs[i]) ? `<img src="${imgs[i]}" style="max-width:100%;max-height:165mm;border:1px solid #ddd;border-radius:6px">` : isPdfData(imgs[i]) ? `<p style="border:1px dashed #999;border-radius:8px;padding:14px">📄 الإيصال ملف PDF مرفق في النظام. افتحه من زر «الإيصال» واطبعه.</p>` : `<p>الصورة غير موجودة</p>`}</div>`}));
+        <div style="text-align:center;margin-top:12px">${imgs[i] && /^data:image\//.test(imgs[i]) ? `<img src="${imgs[i]}" style="max-width:100%;max-height:165mm;border:1px solid #ddd;border-radius:6px">` : (isPdfData(imgs[i]) || isSrv(imgs[i])) ? `<p style="border:1px dashed #999;border-radius:8px;padding:14px">📄 الإيصال ملف PDF مرفق في النظام. افتحه من زر «الإيصال» واطبعه.</p>` : `<p>الصورة غير موجودة</p>`}</div>`}));
       fillPrintFin(w, title, pages);
     } catch (e) { w.close(); handleWriteErr(e); }
   };
