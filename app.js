@@ -752,7 +752,10 @@ function renderAnn(){
 const pushId = t => t.replace(/[^\w:-]/g, "_").slice(0, 1400);
 const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
-const pushOn = () => pushSupported() && Notification.permission === "granted" && (() => { try { return localStorage.getItem("asasPush") === S.authUser.email; } catch { return false; } })();
+// one device can hold several accounts (e.g. a trainer who also runs academic affairs): each account gets its own record for this device
+const pushDocId = token => pushId(token).slice(0, 1300) + "__" + String(S.authUser.email || "").split("@")[0].replace(/[^\w-]/g, "_").slice(0, 60);
+const pushMine = () => { try { const v = localStorage.getItem("asasPush") || ""; return v.startsWith("[") ? JSON.parse(v) : v ? [v] : []; } catch { return []; } };
+const pushOn = () => pushSupported() && Notification.permission === "granted" && pushMine().includes(S.authUser.email);
 async function enablePush(silent){
   if (!S.authUser) return;
   if (!pushSupported()) { if (!silent) toast(isIOS() ? "على الآيفون: ثبّت البوابة على الشاشة الرئيسية من Safari أول، وافتحها من الأيقونة، وبعدها فعّل الإشعارات" : "متصفحك ما يدعم الإشعارات، جرّب Chrome"); return; }
@@ -765,8 +768,8 @@ async function enablePush(silent){
     if (!(await M.isSupported())) { if (!silent) toast("متصفحك ما يدعم الإشعارات"); return; }
     const token = await M.getToken(M.getMessaging(app), {vapidKey: vapid, serviceWorkerRegistration: reg});
     if (!token) return;
-    await setDoc(ref("pushTokens/" + pushId(token)), {token, email: S.authUser.email, role: S.role === "admin" ? S.adminRole : S.role, num: S.myNum || "", tid: S.role === "trainer" ? (S.me || "") : "", at: new Date().toISOString()});
-    try { localStorage.setItem("asasPush", S.authUser.email); } catch {}
+    await setDoc(ref("pushTokens/" + pushDocId(token)), {token, email: S.authUser.email, role: S.role === "admin" ? S.adminRole : S.role, num: S.myNum || "", tid: S.role === "trainer" ? (S.me || "") : "", at: new Date().toISOString()});
+    try { localStorage.setItem("asasPush", JSON.stringify([...new Set([...pushMine(), S.authUser.email])].slice(-6))); } catch {}
     if (!silent) { toast("تفعّلت الإشعارات ✓"); renderTop(); }
   } catch (e) { console.error(e); if (!silent) toast("تعذّر تفعيل الإشعارات"); }
 }
@@ -1653,8 +1656,8 @@ function hrBioView(el){
       <ol style="margin:0;padding-inline-start:20px;line-height:2">
         <li>في الجهاز: <b>M/OK</b> ← <b>COMM.</b> (الاتصال) ← <b>Cloud Server Setting</b>.</li>
         <li><b>Server Mode</b>: ADMS · <b>Enable Domain Name</b>: ON</li>
-        <li><b>Server Address</b>: <code dir="ltr" style="user-select:all">${esc(host || "— اضبط رابط خدمة الإشعارات أول —")}</code></li>
-        <li><b>Server Port</b>: <code>443</code> و <b>HTTPS</b>: ON. لو ما فيه خيار HTTPS في جهازك: المنفذ <code>80</code>.</li>
+        <li><b>Server Address</b>: <code dir="ltr" style="user-select:all">http://${esc(host || "— اضبط رابط خدمة الإشعارات أول —")}</code></li>
+        <li>لو جهازك فيه خانة <b>Server Port</b>: اكتب <code>80</code>. <b>Enable Proxy Server</b>: OFF.</li>
         <li>اطلع من القائمة وانتظر دقيقة. يطلع هنا «جهاز جديد يحاول يتصل»، اضغط «اعتماد».</li>
       </ol></div>
     <div class="card"><h3 style="margin-top:0">ربط الموظفين بأرقام البصمة</h3>
