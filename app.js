@@ -6186,6 +6186,10 @@ function finReqTab(el){
     } catch (e) { b.disabled = false; handleWriteErr(e); }
   });
 }
+/* installments are named in words; extra fees keep their own name */
+const ORD = ["الأول", "الثاني", "الثالث", "الرابع", "الخامس", "السادس", "السابع", "الثامن", "التاسع", "العاشر", "الحادي عشر", "الثاني عشر"];
+const instKey = i => i.xi !== undefined ? "x" + i.xi : "i" + i.ix;
+const instName = (i, sched) => { if (i.xi !== undefined) return i.label || "رسوم إضافية"; const n = sched ? sched.filter(x => x.xi === undefined).indexOf(i) : i.ix; return "القسط " + (ORD[n] || n + 1); };
 /* paid vs schedule: overdue = what fell due by today minus what was paid */
 function accStatus(acc, pays){
   const extras = acc.extras || [];
@@ -6196,7 +6200,16 @@ function accStatus(acc, pays){
   inst.forEach(i => { cum += Number(i.amount) || 0; if (i.due <= today()) dueNow = cum; else if (!next && cum > paid) next = i; });
   const remaining = Math.max(0, Math.round((net - paid) * 100) / 100), overdue = Math.max(0, Math.round((dueNow - paid) * 100) / 100);
   const status = !net ? "none" : remaining === 0 ? "paid" : overdue > 0 ? "late" : "ok";
-  let run = 0; const sched = inst.map(i => { const before = run; run += Number(i.amount) || 0; const covered = Math.max(0, Math.min(Number(i.amount) || 0, paid - before)); return {...i, covered, st: covered >= (Number(i.amount) || 0) - 0.001 ? "paid" : i.due <= today() ? "late" : covered > 0 ? "part" : "due"}; });
+  // a payment marked for an installment (p.inst = "i0", "x1"…) goes to it first; the rest fills the schedule in date order
+  const sched = inst.map(i => ({...i, key: instKey(i), covered: 0, pays: []}));
+  const live = pays.filter(p => !p.void).sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.receiptNo || "").localeCompare(b.receiptNo || ""));
+  const room = i => Math.max(0, (Number(i.amount) || 0) - i.covered), put = (i, p, a) => { if (a <= 0.0001) return; i.covered = Math.round((i.covered + a) * 100) / 100; i.pays.push({p, amount: a}); };
+  const pool = [];
+  live.forEach(p => { let left = Number(p.amount) || 0; const t = p.inst && sched.find(i => i.key === p.inst);
+    if (t) { const a = Math.min(left, room(t)); put(t, p, a); left = Math.round((left - a) * 100) / 100; }
+    if (left > 0.0001) pool.push({p, left}); });
+  pool.forEach(x => { for (const i of sched) { if (x.left <= 0.0001) break; const a = Math.min(x.left, room(i)); put(i, x.p, a); x.left = Math.round((x.left - a) * 100) / 100; } });
+  sched.forEach(i => { i.st = i.covered >= (Number(i.amount) || 0) - 0.001 ? "paid" : i.due <= today() ? "late" : i.covered > 0 ? "part" : "due"; });
   return {net, paid, remaining, overdue, status, next, sched};
 }
 const FST = {none: "بدون خطة", paid: "مسدد", ok: "منتظم", late: "متأخر"};
@@ -6279,13 +6292,12 @@ function openFinAccount(num){
   const draw = () => {
     const st = accStatus(acc, paysOf(num)), pays = paysOf(num).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
     /* which payments covered which installment: payments fill the schedule in date order */
-    let pr = 0; const ranges = paysOf(num).filter(p => !p.void).sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.receiptNo || "").localeCompare(b.receiptNo || "")).map(p => { const r = {p, from: pr, to: pr + Number(p.amount)}; pr = r.to; return r; });
-    let ir = 0; const instRange = st.sched.map(i => { const r = {from: ir, to: ir + Number(i.amount)}; ir = r.to; return r; });
     const instCell = (i, k) => {
-      const r = instRange[k], by = ranges.filter(x => x.from < r.to - 0.001 && x.to > r.from + 0.001).map(x => x.p);
       const left = Math.max(0, Math.round((Number(i.amount) - i.covered) * 100) / 100);
-      return by.map(p => p.hasImg ? `<button class="btn sm" data-rview="payments:${esc(p.id)}" title="سند ${esc(p.receiptNo)}">إيصال ${esc(p.receiptNo.split("-")[1] || "")}</button>` : `<span class="muted" style="font-size:12px">سند ${esc(p.receiptNo)} بدون إيصال</span>`).join(" ")
-        + (left > 0 && (S.finAcc || {})[num] ? ` <button class="btn sm gold" data-payinst="${left}" data-instlbl="${esc(i.label || "القسط " + (k + 1))}">تسجيل الدفعة</button>` : "");
+      // a payment bigger than one installment covers several: each row says how much it took from that receipt
+      const part = x => Math.abs(x.amount - Number(x.p.amount)) > 0.01 ? `<div class="muted" style="font-size:12px;white-space:nowrap">${SAR(x.amount)} من سند ${SAR(x.p.amount)}</div>` : "";
+      return i.pays.map(x => { const p = x.p; return `<span style="display:inline-block;margin:2px">` + (p.hasImg ? `<button class="btn sm" data-rview="payments:${esc(p.id)}" title="سند ${esc(p.receiptNo)}">إيصال ${esc(p.receiptNo.split("-")[1] || "")}</button>` : `<span class="muted" style="font-size:12px">سند ${esc(p.receiptNo)} بدون إيصال</span>`) + part(x) + `</span>`; }).join(" ")
+        + (left > 0 && (S.finAcc || {})[num] ? ` <button class="btn sm gold" data-payinst="${left}" data-instkey="${esc(i.key)}" data-instlbl="${esc(instName(i, st.sched))}">تسجيل الدفعة</button>` : "");
     };
     $("#modalBox").innerHTML = `
     <div class="row" style="justify-content:space-between"><h2 style="margin:0;font-family:var(--display);color:var(--green);font-weight:600">${esc(s.name)} · ${esc(num)}</h2><button class="btn sm" id="fx">إغلاق</button></div>
@@ -6309,8 +6321,8 @@ function openFinAccount(num){
         <label class="f grow" for="fPh">جوال للتذكير (الطالب أو ولي الأمر)<input type="tel" id="fPh" dir="ltr" value="${esc(acc.phone || "")}" placeholder="05xxxxxxxx"></label>
         <label class="f grow" for="fPar">سجّل عن طريق (للعمولة)<select id="fPar"><option value="">بدون شريك</option>${(S.finSet.partners || []).map(p => `<option value="${esc(p.id)}" ${acc.partner === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>
       </div>
-      <div class="tbl" style="margin-top:10px"><table><thead><tr><th>الدفعة</th><th>الاستحقاق</th><th>المبلغ</th><th>الحالة</th><th>الإيصال</th></tr></thead><tbody>
-        ${st.sched.map((i, k) => i.xi !== undefined ? `<tr><td>${esc(i.label)}</td><td>${dH(i.due)}</td><td>${SAR(i.amount)}</td><td><span class="pill ${INST_PILL[i.st]}">${INST_ST[i.st]}</span></td><td>${instCell(i, k)}</td></tr>` : `<tr><td>${k + 1}</td><td><input type="date" data-idue="${i.ix}" value="${esc(i.due)}" style="width:150px;padding:4px"></td><td><input type="number" data-iamt="${i.ix}" value="${i.amount}" style="width:110px;padding:4px"></td><td><span class="pill ${INST_PILL[i.st]}">${INST_ST[i.st]}</span></td><td>${instCell(i, k)}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">اضغط "توليد الجدول"</td></tr>`}
+      <div class="tbl" style="margin-top:10px"><table><thead><tr><th>القسط</th><th>الاستحقاق (تقدر تغيّره)</th><th>المبلغ</th><th>الحالة</th><th>الإيصال</th></tr></thead><tbody>
+        ${st.sched.map((i, k) => i.xi !== undefined ? `<tr><td>${esc(i.label)}</td><td>${dH(i.due)}</td><td>${SAR(i.amount)}</td><td><span class="pill ${INST_PILL[i.st]}">${INST_ST[i.st]}</span></td><td>${instCell(i, k)}</td></tr>` : `<tr><td><b>${esc(instName(i, st.sched))}</b></td><td><input type="date" data-idue="${i.ix}" value="${esc(i.due)}" style="width:150px;padding:4px"></td><td><input type="number" data-iamt="${i.ix}" value="${i.amount}" style="width:110px;padding:4px"></td><td><span class="pill ${INST_PILL[i.st]}">${INST_ST[i.st]}</span></td><td>${instCell(i, k)}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">اضغط "توليد الجدول"</td></tr>`}
       </tbody></table></div>
       <div class="row" style="margin-top:10px"><button class="btn pri" id="fSave">حفظ الحساب</button><span class="muted" id="fChk"></span></div>
     </div>
@@ -6326,12 +6338,15 @@ function openFinAccount(num){
         <label class="f" for="pM" style="width:170px">الطريقة<select id="pM">${METHODS.map(m => `<option ${acc.plan === "qasima" && m === "قسيمة بلس" ? "selected" : ""}>${m}</option>`).join("")}</select></label>
         <label class="f" for="pD" style="width:160px">التاريخ<input type="date" id="pD" value="${today()}" max="${today()}"></label>
         <label class="f grow" for="pRef">رقم العملية / المرجع<input type="text" id="pRef"></label>
+        <label class="f" for="pInst" style="width:170px">عن أي قسط<select id="pInst"><option value="">تلقائي (الأقدم أول)</option>${st.sched.map(i => `<option value="${esc(i.key)}">${esc(instName(i, st.sched))}</option>`).join("")}</select></label>
       </div>
       <div class="row" style="margin-top:8px"><label class="f grow" for="pN">ملاحظة<input type="text" id="pN"></label><label class="f grow" for="pImg">الإيصال: صورة أو PDF (اختياري)<input type="file" id="pImg" accept="image/*,application/pdf,.pdf"></label></div>
       <div class="row" style="margin-top:8px"><button class="btn gold" id="pAdd" ${(S.finAcc || {})[num] ? "" : "disabled"}>تسجيل الدفعة وطباعة السند</button>${(S.finAcc || {})[num] ? "" : `<span class="muted">احفظ الحساب أول</span>`}</div>
     </div>
     <div><h3>الدفعات (${pays.length})</h3><div class="list">${pays.map(p => `<div class="item" style="${p.void ? "opacity:.55" : ""}"><div class="grow"><div class="t">${SAR(p.amount)} · ${esc(p.method)}</div><div class="muted">سند ${esc(p.receiptNo)} · ${dH(p.date)}${p.ref ? " · " + esc(p.ref) : ""}${p.void ? " · ملغى: " + esc(p.voidReason || "") : ""}</div></div>
-      ${rcptBtns("payments", p)}<button class="btn sm" data-prc="${esc(p.id)}">السند</button>${p.void ? "" : `<button class="btn sm danger" data-pv="${esc(p.id)}">إلغاء</button>`}</div>`).join("") || `<span class="muted">ما فيه دفعات</span>`}</div></div>
+      ${p.void ? "" : `<select data-pinst="${esc(p.id)}" title="عن أي قسط" style="width:auto;padding:4px 6px;font-size:13px"><option value="">القسط: تلقائي</option>${st.sched.map(i => `<option value="${esc(i.key)}" ${p.inst === i.key ? "selected" : ""}>${esc(instName(i, st.sched))}</option>`).join("")}</select>
+      <button class="btn sm" data-pdate="${esc(p.id)}">تعديل التاريخ</button>`}
+      ${rcptBtns("payments", p)}<button class="btn sm" data-prc="${esc(p.id)}">السند</button>${p.void ? `<button class="btn sm gold" data-pres="${esc(p.id)}">استرجاع</button>` : `<button class="btn sm danger" data-pv="${esc(p.id)}">إلغاء</button>`}</div>`).join("") || `<span class="muted">ما فيه دفعات</span>`}</div></div>
     <div class="row"><button class="btn sm" id="fStmt">كشف حساب PDF</button>${acc.phone ? `<a class="btn sm gold" target="_blank" rel="noopener" href="https://wa.me/${normPhone(acc.phone)}?text=${encodeURIComponent(finReminder(s, st))}">تذكير واتساب</a>` : ""}</div>`;
     $("#fx").onclick = () => { S._finModal = null; closeModal(); };
     const readForm = () => { acc.program = $("#fP").value; acc.fee = Number($("#fFee").value) || 0; acc.discount = Number($("#fDis").value) || 0; acc.discountNote = $("#fDisN").value.trim(); acc.plan = $("#fPl").value; acc.start = $("#fSt").value; acc.months = Number($("#fMo").value) || 4; acc.second = $("#fSec").value; acc.phone = $("#fPh").value.trim(); acc.partner = $("#fPar").value;
@@ -6360,7 +6375,7 @@ function openFinAccount(num){
       if (amount > st.remaining + 0.01) return toast(`المبلغ أكبر من المتبقي (${SAR(st.remaining)})`);
       const w = openPrint(); if (!w) return;
       let img = null; try { img = await pickedImg("#pImg"); } catch (e) { w.close(); return rcptErr(e); }
-      const pay = {num, name: s.name, amount, method: $("#pM").value, date: $("#pD").value || today(), ref: $("#pRef").value.trim(), note: $("#pN").value.trim(), program: acc.program, by: S.adminRole, void: false};
+      const pay = {...($("#pInst").value ? {inst: $("#pInst").value} : {}), num, name: s.name, amount, method: $("#pM").value, date: $("#pD").value || today(), ref: $("#pRef").value.trim(), note: $("#pN").value.trim(), program: acc.program, by: S.adminRole, void: false};
       try {
         const id = "p-" + uid() + uid();
         await runTransaction(db, async tx => {
@@ -6377,7 +6392,7 @@ function openFinAccount(num){
     };
     bindRcpt($("#modalBox"));
     $("#modalBox").querySelectorAll("[data-payinst]").forEach(b => b.onclick = () => {
-      $("#pAmt").value = b.dataset.payinst; $("#pN").value = b.dataset.instlbl;
+      $("#pAmt").value = b.dataset.payinst; $("#pN").value = b.dataset.instlbl; $("#pInst").value = b.dataset.instkey || "";
       $("#pAmt").closest(".card").scrollIntoView({behavior: "smooth", block: "center"});
       $("#pImg").focus(); toast("المبلغ جاهز، أرفق صورة الإيصال واضغط تسجيل الدفعة");
     });
@@ -6387,6 +6402,23 @@ function openFinAccount(num){
       if (!b.dataset.sure) { b.dataset.sure = 1; b.insertAdjacentHTML("beforebegin", `<input type="text" id="pvR" placeholder="سبب الإلغاء" style="width:160px">`); b.textContent = "تأكيد الإلغاء"; return; }
       if (!reason || !reason.trim()) return toast("اكتب سبب الإلغاء");
       try { await setDoc(ref("payments/" + b.dataset.pv), {void: true, voidReason: reason.trim(), voidBy: S.adminRole, voidAt: new Date().toISOString()}, {merge: true}); logAction("إلغاء دفعة", `${s.name} · ${reason.trim()}`); toast("انلغت الدفعة"); }
+      catch (e) { handleWriteErr(e); }
+    });
+    $("#modalBox").querySelectorAll("[data-pinst]").forEach(sl => sl.onchange = async () => {
+      const p = pays.find(x => x.id === sl.dataset.pinst), v = sl.value, nm = v ? sl.selectedOptions[0].textContent : "تلقائي";
+      try { await setDoc(ref("payments/" + p.id), {inst: v}, {merge: true}); p.inst = v; logAction("تحديد قسط دفعة", `${s.name} · سند ${p.receiptNo} ← ${nm}`); toast("انحفظ: " + nm); draw(); } catch (e) { handleWriteErr(e); }
+    });
+    $("#modalBox").querySelectorAll("[data-pdate]").forEach(b => b.onclick = () => {
+      if (!b.dataset.open) { b.dataset.open = 1; b.insertAdjacentHTML("beforebegin", `<input type="date" id="pdv-${b.dataset.pdate}" value="${esc((pays.find(x => x.id === b.dataset.pdate) || {}).date || today())}" max="${today()}" style="width:150px">`); b.textContent = "حفظ التاريخ"; return; }
+      const p = pays.find(x => x.id === b.dataset.pdate), v = ($("#pdv-" + p.id) || {}).value;
+      if (!v || v > today()) return toast("اختر تاريخ صحيح"); if (v === p.date) return draw();
+      setDoc(ref("payments/" + p.id), {date: v, dateWas: p.dateWas || p.date || "", dateBy: S.adminRole, dateAt: new Date().toISOString()}, {merge: true})
+        .then(() => { logAction("تعديل تاريخ دفعة", `${s.name} · سند ${p.receiptNo} · ${p.date} ← ${v}`); toast("انعدّل التاريخ"); draw(); }).catch(handleWriteErr);
+    });
+    $("#modalBox").querySelectorAll("[data-pres]").forEach(b => b.onclick = async () => {
+      if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟ ترجع الدفعة محسوبة"; return; }
+      const p = pays.find(x => x.id === b.dataset.pres);
+      try { await setDoc(ref("payments/" + p.id), {void: false, restoredBy: S.adminRole, restoredAt: new Date().toISOString()}, {merge: true}); logAction("استرجاع دفعة ملغاة", `${s.name} · سند ${p.receiptNo} · ${SAR(p.amount)}`); toast("رجعت الدفعة"); }
       catch (e) { handleWriteErr(e); }
     });
     $("#fStmt").onclick = () => { const w = openPrint(); fillPrintFin(w, `كشف حساب ${s.name}`, [{html: statementHTML(s, acc, accStatus(acc, paysOf(num)), paysOf(num))}]); };
@@ -6504,7 +6536,7 @@ function finSettings(el){
 
 
 /* ---- receipt images (compressed into Firestore, kept apart from the payment record) ---- */
-const rcptBtns = (coll, x) => x.hasImg ? `<button class="btn sm" data-rview="${coll}:${esc(x.id)}">الإيصال</button>` : x.void ? "" : `<label class="btn sm" style="cursor:pointer">إرفاق إيصال<input type="file" accept="image/*,application/pdf,.pdf" data-ratt="${coll}:${esc(x.id)}" hidden></label>`;
+const rcptBtns = (coll, x) => x.hasImg ? `<button class="btn sm" data-rview="${coll}:${esc(x.id)}">الإيصال</button>${x.void ? "" : `<label class="btn sm" style="cursor:pointer" title="ارفع الإيصال الصحيح بدل الحالي">استبدال<input type="file" accept="image/*,application/pdf,.pdf" data-ratt="${coll}:${esc(x.id)}" data-rrep="1" hidden></label><button class="btn sm danger" data-rdel="${coll}:${esc(x.id)}" title="حذف الإيصال بس، والدفعة تبقى">حذف الإيصال</button>`}` : x.void ? "" : `<label class="btn sm" style="cursor:pointer">إرفاق إيصال<input type="file" accept="image/*,application/pdf,.pdf" data-ratt="${coll}:${esc(x.id)}" hidden></label>`;
 function bindRcpt(root){
   root.querySelectorAll("[data-rview]").forEach(b => b.onclick = () => {
     const [, id] = b.dataset.rview.split(":");
@@ -6514,11 +6546,22 @@ function bindRcpt(root){
       openRcptData(w, x.exists() && x.data().img);
     }).catch(() => { w.close(); toast("تعذّر فتح الإيصال"); });
   });
+  root.querySelectorAll("[data-rdel]").forEach(b => b.onclick = async () => {
+    if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟ (الدفعة ما تنحذف)"; return; }
+    const [coll, id] = b.dataset.rdel.split(":"); b.disabled = true;
+    try { await delRcpt(coll, id); logAction("حذف إيصال", coll === "payments" ? "دفعة" : "مصروف"); toast("انحذف الإيصال، والدفعة باقية"); if (S._finDraw) S._finDraw(); else render(); }
+    catch (e) { b.disabled = false; handleWriteErr(e); }
+  });
   root.querySelectorAll("[data-ratt]").forEach(inp => inp.onchange = async () => {
     const [coll, id] = inp.dataset.ratt.split(":"), f = inp.files[0]; if (!f) return;
-    try { toast(isPdfFile(f) ? "جاري رفع ملف PDF…" : "جاري ضغط الصورة ورفعها…"); await saveRcpt(coll, id, await rcptData(f)); logAction("إرفاق إيصال", coll === "payments" ? "دفعة" : "مصروف"); toast("انرفق الإيصال"); inp.value = ""; if (S._finModal && S._finDraw) S._finDraw(); else render(); }
+    try { toast(isPdfFile(f) ? "جاري رفع ملف PDF…" : "جاري ضغط الصورة ورفعها…"); await saveRcpt(coll, id, await rcptData(f)); logAction(inp.dataset.rrep ? "استبدال إيصال" : "إرفاق إيصال", coll === "payments" ? "دفعة" : "مصروف"); toast("انرفق الإيصال"); inp.value = ""; if (S._finModal && S._finDraw) S._finDraw(); else render(); }
     catch (e) { inp.value = ""; e && ["too-big", "pdf-big", "srv-down"].includes(e.message) ? rcptErr(e) : handleWriteErr(e); }
   });
+}
+async function delRcpt(coll, id){
+  const b = writeBatch(db);
+  b.delete(ref("receipts/" + id)); b.set(ref(`${coll}/${id}`), {hasImg: false}, {merge: true});
+  await b.commit();
 }
 async function saveRcpt(coll, id, img){
   const b = writeBatch(db);
