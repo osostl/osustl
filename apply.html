@@ -116,8 +116,10 @@ async function boot(){
     const r = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents/public/site`);
     const j = await r.json(); API = (((j.fields || {}).pushUrl || {}).stringValue || "").replace(/\/+$/, "");
     if (!API) throw new Error("no api");
-    CFG = await (await fetch(API + "/apply")).json();
-  } catch (e) { console.error(e); $("#view").innerHTML = `<div class="notice err">تعذّر تحميل الصفحة. تأكد من الاتصال وحدّث الصفحة.</div>`; return; }
+    const res = await fetch(API + "/apply"), txt = await res.text();
+    try { CFG = JSON.parse(txt); } catch { throw new Error("old-service"); }
+    if (!CFG || !Array.isArray(CFG.programs)) throw new Error(CFG && CFG.error ? "svc:" + CFG.error : "old-service");
+  } catch (e) { console.error(e); $("#view").innerHTML = `<div class="notice err">تعذّر تحميل الصفحة. ${e.message === "old-service" ? "خدمة التسجيل في المعهد ما تحدّثت بعد." : "تأكد من الاتصال وحدّث الصفحة."}<br><small style="opacity:.7">${esc(e.message || "")}</small></div>`; return; }
   draw();
 }
 function draw(){

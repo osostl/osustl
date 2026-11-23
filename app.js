@@ -2519,7 +2519,7 @@ function hrAttView(el){
     <div class="stats" style="margin-top:10px">${["p", "l", "a", "v", "x"].map(k => `<div class="stat"><div class="n">${cnt[k]}</div><div class="l">${HR_ST[k]}</div></div>`).join("")}</div></div>
   ${d === today() ? hrAlertsCard(working, draft, d) : ""}
   ${!staff.length ? `<div class="card empty">ما فيه موظفين. أضفهم من تبويب «الموظفين».</div>` : `<div class="list">${working.map(s => { const r = draft[s.id] || {}, st = hrAuto(s, r, d), late = hrLateMin(s, r, d), sh = hrSh(s, d), lv = hrLeaveOn(s.id, d);
-    return `<div class="item" style="flex-wrap:wrap;gap:8px"><div class="grow" style="min-width:160px"><b>${esc(s.name)}</b>${r.src === "bio" ? ` <span title="من جهاز البصمة${(r.punches || []).length ? ": " + esc(r.punches.join("، ")) : ""}">🖐</span>` : ""}<div class="muted">${esc(s.job || "")} · الدوام ${esc(sh.from)}–${esc(sh.to)}${lv ? ` · <b>إجازة ${esc(LV_T[lv.type] || "")}</b>` : ""}${(r.early || []).length && !r.in ? ` · <span style="color:var(--abs)">بصمة مبكرة ما انحسبت ${esc(r.early.join("، "))}</span>` : ""}</div></div>
+    return `<div class="item" style="flex-wrap:wrap;gap:8px"><div class="grow" style="min-width:160px"><b>${esc(s.name)}</b>${r.src === "bio" ? ` <span title="من جهاز البصمة${(r.punches || []).length ? ": " + esc(r.punches.join("، ")) : ""}">🖐</span>` : ""}<div class="muted">${esc(s.job || "")} · الدوام ${esc(sh.from)}–${esc(sh.to)}${lv ? ` · <b>إجازة ${esc(LV_T[lv.type] || "")}</b>` : ""}${(r.early || []).length && !r.in ? ` · <span style="color:var(--abs)">بصمة مبكرة ما انحسبت ${esc(r.early.join("، "))}</span>` : ""}${r.bOut ? ` · <span title="البريك">☕ ${esc(r.bOut)}–${esc(r.bIn || "…")}${r.bOver ? ` <b style="color:var(--abs)">(+${r.bOver} د)</b>` : ""}</span>` : ""}</div></div>
       <label class="row" style="gap:4px">دخول<input type="time" data-hin="${s.id}" value="${esc(r.in || "")}" style="width:110px"></label>
       <label class="row" style="gap:4px">خروج<input type="time" data-hout="${s.id}" value="${esc(r.out || "")}" style="width:110px"></label>
       <select data-hst="${s.id}" style="width:auto"><option value="">تلقائي</option>${["v", "x"].map(k => `<option value="${k}" ${r.st === k ? "selected" : ""}>${HR_ST[k]}</option>`).join("")}</select>
@@ -2797,7 +2797,14 @@ function hrSetView(el){
       <div class="list" style="margin-top:8px">${H.map((h, i) => `<div class="item"><span class="grow"><b>${esc(h.label)}</b> <span class="muted">· ${esc(h.from)}${h.to && h.to !== h.from ? ` → ${esc(h.to)}` : ""}</span></span>${RO() ? "" : `<button class="btn sm danger" data-hhx="${esc(h.from)}|${esc(h.label)}">حذف</button>`}</div>`).join("") || `<div class="empty">ما فيه عطل مسجّلة.</div>`}</div></div>
     <div class="card"><h2>وقت البصمة</h2>
       <label class="f" for="pyEarly" style="width:300px">يقدر الموظف يبصم قبل بداية دوامه بـ (دقيقة)<input type="number" id="pyEarly" min="0" max="180" value="${esc(P.earlyMin ?? 10)}" ${RO() ? "disabled" : ""}></label>
-      <p class="muted" style="margin:4px 0 0">مثال: الدوام 8:00 والوقت 10 دقائق، فالبصمة تنحسب من 7:50. البصمة قبلها ما تنحسب حضور، ويطلع جنب الموظف «بصمة مبكرة ما انحسبت»، ويلزمه يبصم مرة ثانية بعد ما يفتح الوقت.</p>
+      <p class="muted" style="margin:4px 0 0">مثال: الدوام 8:00 والوقت 10 دقائق، فالبصمة تنحسب من 7:50. لو بصم قبلها وما بصم بعدها شي، ما تنحسب حضور ويطلع «بصمة مبكرة ما انحسبت». ولو بصم قبلها وبصم خروج بعدين، ينحسب <b>حاضر</b> وتنكتب ملاحظة.</p>
+      <div style="margin-top:12px;padding:10px;border:1px dashed var(--line);border-radius:10px"><label class="row" style="gap:6px"><input type="checkbox" id="pyBrk" ${(P.brk || {}).on ? "checked" : ""} ${RO() ? "disabled" : ""}> <b>☕ بصمة البريك</b></label>
+        <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap"><label class="f" style="width:140px">من<input type="time" id="pyBF" value="${esc((P.brk || {}).from || "12:00")}" ${RO() ? "disabled" : ""}></label><label class="f" style="width:140px">إلى<input type="time" id="pyBT" value="${esc((P.brk || {}).to || "14:00")}" ${RO() ? "disabled" : ""}></label>
+          <label class="f" style="width:150px">مدة البريك (دقيقة)<input type="number" id="pyBM" min="5" max="240" value="${esc((P.brk || {}).max ?? 60)}" ${RO() ? "disabled" : ""}></label>
+          <label class="f" style="width:190px">يُحسب تأخير من (دقيقة)<input type="number" id="pyBG" min="0" max="120" value="${esc((P.brk || {}).grace ?? 10)}" ${RO() ? "disabled" : ""}></label></div>
+        <p class="muted" style="margin:4px 0 0">الموظف يبصم وهو طالع للبريك (بين 12:00 و2:00) ويبصم لما يرجع، والبصمتين ما تنحسب خروج. المجموع ساعة: اللي يطلع 12 يرجع 1، واللي يطلع 1 يرجع 2. لو تعدّى الساعة أو رجع بعد 2:00 بـ10 دقائق أو أكثر، تنحسب الدقائق <b>تأخير</b> (وتدخل في خصم التأخير لو مفعّل)، وتنكتب ملاحظة «تأخّر بالرجوع من البريك». ولو بصم طالع وما رجع، يطلع جنب اسمه «☕ 12:30–…».</p></div>
+      <label class="f" for="pyDev" style="width:300px;margin-top:8px">الخروج قبل نهاية الدوام بـ (دقيقة) أو أكثر تنكتب عليه ملاحظة<input type="number" id="pyDev" min="1" max="240" value="${esc(P.devMin ?? 20)}" ${RO() ? "disabled" : ""}></label>
+      <p class="muted" style="margin:4px 0 0">مثال: الدوام 10:00–18:00 والوقت 20 دقيقة. اللي يبصم 9:40 ويطلع 17:40 ينحسب حاضر، وتنكتب تلقائياً في ملاحظته: «حاضر، لكن مخالف للدوام المعتمد في التعميم: دخل 09:40 قبل بداية الدوام بـ20 د، وخرج 17:40 قبل نهاية الدوام بـ20 د». ولو عنده إذن، تكتب بدلها مثلاً «مأذون له»، وملاحظتك ما يمسحها الجهاز.</p>
       ${RO() ? "" : `<button class="btn pri" id="pyEarlySave" style="margin-top:8px">حفظ</button>`}</div>
     <div class="card"><h2>خصومات الرواتب</h2><p class="muted" style="margin-top:0">تُستخدم في «التقرير الشهري والرواتب». أجر اليوم = (الراتب الأساسي + البدلات) ÷ 30.</p>
       <label class="row" style="gap:6px;margin:6px 0"><input type="checkbox" id="pyAbs" ${P.absOff ? "" : "checked"} ${RO() ? "disabled" : ""}> خصم الغياب (يوم بيوم)</label>
@@ -2809,7 +2816,7 @@ function hrSetView(el){
   const saveH = async list => { try { await setDoc(ref("hrCfg/cal"), {holidays: list}, {merge: true}); logAction("العطل الرسمية للموظفين", `${list.length} عطلة`); } catch (x) { handleWriteErr(x); } };
   $("#hhAdd").onclick = () => { const label = $("#hhL").value.trim(), from = $("#hhF").value, to = $("#hhT").value || from; if (!label || !from) return toast("اكتب المناسبة وتاريخها"); if (to < from) return toast("التاريخ غير صحيح"); saveH([...(C.holidays || []), {label: label.slice(0, 60), from, to}]); };
   el.querySelectorAll("[data-hhx]").forEach(b => b.onclick = () => { const [f, l] = b.dataset.hhx.split("|"); saveH((C.holidays || []).filter(h => !(h.from === f && h.label === l))); });
-  $("#pyEarlySave").onclick = async () => { try { await setDoc(ref("hrCfg/pay"), {earlyMin: Math.max(0, Math.min(180, Number($("#pyEarly").value) || 0))}, {merge: true}); logAction("وقت البصمة قبل الدوام", $("#pyEarly").value + " دقيقة"); toast("انحفظ"); } catch (x) { handleWriteErr(x); } };
+  $("#pyEarlySave").onclick = async () => { try { await setDoc(ref("hrCfg/pay"), {earlyMin: Math.max(0, Math.min(180, Number($("#pyEarly").value) || 0)), devMin: Math.max(1, Math.min(240, Number($("#pyDev").value) || 20)), brk: {on: $("#pyBrk").checked, from: $("#pyBF").value || "12:00", to: $("#pyBT").value || "14:00", max: Math.max(5, Math.min(240, Number($("#pyBM").value) || 60)), grace: Math.max(0, Math.min(120, Number($("#pyBG").value) ?? 10))}}, {merge: true}); logAction("وقت البصمة قبل الدوام", $("#pyEarly").value + " دقيقة"); toast("انحفظ"); } catch (x) { handleWriteErr(x); } };
   $("#pySave").onclick = async () => { try { await setDoc(ref("hrCfg/pay"), {absOff: !$("#pyAbs").checked, lateOn: $("#pyLate").checked, lateFree: Math.max(0, Number($("#pyFree").value) || 0)}, {merge: true}); logAction("خصومات الرواتب", ""); toast("انحفظ"); } catch (x) { handleWriteErr(x); } };
 }
 function hrRepRows(m){
@@ -2823,7 +2830,8 @@ function hrRepRows(m){
       const st = lv ? (lv.type === "perm" ? "x" : "v") : r ? (r.st || hrAuto(s, r, d)) : "a"; c[st]++;
       if (lv && lv.type === "unpaid") c.unpaid++;
       if (st === "l") c.late += r.late ?? hrLateMin(s, r, d);
-      const i = hm(r && r.in), o = hm(r && r.out); if (i !== null && o !== null && o > i) c.mins += o - i; });
+      if (r && (st === "p" || st === "l")) c.late += Number(r.bOver) || 0;   // coming back late from the break is lateness too
+      const i = hm(r && r.in), o = hm(r && r.out); if (i !== null && o !== null && o > i) c.mins += o - i - (Number(r.bMins) || 0); });
     return {s, c, pay: hrPayCalc(s, c)}; });
 }
 /* deductions follow «العطل والخصومات»: a day's pay = (salary + allowances) / 30; a late minute = a day's pay / the shift's minutes */
