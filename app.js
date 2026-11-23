@@ -5640,7 +5640,7 @@ function openFinAccount(num){
         <label class="f" for="pD" style="width:160px">التاريخ<input type="date" id="pD" value="${today()}" max="${today()}"></label>
         <label class="f grow" for="pRef">رقم العملية / المرجع<input type="text" id="pRef"></label>
       </div>
-      <div class="row" style="margin-top:8px"><label class="f grow" for="pN">ملاحظة<input type="text" id="pN"></label><label class="f grow" for="pImg">صورة الإيصال (اختياري)<input type="file" id="pImg" accept="image/*"></label></div>
+      <div class="row" style="margin-top:8px"><label class="f grow" for="pN">ملاحظة<input type="text" id="pN"></label><label class="f grow" for="pImg">الإيصال: صورة أو PDF (اختياري)<input type="file" id="pImg" accept="image/*,application/pdf,.pdf"></label></div>
       <div class="row" style="margin-top:8px"><button class="btn gold" id="pAdd" ${(S.finAcc || {})[num] ? "" : "disabled"}>تسجيل الدفعة وطباعة السند</button>${(S.finAcc || {})[num] ? "" : `<span class="muted">احفظ الحساب أول</span>`}</div>
     </div>
     <div><h3>الدفعات (${pays.length})</h3><div class="list">${pays.map(p => `<div class="item" style="${p.void ? "opacity:.55" : ""}"><div class="grow"><div class="t">${SAR(p.amount)} · ${esc(p.method)}</div><div class="muted">سند ${esc(p.receiptNo)} · ${dH(p.date)}${p.ref ? " · " + esc(p.ref) : ""}${p.void ? " · ملغى: " + esc(p.voidReason || "") : ""}</div></div>
@@ -5672,7 +5672,7 @@ function openFinAccount(num){
       if (amount <= 0) return toast("اكتب المبلغ");
       if (amount > st.remaining + 0.01) return toast(`المبلغ أكبر من المتبقي (${SAR(st.remaining)})`);
       const w = openPrint(); if (!w) return;
-      let img = null; try { img = await pickedImg("#pImg"); } catch { w.close(); return toast("صورة الإيصال كبيرة، صوّرها بدقة أقل"); }
+      let img = null; try { img = await pickedImg("#pImg"); } catch (e) { w.close(); return rcptErr(e); }
       const pay = {num, name: s.name, amount, method: $("#pM").value, date: $("#pD").value || today(), ref: $("#pRef").value.trim(), note: $("#pN").value.trim(), program: acc.program, by: S.adminRole, void: false};
       try {
         const id = "p-" + uid() + uid();
@@ -5817,23 +5817,20 @@ function finSettings(el){
 
 
 /* ---- receipt images (compressed into Firestore, kept apart from the payment record) ---- */
-const rcptBtns = (coll, x) => x.hasImg ? `<button class="btn sm" data-rview="${coll}:${esc(x.id)}">الإيصال</button>` : x.void ? "" : `<label class="btn sm" style="cursor:pointer">إرفاق إيصال<input type="file" accept="image/*" data-ratt="${coll}:${esc(x.id)}" hidden></label>`;
+const rcptBtns = (coll, x) => x.hasImg ? `<button class="btn sm" data-rview="${coll}:${esc(x.id)}">الإيصال</button>` : x.void ? "" : `<label class="btn sm" style="cursor:pointer">إرفاق إيصال<input type="file" accept="image/*,application/pdf,.pdf" data-ratt="${coll}:${esc(x.id)}" hidden></label>`;
 function bindRcpt(root){
   root.querySelectorAll("[data-rview]").forEach(b => b.onclick = () => {
     const [, id] = b.dataset.rview.split(":");
     const w = window.open("", "_blank"); if (!w) return toast("المتصفح منع فتح النافذة. اسمح بالنوافذ المنبثقة");
     w.document.write("<p style='font-family:sans-serif'>جاري التحميل…</p>");
     getDoc(ref("receipts/" + id)).then(x => {
-      const img = x.exists() && x.data().img;
-      w.document.open();
-      w.document.write(`<!doctype html><html dir="rtl"><head><meta charset="utf-8"><title>الإيصال</title></head><body style="margin:0;background:#222;display:grid;place-items:center;min-height:100vh">${img && /^data:image\//.test(img) ? `<img src="${img}" style="max-width:100%;max-height:100vh">` : `<p style="color:#fff;font-family:sans-serif">ما فيه إيصال</p>`}</body></html>`);
-      w.document.close();
+      openRcptData(w, x.exists() && x.data().img);
     }).catch(() => { w.close(); toast("تعذّر فتح الإيصال"); });
   });
   root.querySelectorAll("[data-ratt]").forEach(inp => inp.onchange = async () => {
     const [coll, id] = inp.dataset.ratt.split(":"), f = inp.files[0]; if (!f) return;
-    try { toast("جاري ضغط الصورة ورفعها…"); await saveRcpt(coll, id, await compressImage(f)); logAction("إرفاق إيصال", coll === "payments" ? "دفعة" : "مصروف"); toast("انرفق الإيصال"); inp.value = ""; if (S._finModal && S._finDraw) S._finDraw(); else render(); }
-    catch (e) { inp.value = ""; e && e.message === "too-big" ? toast("الصورة كبيرة، صوّرها بدقة أقل") : handleWriteErr(e); }
+    try { toast(isPdfFile(f) ? "جاري رفع ملف PDF…" : "جاري ضغط الصورة ورفعها…"); await saveRcpt(coll, id, await rcptData(f)); logAction("إرفاق إيصال", coll === "payments" ? "دفعة" : "مصروف"); toast("انرفق الإيصال"); inp.value = ""; if (S._finModal && S._finDraw) S._finDraw(); else render(); }
+    catch (e) { inp.value = ""; e && ["too-big", "pdf-big"].includes(e.message) ? rcptErr(e) : handleWriteErr(e); }
   });
 }
 async function saveRcpt(coll, id, img){
@@ -5842,7 +5839,29 @@ async function saveRcpt(coll, id, img){
   b.set(ref(`${coll}/${id}`), {hasImg: true}, {merge: true});
   await b.commit();
 }
-const pickedImg = async sel => { const f = $(sel) && $(sel).files[0]; return f ? compressImage(f) : null; };
+/* a receipt is a photo (compressed) or a PDF kept as it is; one Firestore document holds under 1 MB, so a PDF must be under 650 KB */
+const RCPT_PDF_MAX = 650 * 1024;
+const isPdfFile = f => f && (f.type === "application/pdf" || /\.pdf$/i.test(f.name || ""));
+async function rcptData(f){
+  if (!f) return null;
+  if (isPdfFile(f)) { if (f.size > RCPT_PDF_MAX) throw new Error("pdf-big"); const d = await fileToDataURL(f); return d.replace(/^data:[^;,]*/, "data:application/pdf"); }
+  return compressImage(f);
+}
+const rcptErr = e => toast(e && e.message === "pdf-big" ? "ملف PDF أكبر من 650 كيلوبايت. اضغطه (مثلاً من ilovepdf) أو صوّره" : "الصورة كبيرة، صوّرها بدقة أقل");
+const pickedImg = async sel => { const f = $(sel) && $(sel).files[0]; return rcptData(f); };
+const isPdfData = d => /^data:application\/pdf/.test(d || "");
+function openRcptData(w, d){   // shows a stored receipt in a window opened by the click
+  if (isPdfData(d)) {
+    const b = atob(d.split(",")[1] || ""), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([u], {type: "application/pdf"}));
+    w.document.open();
+    w.document.write(`<!doctype html><html dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>الإيصال PDF</title></head><body style="margin:0;font-family:sans-serif;background:#222;display:flex;flex-direction:column;height:100vh"><div style="padding:8px;text-align:center"><a href="${url}" download="إيصال.pdf" style="color:#fff;background:#1F5136;padding:8px 16px;border-radius:8px;text-decoration:none">تنزيل الإيصال PDF</a></div><iframe src="${url}" style="flex:1;border:0;background:#fff" title="الإيصال"></iframe></body></html>`);
+    w.document.close(); return;
+  }
+  w.document.open();
+  w.document.write(`<!doctype html><html dir="rtl"><head><meta charset="utf-8"><title>الإيصال</title></head><body style="margin:0;background:#222;display:grid;place-items:center;min-height:100vh">${d && /^data:image\//.test(d) ? `<img src="${d}" style="max-width:100%;max-height:100vh">` : `<p style="color:#fff;font-family:sans-serif">ما فيه إيصال</p>`}</body></html>`);
+  w.document.close();
+}
 
 
 /* ---- receipts register: every attached receipt in one place, with its reference, printable ---- */
@@ -5889,7 +5908,7 @@ function finReceipts(el){
           <tr><td class="n"><b>المرجع</b></td><td class="n">${esc(r.ref || "—")}</td></tr>
           ${r.voided ? `<tr><td class="n"><b>الحالة</b></td><td class="n" style="color:#B3261E"><b>ملغى</b></td></tr>` : ""}
         </tbody></table>
-        <div style="text-align:center;margin-top:12px">${imgs[i] && /^data:image\//.test(imgs[i]) ? `<img src="${imgs[i]}" style="max-width:100%;max-height:165mm;border:1px solid #ddd;border-radius:6px">` : `<p>الصورة غير موجودة</p>`}</div>`}));
+        <div style="text-align:center;margin-top:12px">${imgs[i] && /^data:image\//.test(imgs[i]) ? `<img src="${imgs[i]}" style="max-width:100%;max-height:165mm;border:1px solid #ddd;border-radius:6px">` : isPdfData(imgs[i]) ? `<p style="border:1px dashed #999;border-radius:8px;padding:14px">📄 الإيصال ملف PDF مرفق في النظام. افتحه من زر «الإيصال» واطبعه.</p>` : `<p>الصورة غير موجودة</p>`}</div>`}));
       fillPrintFin(w, title, pages);
     } catch (e) { w.close(); handleWriteErr(e); }
   };
@@ -5915,7 +5934,7 @@ function finExpenses(el){
   el.innerHTML = `<div class="card"><h2>تسجيل مصروف</h2>
     <div class="row"><select id="exC" style="width:auto">${EXP_CATS.map(c => `<option>${c}</option>`).join("")}</select><input type="number" id="exA" min="0" step="0.01" placeholder="المبلغ" style="width:130px"><input type="date" id="exD" value="${today()}" max="${today()}" style="width:160px"><select id="exM2" style="width:auto">${["تحويل بنكي", "نقد", "مدى / شبكة"].map(x => `<option>${x}</option>`).join("")}</select></div>
     <div class="row" style="margin-top:8px"><input type="text" id="exT" class="grow" placeholder="الوصف، مثل: إيجار شهر نوفمبر"><input type="text" id="exRef" placeholder="رقم الفاتورة أو المرجع" style="width:190px"></div>
-    <div class="row" style="margin-top:8px"><label class="f grow" for="exImg">صورة الفاتورة أو الإيصال (اختياري)<input type="file" id="exImg" accept="image/*"></label><button class="btn gold" id="exAdd" style="align-self:flex-end">+ تسجيل</button></div></div>
+    <div class="row" style="margin-top:8px"><label class="f grow" for="exImg">الفاتورة أو الإيصال: صورة أو PDF (اختياري)<input type="file" id="exImg" accept="image/*,application/pdf,.pdf"></label><button class="btn gold" id="exAdd" style="align-self:flex-end">+ تسجيل</button></div></div>
   <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">مصروفات الشهر</h2><input type="month" id="expM" value="${esc(m)}" style="width:170px"></div>
     <p class="muted">المجموع <b>${SAR(sumAmt(list.filter(x => !x.void)))}</b>${Object.keys(byCat).length ? " · " + Object.entries(byCat).map(([k, v]) => `${esc(k)}: ${SAR(v)}`).join(" · ") : ""}</p>
     <div class="list">${list.map(x => `<div class="item" style="${x.void ? "opacity:.5;text-decoration:line-through" : ""}"><div class="grow"><div class="t">${SAR(x.amount)} · ${esc(x.category)}</div><div class="muted">${dH(x.date)} · ${esc(x.method || "")}${x.desc ? " · " + esc(x.desc) : ""}${x.void ? " · ملغى: " + esc(x.voidReason || "") : ""}</div></div>${rcptBtns("expenses", x)}${x.void ? "" : `<button class="btn sm danger" data-exv="${esc(x.id)}">إلغاء</button>`}</div>`).join("") || `<span class="muted">ما فيه مصروفات في هذا الشهر</span>`}</div></div>`;
@@ -5924,7 +5943,7 @@ function finExpenses(el){
   $("#exAdd").onclick = async () => {
     const amount = Math.round((Number($("#exA").value) || 0) * 100) / 100; if (amount <= 0) return toast("اكتب المبلغ");
     const d = {category: $("#exC").value, amount, date: $("#exD").value || today(), method: $("#exM2").value, desc: $("#exT").value.trim(), ref: $("#exRef").value.trim(), by: S.adminRole, void: false, at: new Date().toISOString()};
-    let img = null; try { img = await pickedImg("#exImg"); } catch { return toast("الصورة كبيرة، صوّرها بدقة أقل"); }
+    let img = null; try { img = await pickedImg("#exImg"); } catch (e) { return rcptErr(e); }
     const id = "e-" + uid() + uid();
     try {
       $("#exAdd").disabled = true;
