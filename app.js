@@ -628,7 +628,7 @@ function startData(){
   annDocs.forEach(k => S.subs.push(onSnapshot(ref("ann/" + k), snap => { S.ann[k] = (snap.exists() && snap.data().items) || []; renderAnn(); }, () => {})));
   sub(collection(db, "trainers"), snap => {
     S.trainers = {}; snap.docs.forEach(d => S.trainers[d.id] = {id: d.id, ...d.data()});
-    if (S.role === "trainer") { const t = Object.values(S.trainers).find(t => t.uid === S.authUser.uid); S.me = t ? t.id : null; if (S.me) watchMsgs(); }
+    if (S.role === "trainer") { const t = Object.values(S.trainers).find(t => t.uid === S.authUser.uid); S.me = t ? t.id : null; if (S.me) { watchMsgs(); watchTrMsgs(); } }
     S.loaded.trainers = true; afterData();
   });
   if (S.role === "student") {
@@ -666,7 +666,7 @@ function startData(){
   if (S.role === "admin") {
     S.subs.push(onSnapshot(ref("public/disabled"), snap => { S.disabled = (snap.exists() && snap.data().list) || {}; afterData(); }, () => {}));
     // emergency lock: a session that signed in before its role's lock time leaves at once
-    watchStaffLock(); watchMsgs(); watchTasks();
+    watchStaffLock(); watchMsgs(); watchTasks(); watchTrMsgs();
     if (!RO()) { S.mail = null; mailSubs(); }
     if (!RO()) S.subs.push(onSnapshot(collection(db, "memos"), snap => { S.memos = snap.docs.map(d => ({id: d.id, ...d.data()})); afterData(); }, () => {}));
     if (!FIN()) S.subs.push(onSnapshot(collection(db, "acReqs"), snap => { S.aReqs = snap.docs.map(d => ({id: d.id, ...d.data()})); afterData(); }, () => {}));
@@ -2120,11 +2120,13 @@ function setRec(sid, patch){
 function renderTrainer(app){
   const t = S.trainers[S.me];
   if (!t) { app.innerHTML = `<div class="notice err">هذا الحساب غير مربوط بمدرب. تواصل مع الشؤون الأكاديمية.</div>`; return; }
+  if (!S.tGroup && S.trmOpen) return trainerMsgs(app);
   if (!S.tGroup) {
     const gs = myGroups();
     const rows = []; gs.forEach(g => (g.sessions || []).forEach(s => rows.push({course: g.course + (s.g ? ` (${s.g === "f" ? "طالبات" : "طلاب"})` : ""), trainer: trainerTitle(t), s})));
     app.innerHTML = `
-    <div class="card"><h2>أهلاً ${esc(trainerTitle(t))}</h2><p class="muted" style="margin:0">اختر المقرر للتحضير أو رصد الدرجات.</p></div>
+    <div class="card"><div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div><h2 style="margin:0">أهلاً ${esc(trainerTitle(t))}</h2><p class="muted" style="margin:4px 0 0">اختر المقرر للتحضير أو رصد الدرجات.</p></div>
+      <button class="btn ${trmUnread().length ? "gold" : ""}" id="trmOpen">💬 مراسلة الشؤون الأكاديمية${trmBadge()}</button></div></div>
     ${gs.length ? `<div class="ggrid">${gs.map(g => `
       <button class="groupcard" data-g="${esc(g.id)}">
         <span style="font-weight:700;color:var(--green)">${esc(g.course)}</span>
@@ -2134,6 +2136,7 @@ function renderTrainer(app){
       <div class="card"><h2>جدولي</h2>${weekTable(rows)}</div>`
       : `<div class="card empty">ما فيه مقررات مسجلة باسمك حتى الآن.</div>`}`;
     app.querySelectorAll("[data-g]").forEach(b => b.onclick = () => { S.tGroup = b.dataset.g; S.tDate = today(); S.tTab = "roll"; startAtt(); render(); });
+    $("#trmOpen").onclick = () => { S.trmOpen = true; render(); window.scrollTo(0, 0); };
     return;
   }
   const g = S.groups[S.tGroup];
@@ -2696,11 +2699,11 @@ function writeGroup(gid, d){
 
 function renderAdmin(app){
   if (RO()) {
-    const tabsRO = [["tasks", "المهام" + taskBadge()], ["weekly", "التقرير الأسبوعي"], ["dash", "لوحة اليوم"], ["kpi", "المؤشرات"], ["follow", "المتابعة"], ["report", "التقارير"], ["finance", "المالية"], ["hr", "الموارد البشرية"], ["logs", "سجل الإدارات"], ["archive", "الأرشيف"]];
+    const tabsRO = [["tasks", "المهام" + taskBadge()], ["weekly", "التقرير الأسبوعي"], ["dash", "لوحة اليوم"], ["kpi", "المؤشرات"], ["follow", "المتابعة"], ["report", "التقارير"], ["finance", "المالية"], ["hr", "الموارد البشرية"], ["trmsgs", "رسائل المدربين"], ["logs", "سجل الإدارات"], ["archive", "الأرشيف"]];
     if (!tabsRO.some(([k]) => k === S.aTab)) S.aTab = "tasks";
     app.innerHTML = `<div class="notice">بوابة الجهة الرقابية: تطّلع على كل أعمال المعهد وتصدّرها، وترسل مهام للإدارات وتستلم تقاريرها. التعديل على البيانات يبقى عند الإدارات.</div><div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabsRO.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
     app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
-    ({tasks: tasksTab, weekly: weeklyTab, dash: adminDash, kpi: adminKpi, follow: adminFollow, report: adminReport, finance: adminFinance, hr: hrTab, logs: adminLogs, archive: adminArchive})[S.aTab]($("#ab"));
+    ({tasks: tasksTab, weekly: weeklyTab, dash: adminDash, kpi: adminKpi, follow: adminFollow, report: adminReport, finance: adminFinance, hr: hrTab, trmsgs: adminTrMsgs, logs: adminLogs, archive: adminArchive})[S.aTab]($("#ab"));
     if (["finance", "hr", "logs"].includes(S.aTab)) ownerReadOnly($("#ab"));
     if (RO()) app.querySelectorAll("#ab [data-issue], #issueAll, #cIssue, [data-rc], [data-twa], [data-wabs], [data-warn]").forEach(x => x.remove());
     return;
@@ -2715,14 +2718,14 @@ function renderAdmin(app){
     app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
     ({hr: hrTab, mail: mailTab, tasks: tasksTab})[S.aTab]($("#ab")); return;
   }
-  const tabs = [["dash","لوحة اليوم"],["kpi","المؤشرات"],["groups","المقررات والطلاب"],["students","الطلاب"],["msgs","الرسائل الجماعية"],["trainers","المدربين والرموز"],["grades","الدرجات"],["exams","الاختبارات"],["camp","المعسكر"],["follow","المتابعة"],["excuses","الأعذار"],["areqs","طلبات الطلاب" + ((S.aReqs || []).some(r => r.status === "new") ? ` (${S.aReqs.filter(r => r.status === "new").length})` : "")],["evals","التقييمات"],["report","التقارير"],["courses","الدورات والشهادات"],["sign","طلبات التوقيع"],["tasks","مهام الجهة الرقابية" + taskBadge()],["memos","المراسلات" + memoBadge()],["mail","البريد" + mailBadge()],...(MEET() ? [["live","المحاضرات والتسجيلات"]] : []),["system","النظام"],...(S.adminRole === "admin" ? [["hr","الموارد البشرية"]] : []),...(SEES_FIN() ? [["finance","المالية" + ((S.fReqs || []).some(r => r.status === "fin_signed") ? ` (${(S.fReqs || []).filter(r => r.status === "fin_signed").length})` : "")]] : []),["archive","الأرشيف"],...(S.adminRole === "admin" ? [["weekly","التقرير الأسبوعي"],["logs","السجل"]] : [])];
+  const tabs = [["dash","لوحة اليوم"],["kpi","المؤشرات"],["groups","المقررات والطلاب"],["students","الطلاب"],["msgs","الرسائل الجماعية"],["trainers","المدربين والرموز"],["grades","الدرجات"],["exams","الاختبارات"],["camp","المعسكر"],["follow","المتابعة"],["excuses","الأعذار"],["areqs","طلبات الطلاب" + ((S.aReqs || []).some(r => r.status === "new") ? ` (${S.aReqs.filter(r => r.status === "new").length})` : "")],["evals","التقييمات"],["report","التقارير"],["courses","الدورات والشهادات"],["sign","طلبات التوقيع"],["tasks","مهام الجهة الرقابية" + taskBadge()],["trmsgs","رسائل المدربين" + trmBadge()],["memos","المراسلات" + memoBadge()],["mail","البريد" + mailBadge()],...(MEET() ? [["live","المحاضرات والتسجيلات"]] : []),["system","النظام"],...(S.adminRole === "admin" ? [["hr","الموارد البشرية"]] : []),...(SEES_FIN() ? [["finance","المالية" + ((S.fReqs || []).some(r => r.status === "fin_signed") ? ` (${(S.fReqs || []).filter(r => r.status === "fin_signed").length})` : "")]] : []),["archive","الأرشيف"],...(S.adminRole === "admin" ? [["weekly","التقرير الأسبوعي"],["logs","السجل"]] : [])];
   if (!tabs.some(([k]) => k === S.aTab)) S.aTab = "dash";
   const waiting = Object.values(S.grades).filter(x => x.status === "submitted").length;
   app.innerHTML = `${backupNag()}${absNag()}${S.sys && S.sys.maintenance ? `<div class="notice err">وضع الصيانة شغّال: الموقع مقفل على الكل ما عدا الإدارة. تطفيه من تبويب "النظام".</div>` : ""}<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}${k === "grades" && waiting ? ` (${waiting})` : ""}${k === "follow" && S.allAtt && ["academic", "admin"].includes(S.adminRole) ? (n => n ? ` (${n})` : "")(absAlerts().alerts.filter(alertWaiting).length) : ""}${k === "excuses" && (S.excuses || []).filter(x => x.status === "pending").length ? ` (${S.excuses.filter(x => x.status === "pending").length})` : ""}</button>`).join("")}</div></div><div id="ab"></div>`;
   app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
   if ($("#nagAbs")) $("#nagAbs").onclick = () => { S.aTab = "follow"; render(); };
   if ($("#nagBk")) $("#nagBk").onclick = async e => { e.target.disabled = true; try { await backupAll(); toast("نزلت النسخة الاحتياطية"); render(); } catch (x) { console.error(x); toast("تعذّر أخذ النسخة"); e.target.disabled = false; } };
-  ({dash: adminDash, kpi: adminKpi, groups: adminGroups, students: adminStudents, msgs: adminMessages, trainers: adminTrainers, grades: adminGrades, exams: adminExams, camp: campTab, hr: hrTab, follow: adminFollow, excuses: adminExcuses, areqs: adminAcReqs, evals: adminEvals, report: adminReport, courses: adminCourses, sign: signRequests, tasks: tasksTab, weekly: weeklyTab, memos: memosTab, mail: mailTab, live: liveTab, system: el => { adminSystem(el); attArchiveCard(el); }, archive: adminArchive, finance: adminFinance, logs: adminLogs})[S.aTab]($("#ab"));
+  ({dash: adminDash, kpi: adminKpi, groups: adminGroups, students: adminStudents, msgs: adminMessages, trainers: adminTrainers, grades: adminGrades, exams: adminExams, camp: campTab, hr: hrTab, follow: adminFollow, excuses: adminExcuses, areqs: adminAcReqs, evals: adminEvals, report: adminReport, courses: adminCourses, sign: signRequests, tasks: tasksTab, weekly: weeklyTab, trmsgs: adminTrMsgs, memos: memosTab, mail: mailTab, live: liveTab, system: el => { adminSystem(el); attArchiveCard(el); }, archive: adminArchive, finance: adminFinance, logs: adminLogs})[S.aTab]($("#ab"));
 }
 
 function adminDash(el){
@@ -4035,6 +4038,65 @@ function memosTab(el){
     try { await setDoc(ref("memos/" + id), d); notify("memo", id); logAction("رسالة داخلية", ROLES[to]); S.memoReply = null; S.memoBox = "out"; toast("انرسلت"); render(); }
     catch (x) { e.target.disabled = false; handleWriteErr(x); }
   };
+}
+
+/* ---------- trainers ↔ academic affairs: one conversation per trainer ----------
+   trMsgs/{id}: tid, from (trainer | academic | admin), text, at, readAt. A trainer sees only his own conversation. */
+const TRM_FROM = {trainer: "المدرب", academic: "الشؤون الأكاديمية", admin: "الإدارة العامة"};
+function watchTrMsgs(){
+  if (S._trmSub || !S.authUser) return;
+  let q = null;
+  if (S.role === "trainer" && S.me) q = query(collection(db, "trMsgs"), where("tid", "==", S.me));
+  else if (S.role === "admin" && ["admin", "academic", "auditor"].includes(S.adminRole)) q = collection(db, "trMsgs");
+  if (!q) return; S._trmSub = true;
+  S.subs.push(onSnapshot(q, snap => { S.trMsgs = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => String(a.at || "").localeCompare(String(b.at || ""))); if (!busyEditing()) render(); }, e => console.error(e)));
+  S.subs.push(() => { S._trmSub = false; S.trMsgs = null; });
+}
+const trmUnread = () => (S.trMsgs || []).filter(m => !m.readAt && (S.role === "trainer" ? m.from !== "trainer" : m.from === "trainer"));
+const trmBadge = () => { const n = trmUnread().length; return n ? ` (${n})` : ""; };
+function trmThread(el, tid, canSend){
+  const L = (S.trMsgs || []).filter(m => m.tid === tid), mineSide = S.role === "trainer" ? "trainer" : "staff";
+  el.innerHTML = `<div id="trmList" style="display:flex;flex-direction:column;gap:8px;max-height:55vh;overflow:auto;padding:4px">${L.map(m => { const me = mineSide === "trainer" ? m.from === "trainer" : m.from !== "trainer";
+      return `<div style="align-self:${me ? "flex-start" : "flex-end"};max-width:80%;background:${me ? "var(--soft, #eef5f0)" : "var(--card, #fff)"};border:1px solid var(--line, #e2e8e4);border-radius:12px;padding:8px 12px">
+        <div class="muted" style="font-size:.8em">${esc(m.from === "trainer" ? (S.role === "trainer" ? "أنت" : tName(m.tid)) : TRM_FROM[m.from] || "")} · ${esc(fmtIso(m.at))}${me && m.readAt ? " · ✓ انقرأت" : ""}</div>
+        <div style="white-space:pre-wrap">${esc(m.text)}</div></div>`; }).join("") || `<p class="muted" style="text-align:center">ما فيه رسائل للحين.</p>`}</div>
+    ${canSend ? `<div class="row" style="margin-top:10px;gap:6px;align-items:flex-end"><textarea id="trmT" rows="2" maxlength="2000" class="grow" placeholder="${S.role === "trainer" ? "اكتب رسالتك للشؤون الأكاديمية…" : "اكتب ردك للمدرب…"}"></textarea><button class="btn pri" id="trmSend">إرسال</button></div>` : ""}`;
+  const box = $("#trmList"); if (box) box.scrollTop = box.scrollHeight;
+  // what the other side wrote is now read
+  L.filter(m => !m.readAt && (S.role === "trainer" ? m.from !== "trainer" : m.from === "trainer") && !RO()).forEach(m => setDoc(ref("trMsgs/" + m.id), {readAt: new Date().toISOString()}, {merge: true}).catch(() => {}));
+  if (!canSend) return;
+  $("#trmSend").onclick = async e => {
+    const text = $("#trmT").value.trim(); if (text.length < 2) return toast("اكتب الرسالة");
+    e.target.disabled = true;
+    const id = "tm-" + uid() + uid(), from = S.role === "trainer" ? "trainer" : (S.adminRole === "admin" ? "admin" : "academic");
+    try { await setDoc(ref("trMsgs/" + id), {tid, from, text: text.slice(0, 2000), at: new Date().toISOString()}); notify("trmsg", id); if (from !== "trainer") logAction("رد على مدرب", tName(tid)); toast("انرسلت ✓"); }
+    catch (x) { e.target.disabled = false; handleWriteErr(x); }
+  };
+}
+/* the trainer's side */
+function trainerMsgs(app){
+  app.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">💬 مراسلة الشؤون الأكاديمية</h2><button class="btn sm" id="trmBack">→ رجوع</button></div>
+    <p class="muted" style="margin:6px 0 10px">استفسار، طلب، أو ملاحظة عن مقرر أو طالب. توصلهم إشعار، ويوصلك ردهم هنا.</p><div id="trmBox"></div></div>`;
+  $("#trmBack").onclick = () => { S.trmOpen = false; render(); };
+  if (!S.trMsgs) { $("#trmBox").innerHTML = `<p class="muted">جاري التحميل…</p>`; return; }
+  trmThread($("#trmBox"), S.me, true);
+}
+/* academic affairs' side: every trainer's conversation */
+function adminTrMsgs(el){
+  if (!S.trMsgs) { el.innerHTML = `<div class="card"><p class="muted" style="margin:0">جاري التحميل…</p></div>`; return; }
+  const by = {}; S.trMsgs.forEach(m => (by[m.tid] = by[m.tid] || []).push(m));
+  const tids = Object.keys(by).sort((a, b) => String(by[b][by[b].length - 1].at).localeCompare(String(by[a][by[a].length - 1].at)));
+  const sel = S.trmSel && (by[S.trmSel] || S.trainers[S.trmSel]) ? S.trmSel : null;
+  const others = Object.values(S.trainers || {}).filter(t => !by[t.id] && !t.disabled).sort((a, b) => (a.name || "").localeCompare(b.name || "", "ar"));
+  el.innerHTML = `<div class="card"><h2>رسائل المدربين</h2><p class="muted" style="margin-top:0">كل مدرب يراسل الشؤون الأكاديمية من بوابته، ويوصلكم إشعار. ردكم يوصله إشعار بعد.${RO() ? "" : " تقدر تبدأ محادثة مع أي مدرب."}</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <div style="flex:1 1 230px;min-width:220px"><div class="list">${tids.map(t => { const u = by[t].filter(m => m.from === "trainer" && !m.readAt).length, last = by[t][by[t].length - 1];
+          return `<button class="item" data-trms="${esc(t)}" style="width:100%;text-align:start;cursor:pointer;${t === sel ? "outline:2px solid var(--green)" : ""}"><div class="grow"><b>${esc(tName(t))}</b>${u ? ` <span class="pill a">${u} جديدة</span>` : ""}<div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">${esc(last.text.slice(0, 60))}</div></div></button>`; }).join("") || `<p class="muted">ما فيه محادثات للحين.</p>`}</div>
+          ${RO() || !others.length ? "" : `<select id="trmNew" style="margin-top:8px"><option value="">+ محادثة مع مدرب…</option>${others.map(t => `<option value="${esc(t.id)}">${esc(trainerTitle(t))}</option>`).join("")}</select>`}</div>
+        <div style="flex:3 1 380px;min-width:280px">${sel ? `<h3 style="margin-top:0">${esc(tName(sel))}</h3><div id="trmBox"></div>` : `<div class="card empty" style="margin:0">اختر محادثة.</div>`}</div></div></div>`;
+  el.querySelectorAll("[data-trms]").forEach(b => b.onclick = () => { S.trmSel = b.dataset.trms; render(); });
+  if ($("#trmNew")) $("#trmNew").onchange = e => { if (e.target.value) { S.trmSel = e.target.value; render(); } };
+  if (sel) trmThread($("#trmBox"), sel, !RO());
 }
 
 /* ---------- academic requests: a student asks academic affairs, who replies in the portal and/or on WhatsApp ---------- */
