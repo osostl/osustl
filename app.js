@@ -598,6 +598,7 @@ if (!configured) {
   onSnapshot(ref("public/stamp"), snap => { S.stamp = snap.exists() ? snap.data().img || "" : ""; }, () => {});
   S.sigs = {}; ["director", "academic"].forEach(k => onSnapshot(ref("sigs/" + k), snap => { S.sigs[k] = snap.exists() ? snap.data().img || "" : ""; }, () => {}));
   onSnapshot(ref("public/site"), snap => { S.site = snap.exists() ? snap.data() : {}; licQR(); if (!S.authUser && S.view === "home") render(); }, () => { S.site = {}; });
+  onSnapshot(ref("public/admission"), snap => { S.admPub = snap.exists() ? snap.data() : {}; if (!S.authUser && S.view === "home") render(); else if (S.aTab === "adm" && !busyEditing()) render(); }, () => {});
   onSnapshot(ref("public/stats"), snap => { S.stats = snap.exists() ? snap.data() : null; if (!S.authUser && S.view === "home") render(); }, () => {});
   onSnapshot(ref("public/survey"), snap => { S.survey = snap.exists() ? snap.data() : null; if (S.role === "student" && !busyEditing()) render(); }, () => {});
   S.policy = new URLSearchParams(location.search).has("policy");
@@ -638,19 +639,19 @@ function watchStaffLock(){
 }
 function startData(){
   S.loaded = {trainers: false, groups: false};
-  if (S.role === "admin" && MAILONLY()) { S.loaded = {trainers: true, groups: true}; watchStaffLock(); S.mail = null; mailSubs(); watchMemos(); watchTickets(); watchMeetings();
+  if (S.role === "admin" && MAILONLY()) { S.loaded = {trainers: true, groups: true}; watchStaffLock(); S.mail = null; mailSubs(); watchMemos(); watchTickets(); watchMeetings(); watchApps(); watchCorr();
     S.subs.push(onSnapshot(collection(db, "trainers"), snap => { S.trainers = {}; snap.docs.forEach(d => S.trainers[d.id] = {id: d.id, ...d.data()}); if (isChatTab() && $("#mmList")) memoPaint(); }, () => {}));
     return; }
   const annDocs = S.role === "admin" ? ["trainers", "students"] : S.role === "trainer" ? ["trainers"] : ["students"];
   annDocs.forEach(k => S.subs.push(onSnapshot(ref("ann/" + k), snap => { S.ann[k] = (snap.exists() && snap.data().items) || []; renderAnn(); }, () => {})));
   sub(collection(db, "trainers"), snap => {
     S.trainers = {}; snap.docs.forEach(d => S.trainers[d.id] = {id: d.id, ...d.data()});
-    if (S.role === "trainer") { const t = Object.values(S.trainers).find(t => t.uid === S.authUser.uid); S.me = t ? t.id : null; if (S.me) { watchMsgs(); watchTrMsgs(); watchStaffReqs(); watchMemos(); watchTickets(); if (!S.mail && trMe()) mailSubs(); } }
+    if (S.role === "trainer") { const t = Object.values(S.trainers).find(t => t.uid === S.authUser.uid); S.me = t ? t.id : null; if (S.me) { watchMsgs(); watchTrMsgs(); watchStaffReqs(); watchMemos(); watchTickets(); watchCorr(); if (!S.mail && trMe()) mailSubs(); } }
     S.loaded.trainers = true; afterData();
   });
   if (S.role === "student") {
     sub(ref("students/" + S.myNum), snap => { S.myStudent = snap.exists() ? snap.data() : null; afterData(); });
-    watchTickets();
+    watchTickets(); watchCorr();
     sub(query(collection(db, "groups"), where("memberNums", "array-contains", S.myNum)), snap => {
       S.groups = {}; snap.docs.forEach(d => S.groups[d.id] = {id: d.id, ...d.data()}); S.loaded.groups = true; afterData();
     });
@@ -686,7 +687,7 @@ function startData(){
     // emergency lock: a session that signed in before its role's lock time leaves at once
     watchStaffLock(); watchMsgs(); watchTasks(); watchTrMsgs(); watchStaffReqs();
     if (!RO()) { S.mail = null; mailSubs(); }
-    watchMemos(); watchTickets(); watchMeetings();
+    watchMemos(); watchTickets(); watchMeetings(); watchApps(); watchCorr();
     if (!FIN()) S.subs.push(onSnapshot(collection(db, "acReqs"), snap => { S.aReqs = snap.docs.map(d => ({id: d.id, ...d.data()})); afterData(); }, () => {}));
     if (!FIN()) S.subs.push(onSnapshot(collection(db, "waivers"), snap => { S.waivers = {}; snap.docs.forEach(d => S.waivers[d.id] = d.data()); afterData(); }, () => {}));
     if (SEES_FIN()) startFinance();
@@ -1017,6 +1018,604 @@ function meetingsTab(el){
 
 /* ---------- top bar ---------- */
 const trainerTitle = t => (t.gender === "f" ? "المدربة " : "المدرب ") + t.name;
+/* ---------- admission and registration: applications come from the public form (apply.html, through the push service)
+   or are entered at the desk. The path: admission (talks to him, checks documents, records his payment plan) → finance
+   (fees, discount, partner and the first payment) → academic affairs (pledge, sections, issues the trainee's number and
+   login) → finance opens his account with the approved plan and the first payment's receipt. ---------- */
+const APP_ST = {new: ["جديد", "warn"], contact: ["تم التواصل", "e"], finance: ["بانتظار المالية", "l"], academic: ["بانتظار الشؤون الأكاديمية", "l"], enrolled: ["مسجّل متدرب", "p"], rejected: ["مرفوض", "a"], withdrawn: ["انسحب", ""]};
+const APP_OPEN = ["new", "contact", "finance", "academic"], APP_SEAT = ["finance", "academic", "enrolled"];
+const APP_STAGE = {admission: ["new"], finance: ["finance"], academic: ["academic"]};
+const APP_EDU = ["ابتدائي", "متوسط", "ثانوي", "دبلوم", "بكالوريوس", "ماجستير", "دكتوراه", "أخرى"];
+const APP_SRC = ["تويتر / إكس", "سناب شات", "إنستقرام", "تيك توك", "واتساب", "صديق أو قريب", "مسوّق أو شريك للمعهد", "موقع المعهد", "جهة العمل", "أخرى"];
+const APP_DOC = {id: "صورة الهوية / الإقامة", cert: "المؤهل الدراسي", photo: "صورة شخصية"};
+const APP_PLEDGE = `أقر أنا الموقّع أدناه بصحة جميع البيانات والمستندات التي قدّمتها، وأتعهد بما يلي:
+1. الالتزام بأنظمة المعهد ولوائحه وأنظمة المؤسسة العامة للتدريب التقني والمهني.
+2. الالتزام بالحضور في المواعيد المحددة، وأعلم أن تجاوز نسبة الغياب المسموحة يعرّضني للحرمان من المقرر.
+3. سداد الرسوم التدريبية وفق خطة السداد المعتمدة وفي مواعيدها.
+4. أعلم أن استرداد الرسوم يخضع لسياسة الاسترداد المعتمدة في المعهد.
+5. المحافظة على ممتلكات المعهد، واحترام منسوبيه وزملائي المتدربين.
+6. أعلم أن تقديم أي بيانات أو مستندات غير صحيحة يخوّل المعهد إلغاء تسجيلي.`;
+const admSees = () => S.role === "admin" && ["admission", "admin", "finance", "academic"].includes(S.adminRole);
+const appCan = k => S.adminRole === "admin" || S.adminRole === k;   // the general administration can do every step
+const appPill = s => `<span class="pill ${(APP_ST[s] || [])[1] || ""}">${esc((APP_ST[s] || [s])[0])}</span>`;
+const appBadge = () => { const st = APP_STAGE[S.adminRole] || []; const n = (S.apps || []).filter(a => st.includes(a.status)).length; return n ? ` (${n})` : ""; };
+const applyUrl = q => location.origin + location.pathname.replace(/[^/]*$/, "") + "apply.html" + (q ? "?" + q : "");
+const appDay = a => String(a.createdAt || "").slice(0, 10);
+const appNewId = () => "A" + [...crypto.getRandomValues(new Uint8Array(7))].map(x => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[x % 32]).join("");
+const appProgs = () => ((S.admPub || {}).programs || []).filter(p => p.name);
+const appLink = pid => ((S.admPub || {}).links || {})[pid] || {};
+const appProgOf = a => appProgs().find(p => p.id === a.program) || appProgs().find(p => p.name === a.programName) || null;
+const appTaken = p => (S.apps || []).filter(a => (a.program === p.id || (!a.program && a.programName === p.name)) && APP_SEAT.includes(a.status) && String(a.intake || "") === String(p.start || "")).length;
+const appReqDocs = () => ((S.admPub || {}).docs || []).filter(k => APP_DOC[k]);
+const appMissing = a => appReqDocs().filter(k => !(a.files || []).some(f => f.kind === k));
+function watchApps(){
+  if (S._appSub || !S.authUser || !admSees()) return; S._appSub = true; let ready = false;
+  S.subs.push(onSnapshot(collection(db, "apps"), snap => {
+    const prev = new Set((S.apps || []).map(a => a.id));
+    S.apps = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+    if (ready && S.adminRole === "admission") S.apps.filter(a => !prev.has(a.id) && a.origin === "web").forEach(a => toast("📝 طلب التحاق جديد: " + a.name));
+    ready = true;
+    if (S._appOpen && $("#modal").classList.contains("on") && !busyEditing()) appModal(S._appOpen);
+    if (!busyEditing()) afterData();
+  }, e => console.error(e)));
+  S.subs.push(() => { S._appSub = false; S.apps = null; });
+}
+function admTab(el){
+  watchApps();
+  const full = appCan("admission"), sub = [["list", "الطلبات"], ...(full ? [["new", "+ طلب جديد"]] : []), ["stats", "الإحصائيات"], ...(full ? [["set", "البرامج والإعدادات"]] : []), ...(S.adminRole !== "admission" ? [["link", "ربط البرامج"]] : [])];
+  if (!sub.some(([k]) => k === S._admT)) S._admT = "list";
+  const set = S.admPub || {};
+  el.innerHTML = `${set.open || !full ? "" : `<div class="notice">التقديم من الموقع <b>مقفل</b> الحين. تفتحه من «البرامج والإعدادات».</div>`}
+    <div class="card" style="padding:8px 12px"><div class="tabs" style="border:0;padding:0">${sub.map(([k, v]) => `<button class="tab ${S._admT === k ? "on" : ""}" data-adt="${k}">${v}</button>`).join("")}</div></div><div id="admB"></div>`;
+  el.querySelectorAll("[data-adt]").forEach(b => b.onclick = () => { S._admT = b.dataset.adt; render(); });
+  if (!S.apps) { $("#admB").innerHTML = `<div class="card muted">جاري التحميل…</div>`; return; }
+  ({list: admList, new: admNew, stats: admStats, set: admSettings, link: admLinks})[S._admT]($("#admB"));
+}
+function admList(el){
+  const F = S._admF = S._admF || {st: {finance: "finance", academic: "academic"}[S.adminRole] || "open", prog: "", q: ""}, apps = S.apps || [];
+  const cnt = k => k === "open" ? apps.filter(a => APP_OPEN.includes(a.status)).length : k === "all" ? apps.length : k === "wait" ? apps.filter(a => a.wait && APP_OPEN.includes(a.status)).length : apps.filter(a => a.status === k).length;
+  const progs = [...new Set(apps.map(a => a.programName).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar"));
+  const chips = [["open", "المفتوحة"], ["new", "جديد"], ["contact", "تم التواصل"], ["finance", "بانتظار المالية"], ["academic", "بانتظار الأكاديمية"], ["enrolled", "مسجّلين"], ["wait", "قائمة الانتظار"], ["rejected", "مرفوضة"], ["withdrawn", "انسحب"], ["all", "الكل"]];
+  el.innerHTML = `<div class="card"><div class="row" style="gap:6px;flex-wrap:wrap">${chips.map(([k, v]) => `<button class="btn sm ${F.st === k ? "pri" : ""}" data-ast="${k}">${v} (${cnt(k)})</button>`).join("")}</div>
+      <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap"><input type="search" id="admQ" class="grow" placeholder="ابحث بالاسم أو الجوال أو الهوية أو رقم الطلب" value="${esc(F.q)}">
+        <select id="admP" style="width:auto"><option value="">كل البرامج</option>${progs.map(p => `<option ${F.prog === p ? "selected" : ""}>${esc(p)}</option>`).join("")}</select></div></div>
+    <div class="list" id="admL"></div>`;
+  const draw = () => {
+    const q = norm(F.q), qd = digits(F.q);
+    const list = apps.filter(a => (F.st === "all" || (F.st === "open" ? APP_OPEN.includes(a.status) : F.st === "wait" ? a.wait && APP_OPEN.includes(a.status) : a.status === F.st)) && (!F.prog || a.programName === F.prog)
+      && (!q || norm(a.name).includes(q) || (qd && ((a.phone || "").includes(qd) || (a.nid || "").includes(qd))) || String(a.id).toLowerCase() === F.q.trim().toLowerCase()));
+    $("#admL").innerHTML = list.map(a => { const miss = APP_OPEN.includes(a.status) ? appMissing(a) : [];
+      return `<div class="item" style="cursor:pointer" data-app="${esc(a.id)}"><div class="grow"><div class="t">${esc(a.name)} ${a.gender === "f" ? `<span class="pill f">متدربة</span>` : `<span class="pill m">متدرب</span>`}${a.wait && APP_OPEN.includes(a.status) ? ` <span class="pill warn">قائمة انتظار</span>` : ""}</div>
+        <div class="muted">${esc(a.programName || "—")} · <span dir="ltr">${esc(a.phone || "")}</span>${a.city ? " · " + esc(a.city) : ""} · ${esc(appDay(a))} · ${a.origin === "web" ? "🌐 الموقع" : "🏢 المكتب"}${a.num ? " · الرقم الأكاديمي " + esc(a.num) : ""}
+          ${miss.length ? ` · <span style="color:var(--abs)">📎 ناقص ${miss.length}</span>` : ""}${(a.docsReq || []).length ? " · ⏳ طُلب استكمال" : ""}${a.pledge ? " · ✍️ وقّع الإقرار" : ""}${a.referral ? " · 🤝 " + esc(a.referral) : ""}</div></div>
+        ${appPill(a.status)}</div>`; }).join("") || `<div class="card empty">ما فيه طلبات.</div>`;
+    $("#admL").querySelectorAll("[data-app]").forEach(r => r.onclick = () => appModal(r.dataset.app));
+  };
+  draw();
+  el.querySelectorAll("[data-ast]").forEach(b => b.onclick = () => { F.st = b.dataset.ast; render(); });
+  $("#admQ").oninput = e => { F.q = e.target.value; draw(); };
+  $("#admP").onchange = e => { F.prog = e.target.value; draw(); };
+}
+async function appSet(a, patch, note, ev){
+  const now = new Date().toISOString(), log = [...(a.log || []), {at: now, by: S.adminRole, t: note}].slice(-80);
+  const p = {...patch, log, updatedAt: now, ...(ev ? {ev, rev: (a.rev || 0) + 1} : {})};
+  await setDoc(ref("apps/" + a.id), p, {merge: true}); Object.assign(a, p);
+  logAction("القبول والتسجيل", `${a.name}: ${note}`);
+  if (ev) notify("app", a.id);
+}
+const appWa = (a, txt) => { const wa = normPhone(a.phone || ""); return wa ? `https://wa.me/${wa}?text=${encodeURIComponent(txt)}` : ""; };
+function appModal(id){
+  const a = (S.apps || []).find(x => x.id === id); if (!a) { S._appOpen = null; return; }
+  S._appOpen = id; S._modalGroup = null; S._finModal = null;
+  const st = a.status, done = st === "enrolled", progs = appProgs(), prog = appProgOf(a), lk = appLink(prog ? prog.id : "");
+  const fin = a.fin || {}, fprogs = ((S.finSet || {}).programs || []), parts = ((S.finSet || {}).partners || []), net = Math.max(0, (Number(fin.fee) || 0) - (Number(fin.discount) || 0));
+  const row = (k, v) => v ? `<div><span class="muted">${k}:</span> <b>${v}</b></div>` : "";
+  const who = r => r === "web" ? "المتقدم" : ROLES[r] || MEET_N[r] || r;
+  const stageAdm = appCan("admission") && ["new", "contact"].includes(st), stageFin = appCan("finance") && st === "finance", stageAc = appCan("academic") && st === "academic";
+  const reopen = appCan("admission") && ["rejected", "withdrawn"].includes(st), miss = appMissing(a), dept = S.adminRole === "finance" ? "الإدارة المالية" : S.adminRole === "academic" ? "الشؤون الأكاديمية" : "القبول والتسجيل";
+  const acts = [
+    ...(stageAdm && st !== "contact" ? [["contact", "📞 تم التواصل", ""]] : []),
+    ...(stageAdm ? [["tofin", "✅ مقبول · تحويل للمالية", "pri"]] : []),
+    ...(stageFin ? [["toac", "✅ اعتماد مالي · تحويل للشؤون الأكاديمية", "pri"], ["backadm", "↩️ إرجاع للقبول", ""]] : []),
+    ...(stageAc ? [["enroll", "🎓 إصدار معلومات المتدرب", "pri"], ["backfin", "↩️ إرجاع للمالية", ""]] : []),
+    ...((stageAdm || stageFin) ? [["rejected", "رفض", "danger"]] : []),
+    ...(appCan("admission") && APP_OPEN.includes(st) ? [["withdrawn", "انسحب", ""]] : []),
+    ...(reopen ? [["new", "إعادة فتح الطلب", ""]] : [])];
+  const canNote = !done && (appCan("admission") || (appCan("finance") && st === "finance") || (appCan("academic") && st === "academic"));
+  const planSel = (id, v) => `<select id="${id}">${Object.entries(PLANS).map(([k, n]) => `<option value="${k}" ${v === k ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
+  const finOpen = done && a.num && ((S.finAcc || {})[a.num] || a.finOpened);
+  const trackUrl = applyUrl("ref=" + a.id), first = fin.first || null;
+  // academic: which section of each course; the program's linked courses come first
+  const courses = [...new Set(Object.values(S.groups || {}).map(g => g.course).filter(Boolean))].sort((x, y) => x.localeCompare(y, "ar"));
+  const pick = S._apGroups = S._apGroups && S._apGroups.id === a.id ? S._apGroups : {id: a.id, rows: (lk.courses || []).filter(c => courses.includes(c)).map(c => { const gs = Object.values(S.groups).filter(g => g.course === c); const sameG = gs.filter(g => (g.students || []).length && (g.students || []).every(s => s.gender === a.gender)); return {course: c, gid: gs.length === 1 ? gs[0].id : sameG.length === 1 ? sameG[0].id : ""}; })};
+  const grpRows = () => pick.rows.map((r, i) => { const gs = Object.values(S.groups).filter(g => g.course === r.course);
+    return `<div class="row" style="gap:6px;align-items:center;margin:4px 0"><b style="min-width:160px">${esc(r.course)}</b><select data-apg="${i}" class="grow"><option value="">— بدون شعبة —</option>${gs.map(g => `<option value="${esc(g.id)}" ${r.gid === g.id ? "selected" : ""}>${esc(tName(g.trainerId))}${g.mode ? " · " + esc(g.mode) : ""} · ${(g.students || []).length} متدرب (${countG(g, "m")} ط، ${countG(g, "f")} طـة)</option>`).join("")}</select><button class="btn sm" data-apgx="${i}">✕</button></div>`; }).join("");
+  $("#modalBox").innerHTML = `<div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0;font-family:var(--display);color:var(--green);font-weight:600">طلب التحاق · ${esc(a.name)}</h2><button class="btn sm" id="apX">إغلاق</button></div>
+    <div class="row" style="gap:8px;margin:6px 0 10px;flex-wrap:wrap">${appPill(st)}${a.wait && APP_OPEN.includes(st) ? `<span class="pill warn">قائمة انتظار</span>` : ""}<span class="muted">رقم الطلب <b dir="ltr">${esc(a.id)}</b> · ${a.origin === "web" ? "قدّم من الموقع" : "أُدخل من المكتب"} · ${esc(appDay(a))}</span></div>
+    <div class="row" style="gap:4px;margin-bottom:10px;font-size:13px;flex-wrap:wrap">${[["القبول", ["new", "contact"]], ["المالية", ["finance"]], ["الشؤون الأكاديمية", ["academic"]], ["متدرب", ["enrolled"]]].map(([n, l], i, arr) => { const order = ["new", "contact", "finance", "academic", "enrolled"], cur = order.indexOf(st), me = Math.max(...l.map(x => order.indexOf(x)));
+      const on = l.includes(st), past = cur > me; return `<span class="pill ${on ? "l" : past ? "p" : ""}">${past ? "✓ " : ""}${n}</span>${i < arr.length - 1 ? "<span class='muted'>←</span>" : ""}`; }).join("")}</div>
+    ${a.back && APP_OPEN.includes(st) ? `<div class="notice">↩️ مرجَّع: ${esc(a.back)}</div>` : ""}
+    ${prog && Number(prog.seats) > 0 && APP_OPEN.includes(st) ? `<div class="muted" style="margin-bottom:6px">🪑 مقاعد ${esc(prog.name)}${prog.start ? ` (دفعة ${esc(prog.start)})` : ""}: محجوز ${appTaken(prog)} من ${prog.seats}</div>` : ""}
+    ${done ? `<div class="notice ok">انسجّل متدرب برقم أكاديمي <b>${esc(a.num)}</b>.
+      ${appCan("academic") && S.students[a.num] ? ` <button class="btn sm gold" id="apLogin">إرسال بيانات الدخول واتساب</button> <button class="btn sm" id="apProf">فتح ملف المتدرب</button>` : ""}
+      ${appCan("finance") && S.students[a.num] ? (finOpen ? ` <button class="btn sm" id="apFinGo">الحساب المالي</button>` : ` <button class="btn sm pri" id="apFinOpen">💳 فتح الحساب المالي${first && first.amount ? " وتسجيل الدفعة الأولى" : ""}</button>`) : ""}</div>` : ""}
+    <div class="card" style="background:var(--bg);display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px 16px">
+      ${row("الجنس", a.gender === "f" ? "أنثى" : "ذكر")}${row("رقم الهوية", `<span dir="ltr">${esc(a.nid)}</span>`)}${row("الجوال", `<span dir="ltr">${esc(a.phone)}</span>`)}${row("البريد", a.email ? `<span dir="ltr">${esc(a.email)}</span>` : "")}
+      ${row("تاريخ الميلاد", esc(a.birth || ""))}${row("المدينة", esc(a.city || ""))}${row("المؤهل", esc(a.edu || ""))}${row("التخصص", esc(a.major || ""))}${row("جهة العمل", esc(a.job || ""))}${row("عرف عنّا من", esc(a.source || ""))}
+      ${row("المسوّق / الشريك", esc(a.referral ? ((parts.find(p => p.id === a.referral) || {}).name || a.referral) : ""))}${row("خطة السداد اللي اختارها", esc(PLANS[a.plan] || ""))}
+    </div>
+    ${a.notes ? `<p style="white-space:pre-wrap;margin:8px 0"><span class="muted">ملاحظات المتقدم:</span> ${esc(a.notes)}</p>` : ""}
+    <div class="card" style="padding:10px"><b>📎 المستندات</b>${appReqDocs().length ? `<span class="muted" style="font-size:13px"> · المطلوب: ${appReqDocs().map(k => (a.files || []).some(f => f.kind === k) ? "✓ " + APP_DOC[k] : `<span style="color:var(--abs)">✗ ${APP_DOC[k]}</span>`).join("، ")}</span>` : ""}
+      <div style="margin-top:6px">${(a.files || []).map((f, i) => `<button class="btn sm" data-apf="${i}">📎 ${esc(f.label || "مرفق")}</button>`).join(" ") || `<span class="muted">ما فيه مرفقات</span>`}</div>
+      ${(a.docsReq || []).length ? `<div class="muted" style="margin-top:6px">⏳ طُلب من المتقدم: ${a.docsReq.map(k => APP_DOC[k]).join("، ")}</div>` : ""}
+      ${appCan("admission") && APP_OPEN.includes(st) ? `<div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center"><select id="apDk" style="width:auto">${Object.entries(APP_DOC).map(([k, v]) => `<option value="${k}" ${miss[0] === k ? "selected" : ""}>${v}</option>`).join("")}</select><label class="btn sm" for="apDf" style="cursor:pointer">+ رفع مستند</label><input type="file" id="apDf" accept="image/*,application/pdf" style="display:none">
+        <button class="btn sm gold" id="apReqDocs">📩 طلب استكمال من المتقدم</button></div>` : ""}</div>
+    ${a.fin ? `<div class="card" style="background:var(--gold-pale);display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px 16px"><div style="grid-column:1/-1"><b>💳 اعتماد المالية</b></div>
+      ${row("البرنامج", esc(fin.programName || ""))}${row("الرسوم", SAR(fin.fee))}${fin.discount ? row("الخصم", SAR(fin.discount) + (fin.discountNote ? " · " + esc(fin.discountNote) : "")) : ""}${row("الصافي", SAR(net))}${row("الخطة", esc(PLANS[fin.plan] || "") + (fin.plan === "monthly" ? ` · ${fin.months} أشهر` : ""))}${row("أول قسط", esc(fin.start || ""))}
+      ${row("الشريك", esc(fin.partner ? (parts.find(p => p.id === fin.partner) || {}).name || "" : ""))}${first ? row("الدفعة الأولى", first.amount ? `${SAR(first.amount)} · ${esc(first.method || "")}${first.ref ? " · " + esc(first.ref) : ""}${first.img ? ` <button class="btn sm" id="apFirstImg">الإيصال</button>` : ""}` : `بدون دفعة مقدمة: ${esc(first.why || "")}`) : ""}${row("ملاحظة المالية", esc(fin.note || ""))}</div>` : ""}
+    ${["academic", "enrolled"].includes(st) || a.pledge ? `<div class="card" style="padding:10px"><b>✍️ الإقرار والتعهد:</b> ${a.pledge ? (a.pledge.paper ? `استلمنا نسخة موقّعة ورقياً (${esc(String(a.pledge.at || "").slice(0, 10))})` : `وافق إلكترونياً باسم «${esc(a.pledge.name)}» · ${esc(String(a.pledge.at || "").slice(0, 16).replace("T", " "))}`) : `<span style="color:var(--abs)">ما وقّع بعد</span>`}
+      <div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap"><button class="btn sm" id="apPrint">🖨️ طباعة عقد التسجيل</button>
+      ${stageAc && !a.pledge ? `${appWa(a, "") ? `<a class="btn sm gold" target="_blank" rel="noopener" href="${esc(appWa(a, `السلام عليكم ${a.name}،\nمعكم الشؤون الأكاديمية في ${INST_AR}. بقي خطوة أخيرة لتسجيلك: الاطلاع على الإقرار والتعهد والموافقة عليه من الرابط (برقم طلبك ${a.id} ورقم هويتك):\n${trackUrl}`))}">📩 إرسال رابط الإقرار واتساب</a>` : ""}<button class="btn sm" id="apPaper">استلمنا نسخة موقّعة ورقياً</button>` : ""}</div></div>` : ""}
+    <div class="row" style="gap:8px;margin:10px 0;flex-wrap:wrap;align-items:flex-end">
+      <label class="f" style="min-width:220px">البرنامج<select id="apProg" ${stageAdm ? "" : "disabled"}>${prog ? "" : `<option>${esc(a.programName || "")}</option>`}${progs.map(p => `<option value="${esc(p.id)}" ${prog && p.id === prog.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>
+      ${stageAdm ? `<label class="f" style="min-width:200px">خطة السداد اللي اختارها${planSel("apPlan", a.plan || "")}</label>` : ""}
+      ${appWa(a, "") ? `<a class="btn sm gold" target="_blank" rel="noopener" href="${esc(appWa(a, `السلام عليكم ${a.name}،\nمعكم ${dept} في ${INST_AR} بخصوص طلب التحاقكم ببرنامج (${a.programName || ""}) رقم ${a.id}.\n`))}">واتساب</a><a class="btn sm" href="tel:${esc(a.phone)}">اتصال</a>` : ""}</div>
+    ${stageFin ? `<div class="card" style="padding:10px"><b>البيانات المالية</b>
+      <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap;align-items:flex-end">
+        <label class="f" style="min-width:200px">البرنامج المالي<select id="afP"><option value="">اختر</option>${fprogs.map(p => `<option value="${esc(p.id)}" data-fee="${Number(p.fee) || 0}" ${(fin.program || lk.fin) === p.id ? "selected" : ""}>${esc(p.name)} · ${SAR(p.fee)}</option>`).join("")}</select></label>
+        <label class="f" style="width:120px">الرسوم<input type="number" id="afFee" min="0" value="${esc(fin.fee ?? ((fprogs.find(p => p.id === lk.fin) || {}).fee ?? ""))}"></label>
+        <label class="f" style="width:110px">الخصم<input type="number" id="afDis" min="0" value="${esc(fin.discount ?? 0)}"></label>
+        <label class="f grow">سبب الخصم<input type="text" id="afDisN" maxlength="80" value="${esc(fin.discountNote || "")}"></label></div>
+      <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap;align-items:flex-end"><label class="f" style="min-width:200px">خطة السداد${planSel("afPl", fin.plan || a.plan || "full")}</label>
+        <label class="f" style="width:160px">تاريخ أول قسط<input type="date" id="afSt" value="${esc(fin.start || today())}"></label>
+        <label class="f" style="width:110px">عدد الأشهر<input type="number" id="afMo" min="2" max="60" value="${esc(fin.months || 4)}"></label>
+        <label class="f grow">سجّل عن طريق (للعمولة)<select id="afPar"><option value="">بدون شريك</option>${parts.map(p => `<option value="${esc(p.id)}" ${(fin.partner || (parts.find(x => x.id === a.referral || (a.referral && norm(x.name).includes(norm(a.referral)))) || {}).id) === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label></div>
+      <div style="margin-top:8px;padding:8px;border:1px dashed var(--line);border-radius:10px"><b>الدفعة الأولى</b> <label class="row" style="gap:4px;display:inline-flex;margin-inline-start:10px"><input type="checkbox" id="afNo" ${first && !first.amount ? "checked" : ""}> بدون دفعة مقدمة (استثناء)</label>
+        <div class="row" id="afFirst" style="gap:8px;margin-top:6px;flex-wrap:wrap;align-items:flex-end">
+          <label class="f" style="width:120px">المبلغ<input type="number" id="af1A" min="0" step="0.01" value="${esc(first && first.amount || "")}"></label>
+          <label class="f" style="width:160px">الطريقة<select id="af1M">${METHODS.map(m => `<option ${first && first.method === m ? "selected" : ""}>${m}</option>`).join("")}</select></label>
+          <label class="f" style="width:150px">التاريخ<input type="date" id="af1D" value="${esc(first && first.date || today())}" max="${today()}"></label>
+          <label class="f grow">رقم العملية / المرجع<input type="text" id="af1R" value="${esc(first && first.ref || "")}"></label>
+          <label class="f grow">الإيصال (صورة أو PDF)<input type="file" id="af1I" accept="image/*,application/pdf,.pdf"></label></div>
+        <label class="f" id="afWhy" style="margin-top:6px;display:none">سبب عدم الدفع المقدم<input type="text" id="af1W" maxlength="120" value="${esc(first && first.why || "")}"></label></div>
+      <label class="f" style="margin-top:6px">ملاحظة المالية<input type="text" id="afN" maxlength="200" value="${esc(fin.note || "")}"></label></div>` : ""}
+    ${stageAc ? `<div class="card" style="padding:10px"><b>🏫 المقررات والشعب</b> <span class="muted" style="font-size:13px">ينضاف المتدرب للشعب اللي تختارها مع إصدار رقمه</span><div id="apGrp">${grpRows()}</div>
+      <div class="row" style="gap:6px;margin-top:6px"><select id="apGAdd" class="grow"><option value="">+ إضافة مقرر</option>${courses.filter(c => !pick.rows.some(r => r.course === c)).map(c => `<option>${esc(c)}</option>`).join("")}</select></div></div>` : ""}
+    ${canNote || acts.length ? `<div class="card" style="padding:10px"><label class="f">ملاحظة أو سبب (يُكتب في سجل الطلب)<textarea id="apNote" rows="2" maxlength="500" placeholder="مثل: تواصلت معه واختار الدفع على قسطين"></textarea></label>
+      <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">${canNote ? `<button class="btn sm" id="apAddNote">+ إضافة ملاحظة</button>` : ""}${acts.map(([k, v, c]) => `<button class="btn sm ${c}" data-apa="${k}">${v}</button>`).join("")}</div></div>` : ""}
+    <h3 style="margin:12px 0 4px">سجل الطلب</h3><div class="list">${[...(a.log || [])].reverse().map(l => `<div class="item" style="padding:6px 10px"><div class="grow">${esc(l.t)}</div><span class="muted" style="font-size:12px">${esc(who(l.by))} · ${esc(String(l.at || "").slice(0, 16).replace("T", " "))}</span></div>`).join("")}</div>
+    ${S.adminRole === "admin" ? `<div class="row" style="margin-top:10px"><button class="btn sm danger" id="apDel">حذف الطلب نهائياً</button></div>` : ""}`;
+  $("#modal").classList.add("on");
+  const B = $("#modalBox"), on = (sel, fn) => { const x = $(sel); if (x) x.onclick = fn; };
+  on("#apX", () => { S._appOpen = null; S._apGroups = null; closeModal(); });
+  B.querySelectorAll("[data-apf]").forEach(b => b.onclick = async () => { const f = a.files[Number(b.dataset.apf)]; b.disabled = true; try { await srvOpen(f.m); } catch (e) { console.error(e); toast("تعذّر فتح الملف، تأكد إن السيرفر شغّال"); } b.disabled = false; });
+  on("#apFirstImg", async () => { try { if (isSrv(first.img)) await srvOpen(first.img); else { const w = window.open(); if (w) w.document.write(`<iframe src="${first.img}" style="border:0;width:100%;height:100vh"></iframe>`); } } catch { toast("تعذّر فتح الإيصال"); } });
+  on("#apLogin", async () => { const t = await waText(a.num, "login"); window.open(appWa(a, t), "_blank", "noopener"); });
+  on("#apProf", () => { S._appOpen = null; openProfile(a.num); });
+  on("#apFinGo", () => { S._appOpen = null; openFinAccount(a.num); });
+  on("#apFinOpen", async e => { e.target.disabled = true; try { await appOpenFin(a); } catch (x) { e.target.disabled = false; console.error(x); handleWriteErr(x); } });
+  on("#apPrint", () => appContract(a));
+  on("#apPaper", async () => { try { await appSet(a, {pledge: {paper: true, at: new Date().toISOString(), by: S.adminRole}}, "استلمنا الإقرار موقّعاً ورقياً"); toast("انحفظ"); } catch (x) { handleWriteErr(x); } });
+  on("#apDel", async e => { const b = e.target; if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟ ما يرجع"; return; }
+    try { await deleteDoc(ref("apps/" + a.id)); logAction("حذف طلب التحاق", a.name); S._appOpen = null; closeModal(); toast("انحذف"); } catch (x) { handleWriteErr(x); } });
+  if ($("#apDf")) $("#apDf").onchange = async e => {
+    const f = e.target.files[0]; e.target.value = ""; if (!f) return; if (f.size > 10 * 1024 ** 2) return toast("الملف أكبر من 10 ميجا");
+    const kind = $("#apDk").value; toast("جاري الرفع…");
+    try { const pdf = isPdfFile(f), blob = pdf ? f : new Blob([dataBytes(await compressImage(f))], {type: "image/jpeg"});
+      const m = await srvPut(blob, `${APP_DOC[kind].split(" /")[0]} - ${a.name}.${pdf ? "pdf" : "jpg"}`, pdf ? "application/pdf" : "image/jpeg");
+      await appSet(a, {files: [...(a.files || []).filter(x => x.kind !== kind), {kind, label: APP_DOC[kind], m, at: new Date().toISOString()}], docsReq: (a.docsReq || []).filter(k => k !== kind)}, "رفع القبول: " + APP_DOC[kind]); toast("انرفع");
+    } catch (x) { console.error(x); toast("تعذّر الرفع، تأكد إن السيرفر شغّال"); }
+  };
+  on("#apReqDocs", async () => {
+    const kinds = [...new Set([...miss, $("#apDk").value])].filter(k => APP_DOC[k]);
+    try { await appSet(a, {docsReq: kinds}, "طُلب من المتقدم استكمال: " + kinds.map(k => APP_DOC[k]).join("، "), "docs");
+      const u = appWa(a, `السلام عليكم ${a.name}،\nمعكم القبول والتسجيل في ${INST_AR}. لاستكمال طلبكم رقم ${a.id} نرجو رفع:\n${kinds.map(k => "• " + APP_DOC[k]).join("\n")}\nمن الرابط (برقم الطلب ورقم الهوية):\n${trackUrl}`);
+      if (u) window.open(u, "_blank", "noopener"); toast(a.email ? "انطلب، ووصله إيميل بالرابط" : "انطلب"); } catch (x) { handleWriteErr(x); }
+  });
+  if (stageAdm) { $("#apProg").onchange = async e => { const p = progs.find(x => x.id === e.target.value); if (!p) return; try { await appSet(a, {program: p.id, programName: p.name, intake: p.start || ""}, `تغيير البرنامج إلى: ${p.name}`); toast("انحفظ"); } catch (x) { handleWriteErr(x); } }; if (!a.plan) $("#apPlan").value = ""; }
+  if (stageFin) {
+    $("#afP").onchange = e => { const o = e.target.selectedOptions[0]; if (o && o.dataset.fee) $("#afFee").value = o.dataset.fee; };
+    const noF = () => { const n = $("#afNo").checked; $("#afFirst").style.display = n ? "none" : ""; $("#afWhy").style.display = n ? "" : "none"; }; $("#afNo").onchange = noF; noF();
+  }
+  if (stageAc) {
+    const sync = () => B.querySelectorAll("[data-apg]").forEach(s => { pick.rows[Number(s.dataset.apg)].gid = s.value; });
+    B.querySelectorAll("[data-apg]").forEach(s => s.onchange = sync);
+    B.querySelectorAll("[data-apgx]").forEach(b => b.onclick = () => { sync(); pick.rows.splice(Number(b.dataset.apgx), 1); appModal(a.id); });
+    $("#apGAdd").onchange = e => { sync(); const c = e.target.value; if (!c) return; const gs = Object.values(S.groups).filter(g => g.course === c); pick.rows.push({course: c, gid: gs.length === 1 ? gs[0].id : ""}); appModal(a.id); };
+  }
+  if (!$("#apNote")) return;
+  const note = () => $("#apNote").value.trim();
+  on("#apAddNote", async () => { if (!note()) return toast("اكتب الملاحظة"); try { await appSet(a, {}, "📝 " + note()); toast("انضافت"); } catch (x) { handleWriteErr(x); } });
+  B.querySelectorAll("[data-apa]").forEach(b => b.onclick = async () => {
+    const k = b.dataset.apa, n = note();
+    if (["rejected", "backadm", "backfin"].includes(k) && !n) return toast(k === "rejected" ? "اكتب سبب الرفض في خانة الملاحظة" : "اكتب سبب الإرجاع في خانة الملاحظة");
+    let patch, txt, ev;
+    if (k === "tofin") {
+      const plan = $("#apPlan").value; if (!plan) return toast("اختر خطة السداد اللي اختارها المتقدم");
+      if (miss.length) return toast("ناقص مستندات مطلوبة: " + miss.map(x => APP_DOC[x]).join("، ") + ". ارفعها أو اطلبها من المتقدم");
+      if (prog && Number(prog.seats) > 0 && appTaken(prog) >= Number(prog.seats) && !confirm(`مقاعد ${prog.name} مكتملة (${prog.seats}). تحوّله للمالية فوق العدد؟`)) return;
+      patch = {status: "finance", plan, back: "", wait: false}; txt = `قُبل وتحوّل للمالية · الخطة: ${PLANS[plan]}`; ev = "finance";
+    } else if (k === "toac") {
+      const pr = fprogs.find(p => p.id === $("#afP").value), fee = Number($("#afFee").value) || 0, dis = Number($("#afDis").value) || 0, plan = $("#afPl").value, start = $("#afSt").value, months = Math.max(2, Math.min(60, Number($("#afMo").value) || 4));
+      if (!pr) return toast("اختر البرنامج المالي"); if (fee <= 0) return toast("حدد الرسوم"); if (dis > fee) return toast("الخصم أكبر من الرسوم"); if (!start) return toast("حدد تاريخ أول قسط");
+      let fst;
+      if ($("#afNo").checked) { const why = $("#af1W").value.trim(); if (!why) return toast("اكتب سبب عدم الدفع المقدم"); fst = {amount: 0, why: why.slice(0, 120)}; }
+      else {
+        const amt = Math.round((Number($("#af1A").value) || 0) * 100) / 100; if (amt <= 0) return toast("سجّل مبلغ الدفعة الأولى، أو اختر «بدون دفعة مقدمة»"); if (amt > fee - dis + 0.01) return toast("الدفعة أكبر من صافي الرسوم");
+        fst = {amount: amt, method: $("#af1M").value, date: $("#af1D").value || today(), ref: $("#af1R").value.trim().slice(0, 60), img: (first && first.img) || ""};
+        const f = $("#af1I").files[0];
+        if (f) { b.disabled = true; try { const d = await rcptData(f); fst.img = isSrv(d) ? d : await keepData(d, `إيصال ${a.name}`); if (!isSrv(fst.img) && fst.img.length > 300000) fst.img = await srvPut(new Blob([dataBytes(fst.img)], {type: (/^data:([^;,]+)/.exec(fst.img) || [])[1] || "image/jpeg"}), `إيصال ${a.name}`); } catch (x) { b.disabled = false; console.error(x); return rcptErr(x); } }
+      }
+      patch = {status: "academic", back: "", fin: {program: pr.id, programName: pr.name, fee, discount: dis, discountNote: $("#afDisN").value.trim().slice(0, 80), plan, start, months, partner: $("#afPar").value, first: fst, note: $("#afN").value.trim().slice(0, 200), at: new Date().toISOString()}};
+      txt = `اعتمدت المالية: ${pr.name} · ${SAR(fee - dis)} · ${PLANS[plan]}${fst.amount ? ` · دفعة أولى ${SAR(fst.amount)}` : " · بدون دفعة مقدمة"} ← تحوّل للشؤون الأكاديمية`; ev = "academic";
+    } else if (k === "enroll") {
+      if (!a.pledge) return toast("المتقدم ما وقّع الإقرار بعد: أرسل له الرابط، أو اضغط «استلمنا نسخة موقّعة ورقياً»");
+      B.querySelectorAll("[data-apg]").forEach(s => { pick.rows[Number(s.dataset.apg)].gid = s.value; });
+      b.disabled = true; try { await appEnroll(a, pick.rows.map(r => r.gid).filter(Boolean)); } catch (x) { b.disabled = false; console.error(x); handleWriteErr(x); } return;
+    }
+    else if (k === "backadm") { patch = {status: "contact", back: n}; txt = "أرجعته المالية للقبول"; ev = "backadm"; }
+    else if (k === "backfin") { patch = {status: "finance", back: n}; txt = "أرجعته الشؤون الأكاديمية للمالية"; ev = "backfin"; }
+    else { patch = {status: k, back: ""}; txt = {contact: "تم التواصل مع المتقدم", rejected: "رُفض الطلب", withdrawn: "انسحب المتقدم", new: "أُعيد فتح الطلب"}[k]; ev = k === "rejected" ? "rejected" : ""; }
+    b.disabled = true;
+    try { await appSet(a, patch, txt + (n ? ": " + n : ""), ev); toast("انحفظ"); }
+    catch (x) { b.disabled = false; handleWriteErr(x); }
+  });
+}
+async function appEnroll(a, gids){
+  if (!appCan("academic")) return;
+  const same = Object.values(S.students || {}).find(s => norm(s.name) === norm(a.name) || (a.nid && ((S.stProf || {})[s.num] || {}).nid === a.nid));
+  if (same && !confirm(`فيه متدرب مسجّل باسم أو هوية مشابهة (${same.name} · ${same.num}). تسجّله برقم جديد؟`)) { appModal(a.id); return; }
+  const d = await createStudent(a.name, a.gender === "f" ? "f" : "m");
+  const ph = a.phone ? normPhone(a.phone) : "";
+  await setDoc(ref("studentSecrets/" + d.num), {nid: a.nid || "", dob: a.birth || "", phone: /^9665\d{8}$/.test(ph) ? ph : "", email: a.email || "", edu: [a.edu, a.major].filter(Boolean).join(" · ").slice(0, 60), city: a.city || "", note: `من طلب الالتحاق ${a.id} · ${a.programName || ""}`}, {merge: true});
+  const names = [];
+  for (const gid of gids) { const g = S.groups[gid]; if (!g) continue; const c = clone(g); c.students = c.students || [];
+    if (!c.students.some(s => s.sid === d.num)) { c.students.push({id: "s" + uid(), name: d.name, gender: d.gender, sid: d.num}); writeGroup(gid, c); names.push(g.course); } }
+  await appSet(a, {status: "enrolled", num: d.num, back: "", groups: gids}, `أصدرت الشؤون الأكاديمية معلومات المتدرب · الرقم الأكاديمي ${d.num}${names.length ? " · الشعب: " + names.join("، ") : ""}`, "enrolled");
+  try { if ((a.files || []).length) await docsApi({action: "fromApp", num: d.num, app: a.id}); } catch (x) { console.error(x); toast("انسجّل، بس ما انتقلت المستندات لملفه. ارفعها من ملف المتدرب.", true); }
+  S._apGroups = null;
+  toast(`انسجّل ${a.name} برقم ${d.num}${names.length ? ` وانضاف لـ ${names.length} شعبة` : ""}. أرسل له بيانات الدخول من زر «إرسال بيانات الدخول واتساب».`, true);
+}
+// finance opens the trainee's account from the fees and plan it approved, and records the first payment with its receipt
+async function appOpenFin(a){
+  if (!appCan("finance") || !a.num) return;
+  const f = a.fin || {}, plan = f.plan || a.plan || "full", start = f.start || today(), months = f.months || 4, net = Math.max(0, (Number(f.fee) || 0) - (Number(f.discount) || 0)), first = f.first || {};
+  let acc = (S.finAcc || {})[a.num];
+  if (!acc) {
+    acc = {num: a.num, name: a.name, program: f.program || "", fee: Number(f.fee) || 0, discount: Number(f.discount) || 0, discountNote: f.discountNote || "", plan, start, months, installments: buildPlan(net, plan, start, months), phone: a.phone || "", partner: f.partner || "", updatedAt: new Date().toISOString()};
+    await setDoc(ref("finAccounts/" + a.num), acc); S.finAcc = S.finAcc || {}; S.finAcc[a.num] = clone(acc);
+    logAction("حفظ حساب مالي", `${a.name} · ${PLANS[plan]} · ${SAR(net)} (من طلب الالتحاق)`);
+  }
+  let payId = a.finPaid || "";
+  if (first.amount > 0 && !payId) {
+    const w = openPrint();
+    const pay = {num: a.num, name: a.name, amount: first.amount, method: first.method || "تحويل بنكي", date: first.date || today(), ref: first.ref || "", note: "الدفعة الأولى · طلب الالتحاق " + a.id, program: acc.program, by: S.adminRole, void: false};
+    payId = "p-" + uid() + uid();
+    await runTransaction(db, async tx => {
+      const c = await tx.get(ref("fin/counter")); const n = ((c.exists() && c.data().last) || 0) + 1;
+      pay.receiptNo = `${today().slice(0, 4)}-${String(n).padStart(5, "0")}`;
+      tx.set(ref("fin/counter"), {last: n}); tx.set(ref("payments/" + payId), {...pay, ...(first.img ? {hasImg: true} : {}), at: serverTimestamp()});
+      if (first.img) tx.set(ref("receipts/" + payId), {img: first.img, coll: "payments", at: new Date().toISOString(), by: S.adminRole});
+    });
+    logAction("تسجيل دفعة", `${a.name} · ${SAR(first.amount)} · سند ${pay.receiptNo}`);
+    if (w) fillPrintFin(w, `سند قبض ${pay.receiptNo}`, [{html: receiptHTML({...pay, id: payId}, acc, [...paysOf(a.num), {...pay, id: payId}])}]);
+  }
+  await appSet(a, {finOpened: true, ...(payId ? {finPaid: payId} : {})}, "فتحت المالية الحساب المالي" + (first.amount > 0 ? ` وسجّلت الدفعة الأولى ${SAR(first.amount)}` : ""));
+  S._appOpen = null; openFinAccount(a.num);
+}
+// the registration contract: his data, the approved fees and plan, the pledge, and signature lines
+function appContract(a){
+  const w = openPrint(); if (!w) return;
+  const f = a.fin || {}, net = Math.max(0, (Number(f.fee) || 0) - (Number(f.discount) || 0)), plan = buildPlan(net, f.plan || a.plan || "full", f.start || today(), f.months || 4);
+  const row = (k, v) => `<div><b>${k}:</b> ${esc(v || "—")}</div>`, txt = (S.admPub || {}).pledge || APP_PLEDGE;
+  const html = `<h1>عقد تسجيل متدرب</h1>
+    <div class="info">${row("رقم الطلب", a.id)}${row("الاسم", a.name)}${row("رقم الهوية / الإقامة", a.nid)}${row("الجوال", a.phone)}${row("البرنامج", f.programName || a.programName)}${row("الرقم الأكاديمي", a.num || "يصدر بعد التسجيل")}</div>
+    ${a.fin ? `<h2>الرسوم وخطة السداد</h2><div class="info">${row("الرسوم", SAR(f.fee))}${row("الخصم", f.discount ? SAR(f.discount) + (f.discountNote ? " · " + f.discountNote : "") : "—")}${row("الصافي", SAR(net))}${row("طريقة السداد", PLANS[f.plan] || "")}</div>
+      ${plan.length ? `<table><thead><tr><th>#</th><th>تاريخ الاستحقاق</th><th>المبلغ</th></tr></thead><tbody>${plan.map((i, k) => `<tr><td>${k + 1}</td><td>${esc(bothDates(i.due))}</td><td>${SAR(i.amount)}</td></tr>`).join("")}</tbody></table>` : ""}` : ""}
+    <h2>الإقرار والتعهد</h2><p style="white-space:pre-wrap;line-height:2">${esc(txt)}</p>
+    ${a.pledge && !a.pledge.paper ? `<p class="muted">وافق المتدرب على هذا الإقرار إلكترونياً باسم «${esc(a.pledge.name)}» بتاريخ ${esc(String(a.pledge.at || "").slice(0, 10))}.</p>` : ""}
+    <div class="sig"><div>المتدرب: ${esc(a.name)}<br><br>التوقيع: ..................</div><div>القبول والتسجيل</div><div>الإدارة المالية</div><div>الشؤون الأكاديمية</div></div>`;
+  fillPrint(w, `عقد تسجيل ${a.name}`, [{html}], false, "القبول والتسجيل");
+}
+function appForm(F){
+  const progs = appProgs().filter(p => p.open !== false || p.id === F.program), parts = ((S.finSet || {}).partners || []);
+  const inp = (id, label, v, extra = "") => `<label class="f grow" for="${id}">${label}<input type="text" id="${id}" value="${esc(v || "")}" ${extra}></label>`;
+  return `<div class="row">${inp("apN", "الاسم الرباعي *", F.name, 'maxlength="80"')}<label class="f" for="apG" style="width:130px">الجنس *<select id="apG"><option value="m" ${F.gender !== "f" ? "selected" : ""}>ذكر</option><option value="f" ${F.gender === "f" ? "selected" : ""}>أنثى</option></select></label></div>
+    <div class="row">${inp("apNid", "رقم الهوية / الإقامة *", F.nid, 'inputmode="numeric" dir="ltr" maxlength="10"')}${inp("apPh", "الجوال *", F.phone, 'inputmode="tel" dir="ltr" placeholder="05xxxxxxxx"')}${inp("apEm", "البريد (اختياري)", F.email, 'dir="ltr"')}</div>
+    <div class="row"><label class="f grow" for="apB">تاريخ الميلاد<input type="date" id="apB" value="${esc(F.birth || "")}"></label>${inp("apCity", "المدينة *", F.city)}
+      <label class="f grow" for="apEdu">المؤهل *<select id="apEdu"><option value="">—</option>${APP_EDU.map(x => `<option ${F.edu === x ? "selected" : ""}>${x}</option>`).join("")}</select></label></div>
+    <div class="row">${inp("apMaj", "التخصص", F.major)}${inp("apJob", "جهة العمل", F.job)}<label class="f grow" for="apSrc">عرف عنّا من<select id="apSrc"><option value="">—</option>${APP_SRC.map(x => `<option ${F.source === x ? "selected" : ""}>${x}</option>`).join("")}</select></label>
+      ${inp("apRef", "اسم المسوّق / الشريك (إن وجد)", F.referral, 'maxlength="60"')}</div>
+    <div class="row"><label class="f grow" for="apProgN">البرنامج *<select id="apProgN"><option value="">اختر</option>${progs.map(p => `<option value="${esc(p.id)}" ${F.program === p.id ? "selected" : ""}>${esc(p.name)}${Number(p.seats) > 0 ? ` · باقي ${Math.max(0, p.seats - appTaken(p))} مقعد` : ""}</option>`).join("")}</select></label>
+      <label class="f" style="min-width:200px" for="apPlanN">خطة السداد اللي يبيها<select id="apPlanN"><option value="">لم يحدد بعد</option>${Object.entries(PLANS).map(([k, n]) => `<option value="${k}" ${F.plan === k ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>
+    ${progs.length ? "" : `<p class="muted">ما فيه برامج. أضفها من «البرامج والإعدادات».</p>`}
+    <label class="f" for="apNotes">ملاحظات<textarea id="apNotes" rows="2" maxlength="600">${esc(F.notes || "")}</textarea></label>`;
+}
+function admNew(el){
+  const F = S._apNew = S._apNew || {gender: "m", status: "new"};
+  el.innerHTML = `<div class="card"><h2 style="margin-top:0">طلب التحاق من المكتب</h2><p class="muted" style="margin-top:0">للي يجي المعهد أو يتصل. اللي يقدّم من الموقع يوصلك تلقائي. لو كتبت إيميله يوصله رقم طلبه ورابط المتابعة.</p>${appForm(F)}
+    <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">${Object.entries(APP_DOC).map(([k, v]) => `<label class="f grow" for="apF_${k}">${v}${appReqDocs().includes(k) ? " *" : " (اختياري)"}<input type="file" id="apF_${k}" accept="image/*,application/pdf"></label>`).join("")}</div>
+    <div class="row" style="gap:8px;margin-top:10px;align-items:center"><label class="row" style="gap:4px"><input type="checkbox" id="apC" ${F.status === "contact" ? "checked" : ""}> تم التواصل معه</label><button class="btn pri" id="apSave">حفظ الطلب</button></div></div>`;
+  const read = () => Object.assign(F, {name: $("#apN").value.replace(/\s+/g, " ").trim(), gender: $("#apG").value, nid: digits($("#apNid").value), phone: digits($("#apPh").value), email: $("#apEm").value.trim().toLowerCase(), birth: $("#apB").value, city: $("#apCity").value.trim(),
+    edu: $("#apEdu").value, major: $("#apMaj").value.trim(), job: $("#apJob").value.trim(), source: $("#apSrc").value, referral: $("#apRef").value.trim(), program: $("#apProgN").value, plan: $("#apPlanN").value, notes: $("#apNotes").value.trim(), status: $("#apC").checked ? "contact" : "new"});
+  el.querySelectorAll("input,select,textarea").forEach(x => { if (x.type !== "file") x.addEventListener("change", read); });
+  $("#apSave").onclick = async e => {
+    read();
+    if (F.name.split(" ").length < 3) return toast("اكتب الاسم الثلاثي أو الرباعي");
+    if (!/^[12]\d{9}$/.test(F.nid)) return toast("رقم الهوية 10 أرقام ويبدأ بـ 1 أو 2");
+    let ph = F.phone; if (ph.startsWith("966")) ph = "0" + ph.slice(3); if (/^5\d{8}$/.test(ph)) ph = "0" + ph; if (!/^05\d{8}$/.test(ph)) return toast("رقم الجوال غير صحيح");
+    if (F.email && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(F.email)) return toast("البريد غير صحيح");
+    const p = appProgs().find(x => x.id === F.program); if (!F.city || !F.edu || !p) return toast("كمّل الخانات اللي عليها *");
+    const dup = (S.apps || []).find(x => x.nid === F.nid && APP_OPEN.includes(x.status)); if (dup) { toast("له طلب مفتوح من قبل"); return appModal(dup.id); }
+    e.target.disabled = true; e.target.textContent = "جاري الحفظ…";
+    try {
+      const files = [];
+      for (const kind of Object.keys(APP_DOC)) {
+        const f = $("#apF_" + kind).files[0]; if (!f) continue;
+        if (f.size > 10 * 1024 ** 2) throw new Error("big");
+        const pdf = isPdfFile(f), blob = pdf ? f : new Blob([dataBytes(await compressImage(f))], {type: "image/jpeg"});
+        files.push({kind, label: APP_DOC[kind], m: await srvPut(blob, `${APP_DOC[kind].split(" /")[0]} - ${F.name}.${pdf ? "pdf" : "jpg"}`, pdf ? "application/pdf" : "image/jpeg"), at: new Date().toISOString()});
+      }
+      const id = appNewId(), now = new Date().toISOString(), {status, ...rest} = F, wait = Number(p.seats) > 0 && appTaken(p) >= Number(p.seats);
+      const d = {...rest, phone: ph, programName: p.name, intake: p.start || "", wait, files, docsReq: [], status, origin: "desk", ref: id, createdAt: now, updatedAt: now, ev: "new", rev: 1,
+        log: [{at: now, by: S.adminRole, t: "أُدخل الطلب من المكتب" + (status === "contact" ? " · تم التواصل" : "") + (wait ? " · قائمة الانتظار" : "")}]};
+      await setDoc(ref("apps/" + id), d); if (!(S.apps || []).some(x => x.id === id)) S.apps = [{id, ...d}, ...(S.apps || [])];
+      if (d.email) notify("app", id);
+      logAction("طلب التحاق من المكتب", F.name); S._apNew = null; S._admT = "list"; toast("انحفظ الطلب"); render(); appModal(id);
+    } catch (x) { e.target.disabled = false; e.target.textContent = "حفظ الطلب"; if (x && x.message === "big") return toast("الملف أكبر من 10 ميجا"); console.error(x); if (x && x.code) handleWriteErr(x); else toast("تعذّر رفع المرفق، تأكد إن السيرفر شغّال"); }
+  };
+}
+function admStats(el){
+  const apps = S.apps || [], by = (fn) => { const m = {}; apps.forEach(a => { const k = fn(a) || "غير محدد"; m[k] = m[k] || []; m[k].push(a); }); return Object.entries(m).sort((x, y) => y[1].length - x[1].length); };
+  const pct = (n, d) => d ? Math.round(n / d * 100) + "%" : "—";
+  const enr = l => l.filter(a => a.status === "enrolled").length, parts = ((S.finSet || {}).partners || []);
+  const months = [...Array(6)].map((_, i) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 5 + i); return d.toLocaleDateString("en-CA", {timeZone: TZ}).slice(0, 7); });
+  const mm = months.map(m => [m, apps.filter(a => appDay(a).startsWith(m))]), mx = Math.max(1, ...mm.map(([, l]) => l.length));
+  const tbl = (title, rows) => `<div class="card"><h3 style="margin-top:0">${title}</h3><div class="tbl"><table><thead><tr><th class="nm">البند</th><th>المتقدمين</th><th>مسجّلين</th><th>نسبة التسجيل</th></tr></thead><tbody>${rows.map(([k, l]) => `<tr><td class="nm">${esc(k)}</td><td>${l.length}</td><td>${enr(l)}</td><td>${pct(enr(l), l.length)}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">ما فيه بيانات</td></tr>`}</tbody></table></div></div>`;
+  const seats = appProgs().filter(p => Number(p.seats) > 0);
+  el.innerHTML = `<div class="card"><div class="row" style="gap:10px;flex-wrap:wrap">${[["all", "كل الطلبات", apps.length], ...Object.keys(APP_ST).map(k => [k, APP_ST[k][0], apps.filter(a => a.status === k).length])].map(([k, v, n]) => `<div style="flex:1;min-width:110px;background:var(--bg);border-radius:10px;padding:10px;text-align:center"><b style="font-size:24px">${n}</b><div class="muted" style="font-size:13px">${esc(v)}</div></div>`).join("")}</div>
+      <p class="muted" style="margin:10px 0 0">نسبة التحويل من متقدم إلى متدرب: <b>${pct(enr(apps), apps.length)}</b> · من الموقع ${apps.filter(a => a.origin === "web").length} · من المكتب ${apps.filter(a => a.origin !== "web").length} · قائمة الانتظار ${apps.filter(a => a.wait && APP_OPEN.includes(a.status)).length}</p>
+      <div class="row" style="margin-top:10px"><button class="btn sm gold" id="admX">تصدير Excel</button></div></div>
+    ${seats.length ? `<div class="card"><h3 style="margin-top:0">🪑 المقاعد</h3>${seats.map(p => { const t = appTaken(p); return `<div class="row" style="gap:8px;align-items:center;margin:4px 0"><span style="min-width:180px">${esc(p.name)}${p.start ? ` <span class="muted">(${esc(p.start)})</span>` : ""}</span><div style="flex:1;background:var(--bg);border-radius:6px;height:20px"><div style="width:${Math.min(100, t / p.seats * 100)}%;background:${t >= p.seats ? "var(--abs)" : "var(--gold)"};height:100%;border-radius:6px"></div></div><b style="width:90px">${t} / ${p.seats}</b></div>`; }).join("")}</div>` : ""}
+    <div class="card"><h3 style="margin-top:0">الطلبات آخر 6 شهور</h3>${mm.map(([m, l]) => `<div class="row" style="gap:8px;align-items:center;margin:4px 0"><span style="width:70px" dir="ltr">${m}</span><div style="flex:1;background:var(--bg);border-radius:6px;height:20px"><div style="width:${l.length / mx * 100}%;background:var(--green);height:100%;border-radius:6px"></div></div><b style="width:60px">${l.length}</b><span class="muted" style="width:90px;font-size:12px">${enr(l)} مسجّل</span></div>`).join("")}</div>
+    ${tbl("حسب البرنامج", by(a => a.programName))}${tbl("حسب المصدر (عرف عنّا من)", by(a => a.source))}${tbl("حسب المسوّق / الشريك", by(a => a.referral ? (parts.find(p => p.id === a.referral) || {}).name || a.referral : "بدون"))}${tbl("حسب المدينة", by(a => a.city))}`;
+  $("#admX").onclick = () => excelDownload(`طلبات الالتحاق ${today()}`, [{title: "الطلبات", widths: [11, 26, 8, 12, 13, 22, 12, 12, 14, 14, 16, 22, 14, 16, 14, 11, 11, 30],
+    rows: [["رقم الطلب", "الاسم", "الجنس", "الهوية", "الجوال", "البريد", "الميلاد", "المدينة", "المؤهل", "التخصص", "جهة العمل", "البرنامج", "المصدر", "المسوّق", "خطة السداد", "الحالة", "التاريخ", "الرقم الأكاديمي / ملاحظات"],
+      ...apps.map(a => [a.id, a.name, a.gender === "f" ? "أنثى" : "ذكر", a.nid, a.phone, a.email || "", a.birth || "", a.city || "", a.edu || "", a.major || "", a.job || "", a.programName || "", a.source || "", a.referral ? (parts.find(p => p.id === a.referral) || {}).name || a.referral : "", PLANS[(a.fin || {}).plan || a.plan] || "", (APP_ST[a.status] || [a.status])[0] + (a.wait && APP_OPEN.includes(a.status) ? " (انتظار)" : ""), appDay(a), a.num || a.notes || ""])]}]);
+}
+function admSettings(el){
+  const cur = S.admPub || {}, F = S._admS = S._admS || {open: !!cur.open, msg: cur.msg || "", programs: clone(cur.programs || []), docs: [...(cur.docs || ["id"])], pledge: cur.pledge || APP_PLEDGE};
+  el.innerHTML = `<div class="card"><h2 style="margin-top:0">رابط التقديم</h2>
+      <p class="muted" style="margin-top:0">انشر هذا الرابط في حسابات المعهد. المتقدم يعبّي النموذج ويرفع مستنداته، ويوصلك الطلب هنا مع إشعار، ويطلع له رقم طلب يتابع فيه حالته ويكمّل الناقص ويوقّع الإقرار.</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap"><input type="text" readonly dir="ltr" class="grow" value="${esc(applyUrl())}"><button class="btn sm" id="admCp">نسخ</button><a class="btn sm gold" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent("التقديم على " + INST_AR + ":\n" + applyUrl())}">مشاركة واتساب</a><a class="btn sm" target="_blank" rel="noopener" href="${esc(applyUrl())}">فتح النموذج</a></div>
+      <p class="muted" style="margin:6px 0 0;font-size:13px">لكل شريك أو مسوّق رابط خاص يحسب له المتقدمين، تلقاه في المالية ← الشركاء والعمولات.</p>
+      <label class="row" style="gap:6px;margin-top:12px;font-size:16px"><input type="checkbox" id="asOpen" ${F.open ? "checked" : ""}> <b>التقديم مفتوح</b></label>
+      <label class="f" style="margin-top:8px">رسالة تظهر لما يكون التقديم مقفل<input type="text" id="asMsg" maxlength="200" value="${esc(F.msg)}" placeholder="مثل: التقديم يفتح بداية الفصل القادم، تابعونا"></label></div>
+    <div class="card"><h2 style="margin-top:0">البرامج المتاحة للتقديم</h2><p class="muted" style="margin-top:0">المقاعد: لما يوصل عدد المحوّلين للمالية والمسجّلين في الدفعة للعدد، يظهر البرنامج «مكتمل» ويدخل المتقدم الجديد قائمة الانتظار. اتركه فاضي = بدون حد. لما تبدأ دفعة جديدة غيّر تاريخ البداية وتبدأ المقاعد من الصفر.</p>
+      <div class="list">${F.programs.map((p, i) => `<div class="item" style="gap:8px;flex-wrap:wrap;align-items:flex-end"><label class="f grow">اسم البرنامج<input type="text" data-pn="${i}" value="${esc(p.name)}" maxlength="100"></label><label class="f grow">وصف قصير<input type="text" data-pt="${i}" value="${esc(p.note || "")}" placeholder="المدة، الرسوم…" maxlength="160"></label>
+        <label class="f" style="width:90px">المقاعد<input type="number" min="0" data-ps="${i}" value="${esc(p.seats || "")}"></label><label class="f" style="width:150px">بداية الدفعة<input type="date" data-pd8="${i}" value="${esc(p.start || "")}"></label>
+        <span class="muted" style="font-size:12px;align-self:center">${p.id && Number(p.seats) > 0 ? `محجوز ${appTaken(p)}` : ""}</span>
+        <label class="row" style="gap:4px;align-self:center"><input type="checkbox" data-po="${i}" ${p.open !== false ? "checked" : ""}> متاح</label><button class="btn sm danger" data-pd="${i}">حذف</button></div>`).join("") || `<div class="muted">ما فيه برامج.</div>`}</div>
+      <div class="row" style="gap:8px;margin-top:8px"><button class="btn sm" id="asAdd">+ برنامج</button></div></div>
+    <div class="card"><h2 style="margin-top:0">المستندات المطلوبة</h2><p class="muted" style="margin-top:0">اللي تختاره يصير إجباري في نموذج التقديم، وما يتحوّل الطلب للمالية إلا وهو مكتمل.</p>
+      <div class="row" style="gap:14px;flex-wrap:wrap">${Object.entries(APP_DOC).map(([k, v]) => `<label class="row" style="gap:4px"><input type="checkbox" data-dq="${k}" ${F.docs.includes(k) ? "checked" : ""}> ${v}</label>`).join("")}</div></div>
+    <div class="card"><h2 style="margin-top:0">نص الإقرار والتعهد</h2><p class="muted" style="margin-top:0">يقرأه المتقدم بعد الاعتماد المالي مع رسومه وخطة سداده ويوافق عليه باسمه الكامل، وينطبع في عقد التسجيل. <b>راجعه وعدّله حسب أنظمة المعهد وسياسة الاسترداد.</b></p>
+      <textarea id="asPl" rows="9" maxlength="6000" style="width:100%">${esc(F.pledge)}</textarea></div>
+    <div class="row"><button class="btn pri" id="asSave">حفظ الإعدادات</button></div>`;
+  const read = () => { F.open = $("#asOpen").checked; F.msg = $("#asMsg").value.trim(); F.pledge = $("#asPl").value;
+    const v = (a, fn) => el.querySelectorAll(`[${a}]`).forEach(x => fn(F.programs[x.getAttribute(a)], x));
+    v("data-pn", (p, x) => p.name = x.value.trim()); v("data-pt", (p, x) => p.note = x.value.trim()); v("data-ps", (p, x) => p.seats = Math.max(0, Number(x.value) || 0)); v("data-pd8", (p, x) => p.start = x.value); v("data-po", (p, x) => p.open = x.checked);
+    F.docs = [...el.querySelectorAll("[data-dq]")].filter(x => x.checked).map(x => x.dataset.dq); };
+  $("#admCp").onclick = () => navigator.clipboard.writeText(applyUrl()).then(() => toast("انتسخ الرابط")).catch(() => toast("المتصفح منع النسخ"));
+  $("#asAdd").onclick = () => { read(); F.programs.push({id: "p" + uid(), name: "", note: "", open: true}); render(); };
+  el.querySelectorAll("[data-pd]").forEach(b => b.onclick = () => { read(); F.programs.splice(Number(b.dataset.pd), 1); render(); });
+  $("#asSave").onclick = async e => {
+    read(); const programs = F.programs.filter(p => p.name).map(p => ({id: p.id || "p" + uid(), name: p.name.slice(0, 100), note: (p.note || "").slice(0, 160), open: p.open !== false, seats: Number(p.seats) || 0, start: p.start || ""}));
+    if (F.open && !programs.some(p => p.open)) return toast("أضف برنامج متاح واحد على الأقل قبل ما تفتح التقديم");
+    e.target.disabled = true;
+    const d = {open: F.open, msg: F.msg.slice(0, 200), programs, docs: F.docs, pledge: F.pledge.trim().slice(0, 6000), updatedAt: new Date().toISOString()};
+    try { await setDoc(ref("public/admission"), d, {merge: true}); S.admPub = {...(S.admPub || {}), ...d}; S._admS = null; logAction("إعدادات القبول", `${F.open ? "التقديم مفتوح" : "التقديم مقفل"} · ${programs.length} برنامج`); toast("انحفظ"); render(); }
+    catch (x) { e.target.disabled = false; handleWriteErr(x); }
+  };
+}
+// each department ties the admission programs to its own: finance to a fee program, academic affairs to its courses
+function admLinks(el){
+  const progs = appProgs(), links = (S.admPub || {}).links || {}, fprogs = ((S.finSet || {}).programs || []), cFin = appCan("finance"), cAc = appCan("academic");
+  const courses = [...new Set(Object.values(S.groups || {}).map(g => g.course).filter(Boolean))].sort((x, y) => x.localeCompare(y, "ar"));
+  el.innerHTML = `<div class="card"><h2 style="margin-top:0">ربط برامج التقديم</h2><p class="muted" style="margin-top:0">${cFin && !cAc ? "اربط كل برنامج تقديم ببرنامجه في المالية، وتنعبّى الرسوم تلقائي لما يوصلك المتقدم." : cAc && !cFin ? "اختر مقررات كل برنامج، وتطلع لك شعبها جاهزة لما تصدر معلومات المتدرب." : "المالية تربط برنامج الرسوم، والشؤون الأكاديمية تربط المقررات."}</p>
+    ${progs.map(p => { const l = links[p.id] || {}; return `<div class="card" style="background:var(--bg);margin:8px 0"><b>${esc(p.name)}</b>
+      ${cFin ? `<label class="f" style="margin-top:6px">برنامج المالية (الرسوم)<select data-lf="${esc(p.id)}"><option value="">—</option>${fprogs.map(f => `<option value="${esc(f.id)}" ${l.fin === f.id ? "selected" : ""}>${esc(f.name)} · ${SAR(f.fee)}</option>`).join("")}</select></label>` : l.fin ? `<div class="muted">المالية: ${esc((fprogs.find(f => f.id === l.fin) || {}).name || "مربوط")}</div>` : ""}
+      ${cAc ? `<div style="margin-top:6px"><span class="muted">المقررات:</span><div class="row" style="gap:10px;flex-wrap:wrap;margin-top:4px">${courses.map(c => `<label class="row" style="gap:4px"><input type="checkbox" data-lc="${esc(p.id)}" value="${esc(c)}" ${(l.courses || []).includes(c) ? "checked" : ""}> ${esc(c)}</label>`).join("") || `<span class="muted">ما فيه مقررات</span>`}</div></div>` : (l.courses || []).length ? `<div class="muted">المقررات: ${esc(l.courses.join("، "))}</div>` : ""}</div>`; }).join("") || `<div class="muted">القبول ما أضاف برامج للتقديم بعد.</div>`}
+    ${progs.length ? `<button class="btn pri" id="lkSave">حفظ الربط</button>` : ""}</div>`;
+  if (!$("#lkSave")) return;
+  $("#lkSave").onclick = async e => {
+    const out = {}; progs.forEach(p => { out[p.id] = {};
+      if (cFin) { const s = el.querySelector(`[data-lf="${CSS.escape(p.id)}"]`); out[p.id].fin = s ? s.value : ""; }
+      if (cAc) out[p.id].courses = [...el.querySelectorAll(`[data-lc="${CSS.escape(p.id)}"]`)].filter(x => x.checked).map(x => x.value); });
+    e.target.disabled = true;
+    try { await setDoc(ref("public/admission"), {links: out}, {merge: true}); const L = {...((S.admPub || {}).links || {})}; Object.entries(out).forEach(([k, v]) => { L[k] = {...(L[k] || {}), ...v}; }); S.admPub = {...(S.admPub || {}), links: L}; logAction("ربط برامج القبول", ""); toast("انحفظ"); render(); }
+    catch (x) { e.target.disabled = false; handleWriteErr(x); }
+  };
+}
+
+/* ---------- correspondence: circulars, outgoing and incoming letters. Numbers come from corrSeq/{kind}_{year}
+   in a transaction, so two departments saving at once never get the same number. You write the content and
+   choose who it goes to; the number, date, print on the institute's paper and the notifications are automatic. ---------- */
+const CORR_K = {circ: ["تعميم", "التعاميم", "📢"], out: ["صادر", "الصادر", "📤"], in: ["وارد", "الوارد", "📥"]};
+const CORR_TO = {staff: "كل الإدارات", trainers: "المدربين والمدربات", students: "المتدربين والمتدربات"};
+// the body each new letter starts with: write your content between the greeting and the closing
+const CORR_BODY = {circ: "السلام عليكم ورحمة الله وبركاته،\n\n\n\nشاكرين لكم تعاونكم والتزامكم.", out: "السلام عليكم ورحمة الله وبركاته، وبعد:\n\n\n\nوتقبلوا خالص التحية والتقدير."};
+const CORR_ACT = ["للاطلاع", "لاتخاذ اللازم", "للإفادة", "للدراسة والرأي", "للحفظ"];
+const corrYear = d => String(d || today()).slice(0, 4);
+const corrTitle = c => c.kind === "circ" ? `تعميم داخلي رقم: ( ${c.no} ) لعام ${c.year}م` : c.kind === "out" ? `صادر رقم: ${c.no} / ${c.year}` : `وارد رقم: ${c.no} / ${c.year}`;
+const corrToN = r => CORR_TO[r] || MEET_N[r] || r;
+// a circular's addressee line in words: "جميع منسوبي المعهد من موظفين ومدربين ومدربات", or the departments by name
+function corrAud(to){
+  const st = to.includes("staff"), tr = to.includes("trainers"), su = to.includes("students"), ds = to.filter(r => MEET_DEPTS.includes(r)).map(r => MEET_N[r]);
+  if (st && tr && su) return "جميع منسوبي المعهد ومتدربيه";
+  if (st && tr) return "جميع منسوبي المعهد من موظفين ومدربين ومدربات";
+  return [st ? "جميع الإدارات" : "", ...ds, tr ? "جميع المدربين والمدربات" : "", su ? "جميع المتدربين والمتدربات" : ""].filter(Boolean).join("، ");
+}
+const corrKey = () => S.role === "student" ? "st-" + S.myNum : S.role === "trainer" ? S.me : S.adminRole;
+const corrStaff = () => S.role === "admin" && !!S.adminRole;
+const corrMine = c => { if (S.role === "student") return (c.to || []).includes("students"); if (S.role === "trainer") return (c.to || []).includes("trainers");
+  return c.by !== S.adminRole && ((c.to || []).includes("staff") || (c.to || []).includes(S.adminRole)); };
+const corrUnread = () => (S.corr || []).filter(c => c.kind !== "out" && corrMine(c) && !(c.seen || {})[corrKey()]);
+const corrBadge = () => { const n = corrUnread().length; return n ? ` (${n})` : ""; };
+function watchCorr(){
+  if (S._corrSub || !S.authUser || (S.role === "trainer" && !S.me)) return; S._corrSub = true;
+  const all = S.role === "admin" && ["admin", "auditor"].includes(S.adminRole);
+  const qs = all ? {a: collection(db, "corr")} : S.role === "student" ? {s: query(collection(db, "corr"), where("to", "array-contains", "students"))}
+    : S.role === "trainer" ? {t: query(collection(db, "corr"), where("to", "array-contains", "trainers"))}
+    : {m: query(collection(db, "corr"), where("to", "array-contains", S.adminRole)), g: query(collection(db, "corr"), where("to", "array-contains", "staff")), b: query(collection(db, "corr"), where("by", "==", S.adminRole))};
+  const parts = {}, seenQ = {}; let ready = false;
+  Object.entries(qs).forEach(([k, q]) => S.subs.push(onSnapshot(q, snap => {
+    const prev = new Set((S.corr || []).map(c => c.id));
+    parts[k] = snap.docs.map(d => ({id: d.id, ...d.data()})); seenQ[k] = true;
+    const mp = new Map(); Object.values(parts).flat().forEach(c => mp.set(c.id, c));
+    S.corr = [...mp.values()].sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+    const was = ready; ready = Object.keys(qs).every(x => seenQ[x]);
+    if (was) S.corr.filter(c => !prev.has(c.id) && corrMine(c) && c.kind !== "out").forEach(c => toast(`${CORR_K[c.kind][2]} ${CORR_K[c.kind][0]} رقم ${c.no}: ${c.subject}`, true));
+    renderTop();
+    if (S._corrOpen && $("#modal").classList.contains("on") && !busyEditing()) corrModal(); else if (!busyEditing()) afterData();
+  }, e => console.error(e))));
+  S.subs.push(() => { S._corrSub = false; S.corr = null; });
+}
+// the letter on the institute's paper, in the same look as receipts and files: header, title, info grid, signature line with the stamp
+function corrHTML(c){
+  const sig = c.sign || {}, to = c.kind === "out" ? c.party : c.kind === "circ" ? corrAud(c.to || []) : (c.to || []).map(corrToN).join("، ");
+  const row = (k, v) => v ? `<div><b>${k}:</b> ${esc(v)}</div>` : "";
+  const T = {circ: ["تعميم داخلي", "رقم التعميم", `( ${c.no} ) لعام ${c.year}م`], out: ["خطاب صادر", "رقم الصادر", `${c.no} / ${c.year}`], in: ["قيد وارد", "رقم الوارد", `${c.no} / ${c.year}`]}[c.kind];
+  const sgn = sig.director && okImg((S.sigs || {}).director) ? `<img class="sgi" src="${S.sigs.director}" alt="">` : "", stp = sig.stamp && okImg(S.stamp) ? `<img class="stp" src="${S.stamp}" alt="">` : "";
+  return `<h1>${T[0]}</h1>
+    <div class="info">${row(T[1], T[2])}${row("التاريخ", bothDates(c.date || today()))}${row("الموضوع", c.subject)}${to ? `<div style="grid-column:1/-1"><b>${c.kind === "in" ? "محال إلى" : "إلى"}:</b> ${esc(to)}</div>` : ""}
+      ${c.kind === "in" ? row("الجهة المرسلة", c.party) + row("رقم خطابهم وتاريخه", [c.theirNo, c.theirDate].filter(Boolean).join(" · ")) + row("التوجيه", c.action) : ""}${row("نسخة إلى", c.cc)}</div>
+    <div style="line-height:2;font-size:13.5px;margin-top:14px;min-height:60mm">${String(c.body || "").split(/\n\s*\n/).map(p => `<p style="margin:0 0 10px;white-space:pre-wrap">${esc(p.trim())}</p>`).join("")}</div>
+    ${c.kind === "in" ? "" : `<div class="sig" style="margin-top:80px"><div>${sgn}<b>${esc(c.signer || (c.kind === "circ" ? "إدارة المعهد" : MEET_N[c.by] || ""))}</b>${c.signerName ? `<br>${esc(c.signerName)}` : ""}</div><div>${stp}الختم</div></div>`}`;
+}
+function corrPrint(c){ const w = openPrint(); if (!w) return; fillPrint(w, corrTitle(c), [{html: corrHTML(c)}], false, c.kind === "circ" ? "إدارة المعهد" : MEET_N[c.by] || ""); }
+async function corrSave(F){
+  const year = corrYear(F.date), seq = ref(`corrSeq/${F.kind}_${year}`), id = "c" + Date.now().toString(36) + uid();
+  const files = [];
+  for (const f of F.files || []) { const pdf = isPdfFile(f), blob = pdf || !/^image\//.test(f.type) ? f : new Blob([dataBytes(await compressImage(f))], {type: "image/jpeg"});
+    files.push({name: f.name.slice(0, 120), m: await srvPut(blob, f.name, blob.type || "application/octet-stream")}); }
+  let no = 0; const now = new Date().toISOString();
+  await runTransaction(db, async tx => {
+    const c = await tx.get(seq); no = ((c.exists() && c.data().last) || 0) + 1;
+    tx.set(seq, {last: no, at: now});
+    tx.set(ref("corr/" + id), {kind: F.kind, no, year, date: F.date, subject: F.subject, body: F.body, to: F.to, party: F.party || "", cc: F.cc || "", theirNo: F.theirNo || "", theirDate: F.theirDate || "", action: F.action || "", signer: F.signer || "", signerName: F.signerName || "", sign: F.sign || {}, files, by: S.adminRole, at: now, seen: {}, replies: {}});
+  });
+  logAction(`تسجيل ${CORR_K[F.kind][0]}`, `${no}/${year} · ${F.subject}`);
+  if (F.to.length) notify("corr", id);
+  return {id, no, year};
+}
+function corrTab(el){
+  watchCorr();
+  const boss = S.adminRole === "admin", ro = RO();
+  const T = S._corrT = S._corrT && (S._corrT !== "set" || boss) ? S._corrT : (boss ? "circ" : "inbox");
+  const sub = [...(corrStaff() && !boss ? [["inbox", "الوارد إلينا" + corrBadge()]] : []), ["circ", "التعاميم"], ["out", "الصادر"], ["in", "الوارد"], ...(boss ? [["set", "الترقيم والتوقيع"]] : [])];
+  el.innerHTML = `<div class="card" style="padding:8px 12px"><div class="tabs" style="border:0;padding:0">${sub.map(([k, v]) => `<button class="tab ${T === k ? "on" : ""}" data-crt="${k}">${CORR_K[k] ? CORR_K[k][2] + " " : ""}${v}</button>`).join("")}</div></div><div id="crB"></div>`;
+  el.querySelectorAll("[data-crt]").forEach(b => b.onclick = () => { S._corrT = b.dataset.crt; S._corrF = null; render(); });
+  const B = $("#crB"); if (!S.corr) { B.innerHTML = `<div class="card muted">جاري التحميل…</div>`; return; }
+  if (T === "set") return corrSettings(B);
+  if (T === "inbox") return corrList(B, (S.corr || []).filter(c => c.kind !== "out" && corrMine(c)), "ما وصلكم تعاميم ولا وارد محال.");
+  const canNew = !ro && (T !== "circ" || boss);
+  const list = (S.corr || []).filter(c => c.kind === T && (boss || ro || T !== "circ" || true));
+  B.innerHTML = `${canNew ? `<div id="crNew"></div>` : ""}<div id="crL"></div>`;
+  if (canNew) corrForm($("#crNew"), T);
+  corrList($("#crL"), list, `ما فيه ${CORR_K[T][1]} مسجّلة.`);
+}
+function corrForm(el, kind){
+  const F = S._corrF = S._corrF && S._corrF.kind === kind ? S._corrF : {kind, date: today(), subject: "", body: CORR_BODY[kind] || "", to: kind === "circ" ? ["staff", "trainers"] : [], party: "", cc: "", theirNo: "", theirDate: "", action: CORR_ACT[0], signer: S.adminRole === "admin" ? "إدارة المعهد" : MEET_N[S.adminRole] || "", signerName: S.adminRole === "admin" ? "خالد الحسيني" : "", sign: S.adminRole === "admin" ? {director: okImg((S.sigs || {}).director), stamp: okImg(S.stamp)} : {}, open: false};
+  const year = corrYear(F.date), boss = S.adminRole === "admin";
+  if (!F.open) { el.innerHTML = `<div class="card" style="padding:10px"><button class="btn pri" id="crOpen">+ ${kind === "in" ? "تسجيل وارد جديد" : kind === "out" ? "صادر جديد" : "تعميم جديد"}</button> <span class="muted">الرقم يتولّد تلقائياً</span></div>`; $("#crOpen").onclick = () => { F.open = true; render(); }; return; }
+  const tos = kind === "circ" ? [["staff", "كل الإدارات"], ...MEET_DEPTS.filter(r => r !== "admin").map(r => [r, MEET_N[r]]), ["trainers", "المدربين والمدربات"], ["students", "المتدربين والمتدربات"]]
+    : [["staff", "كل الإدارات"], ...MEET_DEPTS.filter(r => r !== S.adminRole).map(r => [r, MEET_N[r]])];
+  el.innerHTML = `<div class="card"><h2 style="margin-top:0">${CORR_K[kind][2]} ${kind === "in" ? "تسجيل وارد" : kind === "out" ? "صادر جديد" : "تعميم جديد"} <span class="muted" style="font-size:14px">· الرقم يتولّد عند الحفظ</span></h2>
+    <div class="row" style="gap:8px;flex-wrap:wrap"><label class="f" style="width:170px">التاريخ<input type="date" id="crD" value="${esc(F.date)}"></label><label class="f grow">الموضوع *<input type="text" id="crS" maxlength="200" value="${esc(F.subject)}"></label></div>
+    ${kind === "in" ? `<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px"><label class="f grow">الجهة المرسلة *<input type="text" id="crP" maxlength="120" value="${esc(F.party)}"></label><label class="f" style="width:150px">رقم خطابهم<input type="text" id="crTN" maxlength="40" value="${esc(F.theirNo)}"></label><label class="f" style="width:160px">تاريخ خطابهم<input type="date" id="crTD" value="${esc(F.theirDate)}"></label></div>`
+      : kind === "out" ? `<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px"><label class="f grow">إلى (الجهة) *<input type="text" id="crP" maxlength="160" value="${esc(F.party)}" placeholder="مثل: سعادة مدير فرع المؤسسة العامة للتدريب التقني والمهني بمنطقة حائل"></label><label class="f grow">نسخة إلى (اختياري)<input type="text" id="crCC" maxlength="160" value="${esc(F.cc)}"></label></div>` : ""}
+    <label class="f" style="margin-top:6px">${kind === "in" ? "ملخص الخطاب" : "نص " + CORR_K[kind][0]} ${kind === "in" ? "" : "*"}<textarea id="crBody" rows="${kind === "in" ? 3 : 8}" maxlength="8000" placeholder="${kind === "circ" ? "السلام عليكم ورحمة الله وبركاته،\n\n…\n\nشاكرين لكم تعاونكم والتزامكم." : ""}">${esc(F.body)}</textarea></label>
+    <div style="margin-top:8px"><b>${kind === "circ" ? "يوجَّه إلى" : kind === "in" ? "إحالة إلى (اختياري)" : "يوصل نسخة داخلية إلى (اختياري)"}:</b><div class="row" style="gap:12px;flex-wrap:wrap;margin-top:6px">${tos.map(([k, v]) => `<label class="row" style="gap:4px"><input type="checkbox" data-cto="${k}" ${F.to.includes(k) ? "checked" : ""}> ${esc(v)}</label>`).join("")}</div></div>
+    ${kind === "in" ? `<label class="f" style="margin-top:6px;max-width:260px">التوجيه<select id="crA">${CORR_ACT.map(a => `<option ${F.action === a ? "selected" : ""}>${a}</option>`).join("")}</select></label>` : ""}
+    <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px;align-items:flex-end"><label class="f grow">${kind === "in" ? "صورة الخطاب الوارد" : "مرفقات"} (اختياري، حتى 20 ميجا)<input type="file" id="crF" multiple accept="image/*,application/pdf,.pdf,.doc,.docx,.xlsx"></label>
+      ${kind !== "in" ? `<label class="f" style="min-width:180px">جهة التوقيع<input type="text" id="crSg" maxlength="80" value="${esc(F.signer)}"></label><label class="f" style="min-width:160px">الاسم<input type="text" id="crSgN" maxlength="80" value="${esc(F.signerName || "")}"></label>${boss ? `<label class="row" style="gap:4px" title="${okImg((S.sigs || {}).director) ? "" : "ارفعه أول من النظام ← توقيع مدير المعهد"}"><input type="checkbox" id="crSd" ${F.sign.director ? "checked" : ""} ${okImg((S.sigs || {}).director) ? "" : "disabled"}> التوقيع</label><label class="row" style="gap:4px" title="${okImg(S.stamp) ? "" : "ارفعه أول من النظام ← الختم الإلكتروني"}"><input type="checkbox" id="crSt" ${F.sign.stamp ? "checked" : ""} ${okImg(S.stamp) ? "" : "disabled"}> الختم</label>` : ""}` : ""}</div>
+    <div class="row" style="gap:8px;margin-top:10px"><button class="btn pri" id="crSave">${kind === "in" ? "تسجيل الوارد" : "حفظ وإصدار"}${kind !== "in" ? " وطباعة" : ""}</button><button class="btn" id="crCancel">إلغاء</button></div></div>`;
+  const read = () => { F.date = $("#crD").value || today(); F.subject = $("#crS").value.trim(); F.body = $("#crBody").value; F.party = $("#crP") ? $("#crP").value.trim() : ""; F.cc = $("#crCC") ? $("#crCC").value.trim() : "";
+    F.theirNo = $("#crTN") ? $("#crTN").value.trim() : ""; F.theirDate = $("#crTD") ? $("#crTD").value : ""; F.action = $("#crA") ? $("#crA").value : ""; F.signer = $("#crSg") ? $("#crSg").value.trim() : F.signer; F.signerName = $("#crSgN") ? $("#crSgN").value.trim() : F.signerName || "";
+    F.sign = {director: !!($("#crSd") && $("#crSd").checked), stamp: !!($("#crSt") && $("#crSt").checked)}; F.to = [...el.querySelectorAll("[data-cto]")].filter(x => x.checked).map(x => x.dataset.cto); };
+  el.querySelectorAll("input:not([type=file]),textarea,select").forEach(x => x.addEventListener("change", read));
+  $("#crCancel").onclick = () => { S._corrF = null; render(); };
+  $("#crSave").onclick = async e => {
+    read();
+    if (!F.subject) return toast("اكتب الموضوع"); if (kind !== "in" && !F.body.trim()) return toast("اكتب النص"); if (kind !== "circ" && !F.party) return toast(kind === "in" ? "اكتب الجهة المرسلة" : "اكتب الجهة المرسل لها");
+    if (kind === "circ" && !F.to.length) return toast("اختر لمن يوجَّه التعميم");
+    if (F.to.includes("staff")) F.to = F.to.filter(x => x === "staff" || !MEET_DEPTS.includes(x));
+    const files = [...($("#crF").files || [])]; if (files.some(f => f.size > 20 * 1024 ** 2)) return toast("ملف أكبر من 20 ميجا");
+    const w = kind !== "in" ? openPrint() : null;
+    e.target.disabled = true; e.target.textContent = "جاري الحفظ…";
+    try { const r = await corrSave({...F, files}); const c = {...F, ...r, by: S.adminRole};
+      toast(`انحفظ ${CORR_K[kind][0]} رقم ${r.no} لعام ${r.year}`, true); S._corrF = null;
+      if (w) { w.close(); corrPrint(c); } render();
+    } catch (x) { if (w) w.close(); e.target.disabled = false; e.target.textContent = "حفظ"; console.error(x); if (x && x.code) handleWriteErr(x); else toast("تعذّر رفع المرفق، تأكد إن السيرفر شغّال"); }
+  };
+}
+function corrList(el, list, empty){
+  const F = S._corrQ = S._corrQ || {q: ""};
+  el.innerHTML = `<div class="card" style="padding:10px"><input type="search" id="crQ" placeholder="ابحث بالرقم أو الموضوع أو الجهة" value="${esc(F.q)}" style="width:100%"></div><div class="list" id="crItems"></div>`;
+  const draw = () => { const q = norm(F.q);
+    const l = list.filter(c => !q || String(c.no) === F.q.trim() || norm(c.subject).includes(q) || norm(c.party || "").includes(q) || norm(c.body || "").includes(q));
+    $("#crItems").innerHTML = l.map(c => { const to = c.to || [], unread = c.kind !== "out" && corrMine(c) && !(c.seen || {})[corrKey()];
+      return `<div class="item" style="cursor:pointer;${unread ? "border-inline-start:4px solid var(--gold)" : ""}" data-cr="${esc(c.id)}"><div class="grow"><div class="t">${CORR_K[c.kind][2]} <b dir="ltr">${c.no}/${c.year}</b> · ${esc(c.subject)}</div>
+        <div class="muted">${esc(c.date)}${c.party ? " · " + (c.kind === "in" ? "من " : "إلى ") + esc(c.party) : ""}${to.length ? " · " + esc(to.map(corrToN).join("، ")) : ""}${c.kind === "in" && c.action ? " · " + esc(c.action) : ""} · ${esc(MEET_N[c.by] || c.by)}${(c.files || []).length ? " · 📎" + c.files.length : ""}</div></div>
+        ${unread ? `<span class="pill warn">جديد</span>` : ""}${c.by === S.adminRole || ["admin", "auditor"].includes(S.adminRole) ? `<span class="muted" style="font-size:12px">اطّلع ${Object.keys(c.seen || {}).length}</span>` : ""}</div>`; }).join("") || `<div class="card empty">${empty}</div>`;
+    $("#crItems").querySelectorAll("[data-cr]").forEach(r => r.onclick = () => { S._corrOpen = r.dataset.cr; corrModal(); }); };
+  draw(); $("#crQ").oninput = e => { F.q = e.target.value; draw(); };
+}
+function corrModal(){
+  const c = (S.corr || []).find(x => x.id === S._corrOpen);
+  if (!c) { // the header button: everything addressed to me
+    S._corrOpen = "_list"; const l = (S.corr || []).filter(x => x.kind !== "out" && corrMine(x));
+    $("#modalBox").innerHTML = `<div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">📢 التعاميم${S.role === "admin" ? " والوارد" : ""}</h2><button class="btn sm" id="crX">إغلاق</button></div><div id="crML" style="margin-top:10px"></div>`;
+    $("#modal").classList.add("on"); $("#crX").onclick = () => { S._corrOpen = null; S._corrList = false; closeModal(); };
+    corrList($("#crML"), l, "ما وصلك شي للحين."); return;
+  }
+  const mine = corrMine(c), key = corrKey(), seen = c.seen || {}, reps = c.replies || {}, owner = c.by === S.adminRole || ["admin", "auditor"].includes(S.adminRole);
+  const audience = c.kind === "circ" || c.kind === "in" ? (c.to || []).flatMap(r => r === "staff" ? MEET_DEPTS.filter(x => x !== c.by) : MEET_DEPTS.includes(r) ? [r] : []) : [];
+  $("#modalBox").innerHTML = `<div class="row" style="justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0">${CORR_K[c.kind][2]} ${esc(corrTitle(c))}</h2><div class="row" style="gap:6px"><button class="btn sm gold" id="crPr">🖨️ طباعة</button><button class="btn sm" id="crBack">رجوع</button></div></div>
+    <div class="card" style="background:var(--bg);margin-top:8px"><div><b>الموضوع:</b> ${esc(c.subject)}</div><div class="muted">التاريخ ${esc(c.date)} · من ${esc(MEET_N[c.by] || c.by)}${c.party ? ` · ${c.kind === "in" ? "الجهة المرسلة" : "إلى"}: ${esc(c.party)}` : ""}${c.theirNo ? ` · رقم خطابهم ${esc(c.theirNo)}${c.theirDate ? " بتاريخ " + esc(c.theirDate) : ""}` : ""}</div>
+      ${(c.to || []).length ? `<div class="muted">${c.kind === "in" ? "محال إلى" : "إلى"}: ${esc((c.to || []).map(corrToN).join("، "))}${c.action ? " · " + esc(c.action) : ""}</div>` : ""}</div>
+    ${c.body ? `<div style="white-space:pre-wrap;line-height:2;margin:10px 0">${linkify(esc(c.body))}</div>` : ""}
+    ${(c.files || []).length ? `<div><b>المرفقات:</b> ${c.files.map((f, i) => `<button class="btn sm" data-crf="${i}">📎 ${esc(f.name)}</button>`).join(" ")}</div>` : ""}
+    ${mine && c.kind !== "out" ? `<div class="card" style="padding:10px;margin-top:10px">${seen[key] ? `<div class="notice ok" style="margin:0">✓ اطّلعت عليه ${esc(String(seen[key]).slice(0, 16).replace("T", " "))}</div>` : `<button class="btn pri" id="crSeen">✓ اطّلعت</button>`}
+      ${c.kind === "in" && S.role === "admin" ? `<label class="f" style="margin-top:8px">ردّكم / الإفادة (يشوفها من أحاله)<textarea id="crRep" rows="2" maxlength="1500">${esc(reps[key] || "")}</textarea></label><button class="btn sm" id="crRepS" style="margin-top:6px">حفظ الإفادة</button>` : ""}</div>` : ""}
+    ${owner && audience.length ? `<div class="card" style="padding:10px;margin-top:10px"><b>الاطلاع:</b> ${audience.map(r => `<span class="pill ${seen[r] ? "p" : ""}" style="margin:2px">${seen[r] ? "✓ " : ""}${esc(MEET_N[r])}</span>`).join("")}
+      ${(c.to || []).some(r => ["trainers", "students"].includes(r)) ? `<div class="muted" style="margin-top:6px">${(c.to || []).includes("trainers") ? `المدربين اللي اطّلعوا: ${Object.keys(seen).filter(k => /^t-/.test(k)).length} من ${Object.keys(S.trainers || {}).length || "—"}` : ""}${(c.to || []).includes("students") ? ` · المتدربين: ${Object.keys(seen).filter(k => /^st-/.test(k)).length}` : ""}</div>` : ""}
+      ${Object.keys(reps).length ? `<div style="margin-top:8px">${Object.entries(reps).map(([k, v]) => `<div class="item" style="padding:6px 10px"><b>${esc(MEET_N[k] || k)}:</b> <span style="white-space:pre-wrap">${esc(v)}</span></div>`).join("")}</div>` : ""}</div>` : ""}
+    ${S.adminRole === "admin" ? `<div class="row" style="margin-top:10px"><button class="btn sm danger" id="crDel">حذف</button><span class="muted" style="font-size:12px">الحذف ما يرجّع الرقم للتسلسل</span></div>` : ""}`;
+  $("#modal").classList.add("on");
+  $("#crBack").onclick = () => { if (S._corrList) { S._corrOpen = null; corrModal(); } else { S._corrOpen = null; closeModal(); } };
+  $("#crPr").onclick = () => corrPrint(c);
+  $("#modalBox").querySelectorAll("[data-crf]").forEach(b => b.onclick = async () => { b.disabled = true; try { await srvOpen(c.files[Number(b.dataset.crf)].m); } catch { toast("تعذّر فتح الملف"); } b.disabled = false; });
+  if ($("#crSeen")) $("#crSeen").onclick = async e => { e.target.disabled = true; const rp = $("#crRep") ? $("#crRep").value.trim().slice(0, 1500) : ""; try { await setDoc(ref("corr/" + c.id), {seen: {[key]: new Date().toISOString()}, ...(rp ? {replies: {[key]: rp}} : {})}, {merge: true}); } catch (x) { e.target.disabled = false; handleWriteErr(x); } };
+  if ($("#crRepS")) $("#crRepS").onclick = async () => { const v = $("#crRep").value.trim().slice(0, 1500); try { await setDoc(ref("corr/" + c.id), {replies: {[key]: v}, ...(seen[key] ? {} : {seen: {[key]: new Date().toISOString()}})}, {merge: true}); toast("انحفظت الإفادة"); } catch (x) { handleWriteErr(x); } };
+  if ($("#crDel")) $("#crDel").onclick = async e => { const b = e.target; if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟"; return; }
+    try { await deleteDoc(ref("corr/" + c.id)); logAction(`حذف ${CORR_K[c.kind][0]}`, `${c.no}/${c.year} · ${c.subject}`); S._corrOpen = null; closeModal(); } catch (x) { handleWriteErr(x); } };
+}
+function corrSettings(el){
+  const y = corrYear();
+  el.innerHTML = `<div class="card"><h2 style="margin-top:0">الترقيم</h2><p class="muted" style="margin-top:0">كل نوع له تسلسل مستقل يبدأ من 1 كل سنة. لو عندكم أرقام سابقة على الورق، اكتب <b>آخر رقم مستخدم</b> عشان يكمّل بعده (مثلاً آخر تعميم 2 ← التعميم الجاي 3).</p>
+    <div id="crSeq" class="muted">جاري التحميل…</div></div>
+    <p class="muted" style="margin:4px 2px">التوقيع والختم يطلعون على التعاميم والصادر لما تأشّر عليهم، وعلى الشهادات والسندات بعد. ارفعهم مرة وحدة هنا.</p>
+    ${sigCard("director", "توقيع مدير المعهد", "يظهر في خانة «إدارة المعهد» على التعاميم والصادر والشهادات.")}${sigCard("stamp", "الختم الإلكتروني", "يظهر جنب التوقيع على التعاميم والصادر والشهادات والسندات.")}`;
+  bindSigCards(el);
+  Promise.all(Object.keys(CORR_K).map(k => getDoc(ref(`corrSeq/${k}_${y}`)).then(s => [k, s.exists() ? s.data().last || 0 : 0]))).then(rows => {
+    const box = $("#crSeq"); if (!box) return;
+    box.innerHTML = `${rows.map(([k, n]) => `<div class="row" style="gap:8px;align-items:center;margin:6px 0"><b style="min-width:110px">${CORR_K[k][2]} ${CORR_K[k][1]} ${y}</b><span class="muted">آخر رقم:</span><input type="number" min="0" data-csq="${k}" value="${n}" style="width:100px"><span class="muted">← الجاي ${n + 1}</span></div>`).join("")}<button class="btn pri" id="crSeqS" style="margin-top:8px">حفظ</button>`;
+    $("#crSeqS").onclick = async () => { try { for (const x of box.querySelectorAll("[data-csq]")) await setDoc(ref(`corrSeq/${x.dataset.csq}_${y}`), {last: Math.max(0, Number(x.value) || 0), at: new Date().toISOString()}); logAction("ضبط ترقيم الصادر والوارد", ""); toast("انحفظ"); corrSettings(el); } catch (x) { handleWriteErr(x); } };
+  }).catch(e => { console.error(e); const box = $("#crSeq"); if (box) box.textContent = "تعذّر التحميل — حدّث قواعد Firebase"; });
+}
+
 function renderTop(){
   const w = $("#topWho"), sub = $("#topSub");
   const label = {trainer: "بوابة المدربين", admin: "بوابة الشؤون المالية والأكاديمية", student: "بوابة الطلاب", trainerLogin: "بوابة المدربين", adminLogin: "بوابة الشؤون المالية والأكاديمية", studentLogin: "بوابة الطلاب"}[S.view] || "البوابة الإلكترونية";
@@ -1026,9 +1625,10 @@ function renderTop(){
     if (S.role === "trainer" && S.trainers[S.me]) who = trainerTitle(S.trainers[S.me]);
     if (S.role === "admin") who = ROLES[S.adminRole];
     if (S.role === "student" && S.myStudent) who = S.myStudent.name;
-    w.innerHTML = `<span>${esc(who)}</span>${S.role ? `<button class="btn ghost sm" id="guideBtn">📘 الأدلة</button>${S.adminRole === "tech" && S.role === "admin" ? "" : `<button class="btn ghost sm" id="tkBtn">🛠️ الدعم التقني${tkMineBadge()}</button>`}` : ""}${S.site && S.site.vapid && !pushOn() ? `<button class="btn ghost sm" id="pushBtn">تفعيل الإشعارات</button>` : ""}<button class="btn ghost sm" id="out">خروج</button>`;
+    w.innerHTML = `<span>${esc(who)}</span>${S.role ? `<button class="btn ghost sm" id="guideBtn">📘 الأدلة</button>${S.role === "trainer" || S.role === "student" ? `<button class="btn ghost sm" id="corrBtn">📢 التعاميم${corrBadge()}</button>` : ""}${S.adminRole === "tech" && S.role === "admin" ? "" : `<button class="btn ghost sm" id="tkBtn">🛠️ الدعم التقني${tkMineBadge()}</button>`}` : ""}${S.site && S.site.vapid && !pushOn() ? `<button class="btn ghost sm" id="pushBtn">تفعيل الإشعارات</button>` : ""}<button class="btn ghost sm" id="out">خروج</button>`;
     if ($("#pushBtn")) $("#pushBtn").onclick = () => enablePush(false);
     if ($("#guideBtn")) $("#guideBtn").onclick = () => guidesModal();
+    if ($("#corrBtn")) $("#corrBtn").onclick = () => { watchCorr(); S._corrOpen = null; S._corrList = true; corrModal(); };
     if ($("#tkBtn")) $("#tkBtn").onclick = () => ticketsModal();
     $("#out").onclick = () => { S.view = "home"; logout(); };
   } else if (S.view !== "home") {
@@ -1342,6 +1942,7 @@ function renderHome(app){
     <button class="portal pT rise" style="--d:2" id="goT">${ICON.trainer}<b>بوابة المدربين</b></button>
     <button class="portal pA rise" style="--d:3" id="goA">${ICON.admin}<b>بوابة الشؤون المالية والأكاديمية</b></button>
   </div>
+  ${(S.admPub || {}).open ? `<a class="card rise applyCta" style="--d:4" href="apply.html"><span style="font-size:30px">📝</span><span class="grow"><b>التقديم على المعهد مفتوح</b><span class="muted">قدّم طلب التحاقك أونلاين وارفع مستنداتك، وتابع حالة طلبك.</span></span><span class="btn pri">قدّم الآن</span></a>` : ""}
   ${counters.length ? `<section class="counters rise" style="--d:4">${counters.map(([k, l]) => `<div class="ctr"><b data-count="${Number(st[k])}">0</b><span>${l}</span></div>`).join("")}</section>` : ""}
   <div class="duo">
     <form class="card rise" style="--d:5" id="verF"><h2>${ICON.seal} تحقق من شهادة</h2>
@@ -3201,11 +3802,11 @@ function writeGroup(gid, d){
 
 function renderAdmin(app){
   if (RO()) {
-    const tabsRO = [["tasks", "المهام" + taskBadge()], ["meet", "الاجتماعات" + meetBadge()], ["memos", "المراسلات" + memoBadge()], ["weekly", "التقرير الأسبوعي"], ["dash", "لوحة اليوم"], ["kpi", "المؤشرات"], ["follow", "المتابعة"], ["report", "التقارير"], ["finance", "المالية"], ["hr", "الموارد البشرية"], ["trmsgs", "رسائل المدربين"], ["sreq", "طلبات الإجازة"], ["logs", "سجل الإدارات"], ["archive", "الأرشيف"]];
+    const tabsRO = [["tasks", "المهام" + taskBadge()], ["corr", "الصادر والوارد"], ["meet", "الاجتماعات" + meetBadge()], ["memos", "المراسلات" + memoBadge()], ["weekly", "التقرير الأسبوعي"], ["dash", "لوحة اليوم"], ["kpi", "المؤشرات"], ["follow", "المتابعة"], ["report", "التقارير"], ["finance", "المالية"], ["hr", "الموارد البشرية"], ["trmsgs", "رسائل المدربين"], ["sreq", "طلبات الإجازة"], ["logs", "سجل الإدارات"], ["archive", "الأرشيف"]];
     if (!tabsRO.some(([k]) => k === S.aTab)) S.aTab = "tasks";
     app.innerHTML = `<div class="notice">بوابة الجهة الرقابية: تطّلع على كل أعمال المعهد وتصدّرها، وترسل مهام للإدارات وتستلم تقاريرها. التعديل على البيانات يبقى عند الإدارات.</div><div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabsRO.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
     app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
-    ({tasks: tasksTab, meet: meetingsTab, memos: memosTab, weekly: weeklyTab, dash: adminDash, kpi: adminKpi, follow: adminFollow, report: adminReport, finance: adminFinance, hr: hrTab, trmsgs: adminTrMsgs, sreq: staffReqsView, logs: adminLogs, archive: adminArchive})[S.aTab]($("#ab"));
+    ({corr: corrTab, tasks: tasksTab, meet: meetingsTab, memos: memosTab, weekly: weeklyTab, dash: adminDash, kpi: adminKpi, follow: adminFollow, report: adminReport, finance: adminFinance, hr: hrTab, trmsgs: adminTrMsgs, sreq: staffReqsView, logs: adminLogs, archive: adminArchive})[S.aTab]($("#ab"));
     if (["finance", "hr", "logs"].includes(S.aTab)) ownerReadOnly($("#ab"));
     if (RO()) app.querySelectorAll("#ab [data-issue], #issueAll, #cIssue, [data-rc], [data-twa], [data-wabs], [data-warn]").forEach(x => x.remove());
     return;
@@ -3214,20 +3815,20 @@ function renderAdmin(app){
     app.innerHTML = `<div id="ab"></div>`; adminFinance($("#ab")); return;
   }
   if (MAILONLY()) {
-    const mt = [...(S.adminRole === "hr" ? [["hr", "الموارد البشرية"]] : []), ...(S.adminRole === "tech" ? [["tickets", "البلاغات التقنية" + tkBadge()]] : []), ["memos", "المراسلات" + memoBadge()], ["meet", "الاجتماعات" + meetBadge()], ["mail", "البريد" + mailBadge()], ["tasks", "مهام الجهة الرقابية" + taskBadge()], ["sreq", "طلبات الإجازة" + srBadge()]];
+    const mt = [...(S.adminRole === "admission" ? [["adm", "القبول والتسجيل" + appBadge()]] : []), ...(S.adminRole === "hr" ? [["hr", "الموارد البشرية"]] : []), ...(S.adminRole === "tech" ? [["tickets", "البلاغات التقنية" + tkBadge()]] : []), ["memos", "المراسلات" + memoBadge()], ["meet", "الاجتماعات" + meetBadge()], ["corr", "الصادر والوارد" + corrBadge()], ["mail", "البريد" + mailBadge()], ["tasks", "مهام الجهة الرقابية" + taskBadge()], ["sreq", "طلبات الإجازة" + srBadge()]];
     if (!mt.some(([k]) => k === S.aTab)) S.aTab = mt[0][0];
     app.innerHTML = `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${mt.map(([k, v]) => `<button class="tab ${S.aTab === k ? "on" : ""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
     app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
-    ({hr: hrTab, tickets: techTicketsTab, meet: meetingsTab, memos: memosTab, mail: mailTab, tasks: tasksTab, sreq: staffReqsView})[S.aTab]($("#ab")); return;
+    ({corr: corrTab, adm: admTab, hr: hrTab, tickets: techTicketsTab, meet: meetingsTab, memos: memosTab, mail: mailTab, tasks: tasksTab, sreq: staffReqsView})[S.aTab]($("#ab")); return;
   }
-  const tabs = [["dash","لوحة اليوم"],["kpi","المؤشرات"],["groups","المقررات والطلاب"],["students","الطلاب"],["msgs","الرسائل الجماعية"],["trainers","المدربين والرموز"],["grades","الدرجات"],["exams","الاختبارات"],["camp","المعسكر"],["follow","المتابعة"],["excuses","الأعذار"],["areqs","طلبات الطلاب" + ((S.aReqs || []).some(r => r.status === "new") ? ` (${S.aReqs.filter(r => r.status === "new").length})` : "")],["evals","التقييمات"],["report","التقارير"],["courses","الدورات والشهادات"],["sign","طلبات التوقيع"],["tasks","مهام الجهة الرقابية" + taskBadge()],["trmsgs","رسائل المدربين" + trmBadge()],["sreq","طلبات الإجازة" + srBadge()],["memos","المراسلات" + memoBadge()],["meet","الاجتماعات" + meetBadge()],...(S.adminRole === "admin" ? [["tickets","البلاغات التقنية" + tkBadge()]] : []),["mail","البريد" + mailBadge()],...(MEET() ? [["live","المحاضرات والتسجيلات"]] : []),["system","النظام"],...(S.adminRole === "admin" ? [["hr","الموارد البشرية"]] : []),...(SEES_FIN() ? [["finance","المالية" + ((S.fReqs || []).some(r => r.status === "fin_signed") ? ` (${(S.fReqs || []).filter(r => r.status === "fin_signed").length})` : "")]] : []),["archive","الأرشيف"],...(S.adminRole === "admin" ? [["weekly","التقرير الأسبوعي"],["logs","السجل"]] : [])];
+  const tabs = [["dash","لوحة اليوم"],["corr","الصادر والوارد" + corrBadge()],...(["admin", "academic"].includes(S.adminRole) ? [["adm","القبول والتسجيل" + appBadge()]] : []),["kpi","المؤشرات"],["groups","المقررات والطلاب"],["students","الطلاب"],["msgs","الرسائل الجماعية"],["trainers","المدربين والرموز"],["grades","الدرجات"],["exams","الاختبارات"],["camp","المعسكر"],["follow","المتابعة"],["excuses","الأعذار"],["areqs","طلبات الطلاب" + ((S.aReqs || []).some(r => r.status === "new") ? ` (${S.aReqs.filter(r => r.status === "new").length})` : "")],["evals","التقييمات"],["report","التقارير"],["courses","الدورات والشهادات"],["sign","طلبات التوقيع"],["tasks","مهام الجهة الرقابية" + taskBadge()],["trmsgs","رسائل المدربين" + trmBadge()],["sreq","طلبات الإجازة" + srBadge()],["memos","المراسلات" + memoBadge()],["meet","الاجتماعات" + meetBadge()],...(S.adminRole === "admin" ? [["tickets","البلاغات التقنية" + tkBadge()]] : []),["mail","البريد" + mailBadge()],...(MEET() ? [["live","المحاضرات والتسجيلات"]] : []),["system","النظام"],...(S.adminRole === "admin" ? [["hr","الموارد البشرية"]] : []),...(SEES_FIN() ? [["finance","المالية" + ((S.fReqs || []).some(r => r.status === "fin_signed") ? ` (${(S.fReqs || []).filter(r => r.status === "fin_signed").length})` : "")]] : []),["archive","الأرشيف"],...(S.adminRole === "admin" ? [["weekly","التقرير الأسبوعي"],["logs","السجل"]] : [])];
   if (!tabs.some(([k]) => k === S.aTab)) S.aTab = "dash";
   const waiting = Object.values(S.grades).filter(x => x.status === "submitted").length;
   app.innerHTML = `${backupNag()}${quotaNag()}${absNag()}${S.sys && S.sys.maintenance ? `<div class="notice err">وضع الصيانة شغّال: الموقع مقفل على الكل ما عدا الإدارة. تطفيه من تبويب "النظام".</div>` : ""}<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}${k === "grades" && waiting ? ` (${waiting})` : ""}${k === "follow" && S.allAtt && ["academic", "admin"].includes(S.adminRole) ? (n => n ? ` (${n})` : "")(absAlerts().alerts.filter(alertWaiting).length) : ""}${k === "excuses" && (S.excuses || []).filter(x => x.status === "pending").length ? ` (${S.excuses.filter(x => x.status === "pending").length})` : ""}</button>`).join("")}</div></div><div id="ab"></div>`;
   app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
   if ($("#nagAbs")) $("#nagAbs").onclick = () => { S.aTab = "follow"; render(); };
   if ($("#nagBk")) $("#nagBk").onclick = async e => { e.target.disabled = true; try { await backupAll(); toast("نزلت النسخة الاحتياطية"); render(); } catch (x) { console.error(x); toast("تعذّر أخذ النسخة"); e.target.disabled = false; } };
-  ({meet: meetingsTab, tickets: techTicketsTab, dash: adminDash, kpi: adminKpi, groups: adminGroups, students: adminStudents, msgs: adminMessages, trainers: adminTrainers, grades: adminGrades, exams: adminExams, camp: campTab, hr: hrTab, follow: adminFollow, excuses: adminExcuses, areqs: adminAcReqs, evals: adminEvals, report: adminReport, courses: adminCourses, sign: signRequests, tasks: tasksTab, weekly: weeklyTab, trmsgs: adminTrMsgs, sreq: staffReqsView, memos: memosTab, mail: mailTab, live: liveTab, system: el => { adminSystem(el); attArchiveCard(el); }, archive: adminArchive, finance: adminFinance, logs: adminLogs})[S.aTab]($("#ab"));
+  ({corr: corrTab, adm: admTab, meet: meetingsTab, tickets: techTicketsTab, dash: adminDash, kpi: adminKpi, groups: adminGroups, students: adminStudents, msgs: adminMessages, trainers: adminTrainers, grades: adminGrades, exams: adminExams, camp: campTab, hr: hrTab, follow: adminFollow, excuses: adminExcuses, areqs: adminAcReqs, evals: adminEvals, report: adminReport, courses: adminCourses, sign: signRequests, tasks: tasksTab, weekly: weeklyTab, trmsgs: adminTrMsgs, sreq: staffReqsView, memos: memosTab, mail: mailTab, live: liveTab, system: el => { adminSystem(el); attArchiveCard(el); }, archive: adminArchive, finance: adminFinance, logs: adminLogs})[S.aTab]($("#ab"));
 }
 
 function adminDash(el){
@@ -6414,12 +7015,12 @@ const paysOf = num => (S.pays || []).filter(p => p.num === num);
 function adminFinance(el){
   let t = S.finTab || "sum";
   const nW = fReqWaiting();
-  const tabs = [["sum", "الملخص"], ["req", "طلبات الطلاب" + (nW ? ` (${nW})` : "")], ["acc", "حسابات الطلاب"], ["pay", "الدفعات"], ["rcpt", "الإيصالات"], ["late", "المتأخرين"], ["exp", "المصروفات"], ["sal", "رواتب المدربين"], ["part", "الشركاء والعمولات"], ["rep", "التقرير الشهري"], ["hrpay", "رواتب الموظفين"], ...(FIN() ? [["meet", "الاجتماعات" + meetBadge()], ["tasks", "مهام الجهة الرقابية" + taskBadge()], ["sreq", "طلبات الإجازة" + srBadge()], ["sign", "طلبات التوقيع"], ["memo", "المراسلات" + memoBadge()], ["mail", "البريد" + mailBadge()]] : []), ...(RO() ? [] : [["set", "الإعدادات"]])];
+  const tabs = [["sum", "الملخص"], ...(FIN() ? [["adm", "القبول والتسجيل" + appBadge()]] : []), ["req", "طلبات الطلاب" + (nW ? ` (${nW})` : "")], ["acc", "حسابات الطلاب"], ["pay", "الدفعات"], ["rcpt", "الإيصالات"], ["late", "المتأخرين"], ["exp", "المصروفات"], ["sal", "رواتب المدربين"], ["part", "الشركاء والعمولات"], ["rep", "التقرير الشهري"], ["hrpay", "رواتب الموظفين"], ...(FIN() ? [["corr", "الصادر والوارد" + corrBadge()], ["meet", "الاجتماعات" + meetBadge()], ["tasks", "مهام الجهة الرقابية" + taskBadge()], ["sreq", "طلبات الإجازة" + srBadge()], ["sign", "طلبات التوقيع"], ["memo", "المراسلات" + memoBadge()], ["mail", "البريد" + mailBadge()]] : []), ...(RO() ? [] : [["set", "الإعدادات"]])];
   if (RO()) { const keep = ["sum", "acc", "pay", "rcpt", "late", "exp", "sal", "part", "rep", "hrpay"]; for (let i = tabs.length - 1; i >= 0; i--) if (!keep.includes(tabs[i][0])) tabs.splice(i, 1); if (!keep.includes(S.finTab || "sum")) S.finTab = "sum"; t = S.finTab || "sum"; }
   el.innerHTML = `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k, v]) => `<button class="tab ${t === k ? "on" : ""}" data-ft="${k}">${v}</button>`).join("")}</div></div><div id="fb"></div>`;
   el.querySelectorAll("[data-ft]").forEach(b => b.onclick = () => { S.finTab = b.dataset.ft; render(); });
   if (!S.finSet) { $("#fb").innerHTML = `<div class="card"><p class="muted" style="margin:0">جاري التحميل…</p></div>`; return; }
-  ({sum: finSummary, req: finReqTab, acc: finAccounts, pay: finPayments, rcpt: finReceipts, late: finLate, exp: finExpenses, sal: finSalaries, part: finPartners, rep: finReport, sign: signRequests, memo: memosTab, meet: meetingsTab, mail: mailTab, set: finSettings, tasks: tasksTab, hrpay: finHrPay, sreq: staffReqsView})[S.finTab || "sum"]($("#fb"));
+  ({corr: corrTab, adm: admTab, sum: finSummary, req: finReqTab, acc: finAccounts, pay: finPayments, rcpt: finReceipts, late: finLate, exp: finExpenses, sal: finSalaries, part: finPartners, rep: finReport, sign: signRequests, memo: memosTab, meet: meetingsTab, mail: mailTab, set: finSettings, tasks: tasksTab, hrpay: finHrPay, sreq: staffReqsView})[S.finTab || "sum"]($("#fb"));
 }
 /* employees' payroll sheets sent by human resources (attendance deductions already applied) */
 function finHrPay(el){
@@ -6935,7 +7536,8 @@ function finPartners(el){
   <div class="list">${all.map(x => `<div class="item" style="align-items:flex-start"><div class="grow"><div class="t">${esc(x.p.name)} <span class="pill">${esc(x.p.type)}</span></div>
       <div class="muted">${x.rows.length} طالب · مستحق ${SAR(x.earned)} · مصروف ${SAR(x.paidOut)} · <b>الباقي ${SAR(x.balance)}</b></div>
       ${x.rows.length ? `<details><summary class="muted" style="cursor:pointer">الطلاب</summary><div class="muted">${x.rows.map(r => `${esc(r.acc.name)}: دفع ${SAR(r.st.paid)} ← عمولة ${SAR(r.earned)}`).join("<br>")}</div></details>` : ""}</div>
-      <button class="btn sm" data-pst="${esc(x.p.id)}">كشف</button>${x.balance > 0 ? `<button class="btn sm gold" data-ppay="${esc(x.p.id)}">صرف عمولة</button>` : ""}</div>`).join("")}</div>`;
+      <button class="btn sm" data-pst="${esc(x.p.id)}">كشف</button><button class="btn sm" data-plink="${esc(x.p.id)}" title="رابط تقديم خاص: كل من يقدّم منه ينحسب لهذا الشريك">🔗 رابط التقديم</button>${x.balance > 0 ? `<button class="btn sm gold" data-ppay="${esc(x.p.id)}">صرف عمولة</button>` : ""}</div>`).join("")}</div>`;
+  el.querySelectorAll("[data-plink]").forEach(b => b.onclick = () => navigator.clipboard.writeText(applyUrl("m=" + encodeURIComponent(b.dataset.plink))).then(() => toast("انتسخ رابط التقديم الخاص بالشريك")).catch(() => toast(applyUrl("m=" + b.dataset.plink), true)));
   el.querySelectorAll("[data-pst]").forEach(b => b.onclick = () => { const x = all.find(y => y.p.id === b.dataset.pst); const w = openPrint(); fillPrintFin(w, `كشف عمولات ${x.p.name}`, [{html: partnerHTML(x)}]); });
   el.querySelectorAll("[data-ppay]").forEach(b => b.onclick = () => {
     const x = all.find(y => y.p.id === b.dataset.ppay);
