@@ -5,11 +5,11 @@ import { firebaseConfig } from "./config.js";
 
 /* ---------- constants ---------- */
 const DOMAIN = "osostl.local";                       // login emails are internal, never mailed
-const MAIL_STAFF = ["admission", "business", "hr"];      // accounts that only use their own mailbox
+const MAIL_STAFF = ["admission", "business", "hr", "tech"];      // accounts that only use their own mailbox
 const ROLE_EMAIL = {admin: "admin@" + DOMAIN, academic: "acadmic@" + DOMAIN, finance: "finance@" + DOMAIN, auditor: "audit@" + DOMAIN,
   ...Object.fromEntries(MAIL_STAFF.map(r => [r, `m-${r}@` + DOMAIN]))};
 const ROLES = {admin: "الإدارة", academic: "مسؤول الشؤون الأكاديمية", finance: "المالية", auditor: "الجهة الرقابية",
-  admission: "القبول والتسجيل وخدمة العملاء", business: "الشراكات وقطاع الشركات", hr: "الموارد البشرية"};
+  admission: "القبول والتسجيل وخدمة العملاء", business: "الشراكات وقطاع الشركات", hr: "الموارد البشرية", tech: "القسم التقني"};
 const RO = () => S.adminRole === "auditor";
 const FIN = () => S.adminRole === "finance";
 const MAILONLY = () => MAIL_STAFF.includes(S.adminRole);
@@ -638,18 +638,19 @@ function watchStaffLock(){
 }
 function startData(){
   S.loaded = {trainers: false, groups: false};
-  if (S.role === "admin" && MAILONLY()) { S.loaded = {trainers: true, groups: true}; watchStaffLock(); S.mail = null; mailSubs(); watchMemos();
+  if (S.role === "admin" && MAILONLY()) { S.loaded = {trainers: true, groups: true}; watchStaffLock(); S.mail = null; mailSubs(); watchMemos(); watchTickets(); watchMeetings();
     S.subs.push(onSnapshot(collection(db, "trainers"), snap => { S.trainers = {}; snap.docs.forEach(d => S.trainers[d.id] = {id: d.id, ...d.data()}); if (isChatTab() && $("#mmList")) memoPaint(); }, () => {}));
     return; }
   const annDocs = S.role === "admin" ? ["trainers", "students"] : S.role === "trainer" ? ["trainers"] : ["students"];
   annDocs.forEach(k => S.subs.push(onSnapshot(ref("ann/" + k), snap => { S.ann[k] = (snap.exists() && snap.data().items) || []; renderAnn(); }, () => {})));
   sub(collection(db, "trainers"), snap => {
     S.trainers = {}; snap.docs.forEach(d => S.trainers[d.id] = {id: d.id, ...d.data()});
-    if (S.role === "trainer") { const t = Object.values(S.trainers).find(t => t.uid === S.authUser.uid); S.me = t ? t.id : null; if (S.me) { watchMsgs(); watchTrMsgs(); watchStaffReqs(); watchMemos(); if (!S.mail && trMe()) mailSubs(); } }
+    if (S.role === "trainer") { const t = Object.values(S.trainers).find(t => t.uid === S.authUser.uid); S.me = t ? t.id : null; if (S.me) { watchMsgs(); watchTrMsgs(); watchStaffReqs(); watchMemos(); watchTickets(); if (!S.mail && trMe()) mailSubs(); } }
     S.loaded.trainers = true; afterData();
   });
   if (S.role === "student") {
     sub(ref("students/" + S.myNum), snap => { S.myStudent = snap.exists() ? snap.data() : null; afterData(); });
+    watchTickets();
     sub(query(collection(db, "groups"), where("memberNums", "array-contains", S.myNum)), snap => {
       S.groups = {}; snap.docs.forEach(d => S.groups[d.id] = {id: d.id, ...d.data()}); S.loaded.groups = true; afterData();
     });
@@ -685,7 +686,7 @@ function startData(){
     // emergency lock: a session that signed in before its role's lock time leaves at once
     watchStaffLock(); watchMsgs(); watchTasks(); watchTrMsgs(); watchStaffReqs();
     if (!RO()) { S.mail = null; mailSubs(); }
-    watchMemos();
+    watchMemos(); watchTickets(); watchMeetings();
     if (!FIN()) S.subs.push(onSnapshot(collection(db, "acReqs"), snap => { S.aReqs = snap.docs.map(d => ({id: d.id, ...d.data()})); afterData(); }, () => {}));
     if (!FIN()) S.subs.push(onSnapshot(collection(db, "waivers"), snap => { S.waivers = {}; snap.docs.forEach(d => S.waivers[d.id] = d.data()); afterData(); }, () => {}));
     if (SEES_FIN()) startFinance();
@@ -850,6 +851,170 @@ function guidesRender(){
   };
 }
 
+/* ---------- technical support: anyone reports a problem (text + screenshot) to the tech department, which answers in the ticket ---------- */
+const TK_ST = {open: "جديد", doing: "قيد العمل", done: "انحلت ✓"}, TK_PILL = {open: "a", doing: "l", done: "p"};
+const tkMe = () => S.role === "student" ? (S.myNum ? "st-" + S.myNum : "") : S.role === "trainer" ? (S.me || "") : S.role === "admin" ? S.adminRole : "";
+const tkKind = () => S.role === "student" ? "student" : S.role === "trainer" ? "trainer" : "staff";
+const isTechDesk = () => S.role === "admin" && (S.adminRole === "tech" || S.adminRole === "admin");
+const tkMineName = () => S.role === "student" ? ((S.myStudent || {}).name || "طالب") + " · " + S.myNum : S.role === "trainer" ? trainerTitle((S.trainers || {})[S.me] || {name: ""}) : ROLES[S.adminRole] || S.adminRole;
+const tkLast = t => String(t.updatedAt || t.at || "");
+const tkMineBadge = () => { const n = (S.tickets || []).filter(t => t.by === tkMe() && (t.replies || []).length && t.replies[t.replies.length - 1].by === "tech" && tkLast(t) > String(t.seenOwner || "")).length; return n ? ` (${n})` : ""; };
+const tkBadge = () => { const n = (S.tickets || []).filter(t => t.status !== "done" && tkLast(t) > String(t.seenTech || "")).length; return n ? ` (${n})` : ""; };
+function watchTickets(){
+  if (S._tkSub || !S.authUser || !tkMe()) return; S._tkSub = true;
+  const q = isTechDesk() ? collection(db, "tickets") : query(collection(db, "tickets"), where("by", "==", tkMe()));
+  let first = true;
+  S.subs.push(onSnapshot(q, snap => {
+    const prev = new Map((S.tickets || []).map(t => [t.id, tkLast(t)]));
+    S.tickets = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => tkLast(b).localeCompare(tkLast(a)));
+    if (!first) S.tickets.filter(t => prev.get(t.id) !== tkLast(t)).forEach(t => { const l = (t.replies || []).slice(-1)[0];
+      if (S.adminRole === "tech" && S.role === "admin" && (!l || l.by !== "tech")) toast("🛠️ " + (l ? "رد على بلاغ" : "بلاغ جديد") + ": " + (t.byName || ""));
+      if (t.by === tkMe() && l && l.by === "tech") toast("🛠️ رد من القسم التقني على بلاغك"); });
+    first = false;
+    if ($("#tkList")) tkPaint(); else if (!busyEditing()) afterData();
+  }, e => console.error(e)));
+  S.subs.push(() => { S._tkSub = false; });
+}
+function tkThread(t, desk){
+  const who = r => r.by === "tech" ? "🛠️ القسم التقني" : esc(t.byName || "");
+  return `<div class="card" style="margin:8px 0;padding:12px" data-tk="${esc(t.id)}">
+    <div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>${desk ? esc(t.byName || "") : "بلاغ"}</b>${desk ? ` <span class="muted" style="font-size:12px">${{student: "طالب", trainer: "مدرب", staff: "إدارة"}[t.byKind] || ""}</span>` : ""} <span class="muted" style="font-size:12px">· ${esc(fmtIso(t.at))}</span></div><span class="pill ${TK_PILL[t.status] || ""}">${TK_ST[t.status] || t.status}</span></div>
+    <div style="white-space:pre-wrap;margin:8px 0">${linkify(esc(t.text))}</div>
+    ${t.img ? `<img src="${esc(t.img)}" alt="صورة المشكلة" data-tkimg="${esc(t.id)}" style="max-width:100%;max-height:260px;border-radius:8px;border:1px solid var(--line);cursor:zoom-in">` : ""}
+    ${(t.replies || []).map(r => `<div style="margin:8px 0 0;padding:8px 10px;border-radius:10px;background:${r.by === "tech" ? "rgba(31,81,54,.08)" : "var(--bg)"}"><div class="muted" style="font-size:12px">${who(r)} · ${esc(fmtIso(r.at))}</div><div style="white-space:pre-wrap">${linkify(esc(r.text))}</div></div>`).join("")}
+    <div class="row" style="margin-top:8px;gap:6px;flex-wrap:wrap"><input type="text" class="grow" data-tkr="${esc(t.id)}" maxlength="1000" placeholder="${desk ? "اكتب الرد للمرسل…" : "اكتب رد أو معلومة إضافية…"}" style="min-width:180px"><button class="btn sm pri" data-tks="${esc(t.id)}">إرسال</button>
+      ${desk ? `${t.status !== "doing" && t.status !== "done" ? `<button class="btn sm" data-tkst="${esc(t.id)}:doing">قيد العمل</button>` : ""}${t.status !== "done" ? `<button class="btn sm gold" data-tkst="${esc(t.id)}:done">انحلت ✓</button>` : `<button class="btn sm" data-tkst="${esc(t.id)}:open">إعادة فتح</button>`}`
+        : t.status !== "done" ? `<button class="btn sm gold" data-tkst="${esc(t.id)}:done">انحلت مشكلتي ✓</button>` : `<button class="btn sm" data-tkst="${esc(t.id)}:open">المشكلة رجعت</button>`}</div></div>`;
+}
+function tkBind(root, desk){
+  root.querySelectorAll("[data-tkimg]").forEach(im => im.onclick = () => { const w = window.open(""); if (w) { w.document.title = "صورة المشكلة"; w.document.body.style.margin = "0"; w.document.body.innerHTML = `<img src="${im.src}" style="max-width:100%">`; } });
+  const save = async (t, upd, msg) => { try { await setDoc(ref("tickets/" + t.id), {...upd, updatedAt: new Date().toISOString(), ...(desk ? {seenTech: new Date().toISOString()} : {seenOwner: new Date().toISOString()})}, {merge: true}); notify("ticket", t.id); if (msg) toast(msg); } catch (e) { handleWriteErr(e); } };
+  root.querySelectorAll("[data-tks]").forEach(b => b.onclick = () => { const t = (S.tickets || []).find(x => x.id === b.dataset.tks), inp = root.querySelector(`[data-tkr="${CSS.escape(t.id)}"]`), text = inp.value.trim(); if (!text) return toast("اكتب الرد");
+    b.disabled = true; save(t, {replies: [...(t.replies || []), {by: desk ? "tech" : t.by, text: text.slice(0, 1000), at: new Date().toISOString()}], ...(desk && t.status === "open" ? {status: "doing"} : !desk && t.status === "done" ? {status: "open"} : {})}, "انرسل ✓").finally(() => { b.disabled = false; }); });
+  root.querySelectorAll("[data-tkr]").forEach(inp => inp.onkeydown = e => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); root.querySelector(`[data-tks="${CSS.escape(inp.dataset.tkr)}"]`).click(); } });
+  root.querySelectorAll("[data-tkst]").forEach(b => b.onclick = () => { const [id, st] = b.dataset.tkst.split(":"), t = (S.tickets || []).find(x => x.id === id);
+    save(t, {status: st, ...(desk && st === "done" ? {replies: [...(t.replies || []), {by: "tech", text: "تم حل المشكلة ✓", at: new Date().toISOString()}]} : {})}, st === "done" ? "انقفل البلاغ ✓" : "تمام"); });
+}
+function tkPaint(){
+  if (S._tkModal && $("#modal").classList.contains("on") && $("#tkList")) { const mine = (S.tickets || []).filter(t => t.by === tkMe()); $("#tkList").innerHTML = mine.map(t => tkThread(t, false)).join("") || `<div class="empty">ما رفعت بلاغات للحين.</div>`; tkBind($("#tkList"), false);
+    const now = new Date().toISOString(); mine.filter(t => tkLast(t) > String(t.seenOwner || "") && (t.replies || []).length).forEach(t => setDoc(ref("tickets/" + t.id), {seenOwner: now}, {merge: true}).catch(() => {})); }
+  else if (S.role === "admin" && S.aTab === "tickets" && !busyEditing()) render();
+}
+async function ticketsModal(){
+  watchTickets(); S._tkModal = true;
+  const F = S._tkF = S._tkF || {text: ""};
+  $("#modalBox").innerHTML = `<div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">🛠️ الدعم التقني</h2><button class="btn sm" id="tkX">إغلاق</button></div>
+    <p class="muted" style="margin:6px 0 10px">عندك مشكلة في البوابة أو جهاز أو حساب؟ اكتبها وأرفق صورة منها، وتوصل للقسم التقني ويوصلك ردهم هنا مع إشعار.</p>
+    <div class="card" style="padding:12px"><textarea id="tkT" rows="4" maxlength="2000" placeholder="وش المشكلة؟ مثال: ما يفتح لي ملف الإيصال، تطلع رسالة …" style="width:100%">${esc(F.text)}</textarea>
+      <div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap"><label class="f grow">صورة من المشكلة (اختياري)<input type="file" id="tkI" accept="image/*"></label><button class="btn pri" id="tkSend" style="align-self:flex-end">إرسال البلاغ</button></div>
+      <p class="muted" style="margin:6px 0 0;font-size:12px">نصيحة: صوّر الشاشة (Win + Shift + S بالكمبيوتر، أو زر التصوير بالجوال) وارفعها.</p></div>
+    <h3 style="margin:14px 0 4px">بلاغاتي</h3><div id="tkList"></div>`;
+  $("#modal").classList.add("on");
+  $("#tkX").onclick = () => { S._tkModal = false; closeModal(); };
+  $("#tkT").oninput = e => { F.text = e.target.value; };
+  $("#tkSend").onclick = async e => {
+    const text = $("#tkT").value.trim(); if (!text) return toast("اكتب المشكلة");
+    if (!tkMe()) return toast("سجّل دخولك أول");
+    e.target.disabled = true;
+    let img = ""; const f = $("#tkI").files[0];
+    try { if (f) img = await compressImage(f); } catch { e.target.disabled = false; return toast("الصورة كبيرة، صوّرها بدقة أقل"); }
+    const id = "tk-" + Date.now().toString(36) + uid(), now = new Date().toISOString();
+    try { await setDoc(ref("tickets/" + id), {by: tkMe(), byKind: tkKind(), byName: tkMineName(), text: text.slice(0, 2000), ...(img ? {img} : {}), status: "open", replies: [], at: now, updatedAt: now, seenOwner: now});
+      notify("ticket", id); S._tkF = null; $("#tkT").value = ""; $("#tkI").value = ""; toast("وصل بلاغك للقسم التقني ✓"); }
+    catch (x) { handleWriteErr(x); }
+    e.target.disabled = false;
+  };
+  tkPaint();
+}
+function techTicketsTab(el){
+  watchTickets();
+  const f = S.tkF || "active", L = (S.tickets || []).filter(t => f === "all" ? true : f === "done" ? t.status === "done" : t.status !== "done");
+  el.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h2 style="margin:0">🛠️ البلاغات التقنية</h2>
+    <div class="row" style="gap:6px">${[["active", "المفتوحة"], ["done", "المنتهية"], ["all", "الكل"]].map(([k, v]) => `<button class="btn sm ${f === k ? "pri" : ""}" data-tkf="${k}">${v} (${(S.tickets || []).filter(t => k === "all" ? true : k === "done" ? t.status === "done" : t.status !== "done").length})</button>`).join("")}</div></div>
+    <p class="muted" style="margin:6px 0 0">يرفعها الطلاب والمدربين والإدارات من زر «🛠️ الدعم التقني». ردك يوصلهم مع إشعار.</p></div>
+    <div id="tkList">${L.map(t => tkThread(t, true)).join("") || `<div class="card empty">ما فيه بلاغات هنا 👍</div>`}</div>`;
+  el.querySelectorAll("[data-tkf]").forEach(b => b.onclick = () => { S.tkF = b.dataset.tkf; render(); });
+  tkBind(el, true);
+  if (S.adminRole === "tech") { const now = new Date().toISOString(); L.filter(t => tkLast(t) > String(t.seenTech || "")).forEach(t => setDoc(ref("tickets/" + t.id), {seenTech: now}, {merge: true}).catch(() => {})); }
+}
+
+/* ---------- meetings: the general administration or the auditor invites every department or chosen ones ---------- */
+const MEET_DEPTS = ["admin", "academic", "finance", "hr", "admission", "business", "auditor", "tech"];
+const MEET_N = {admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", hr: "الموارد البشرية", admission: "القبول والتسجيل", business: "الشراكات", auditor: "الجهة الرقابية", tech: "القسم التقني"};
+const meetBoss = () => S.role === "admin" && ["admin", "auditor"].includes(S.adminRole);
+const meetWhen = m => `${m.date || ""}T${m.time || "00:00"}`;
+const meetUpcoming = () => (S.meetings || []).filter(m => m.status !== "cancelled" && meetWhen(m) >= today() + "T00:00");
+const meetBadge = () => { const n = meetUpcoming().filter(m => m.by !== S.adminRole && !(m.rsvp || {})[S.adminRole]).length; return n ? ` (${n})` : ""; };
+function watchMeetings(){
+  if (S._mtSub || !S.authUser || S.role !== "admin") return; S._mtSub = true;
+  const qs = meetBoss() ? {a: collection(db, "meetings")} : {m: query(collection(db, "meetings"), where("to", "array-contains", S.adminRole)), g: query(collection(db, "meetings"), where("to", "array-contains", "all"))};
+  const parts = {}, seen = {}; let ready = false;
+  Object.entries(qs).forEach(([k, q]) => S.subs.push(onSnapshot(q, snap => {
+    const prev = new Set((S.meetings || []).map(m => m.id + (m.rev || 0) + (m.status || "")));
+    parts[k] = snap.docs.map(d => ({id: d.id, ...d.data()})); seen[k] = true;
+    const mp = new Map(); Object.values(parts).flat().forEach(m => mp.set(m.id, m));
+    S.meetings = [...mp.values()].sort((a, b) => meetWhen(a).localeCompare(meetWhen(b)));
+    const wasReady = ready; ready = Object.keys(qs).every(x => seen[x]);
+    if (wasReady) S.meetings.filter(m => !prev.has(m.id + (m.rev || 0) + (m.status || "")) && m.by !== S.adminRole).forEach(m => toast(m.status === "cancelled" ? "❌ انلغى اجتماع: " + m.title : "📅 اجتماع: " + m.title + " · " + m.date + " " + fmtTime(m.time)));
+    if (!busyEditing()) afterData();
+  }, e => console.error(e))));
+  S.subs.push(() => { S._mtSub = false; });
+}
+function meetCard(m){
+  const boss = meetBoss() && m.by === S.adminRole, to = (m.to || []).includes("all") ? MEET_DEPTS.filter(r => r !== m.by) : (m.to || []);
+  const rs = m.rsvp || {}, yes = to.filter(r => rs[r] === "yes"), no = to.filter(r => rs[r] === "no"), past = meetWhen(m) < today() + "T00:00", cx = m.status === "cancelled";
+  return `<div class="card" style="margin:8px 0;${cx || past ? "opacity:.6" : ""}"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><div><b style="font-size:17px">${esc(m.title)}</b>${cx ? ` <span class="pill a">ملغى</span>` : ""}
+      <div class="muted">📅 ${esc(m.date)} (${esc(bothDates(m.date))}) · 🕒 ${esc(fmtTime(m.time))}${m.mins ? ` · ${m.mins} دقيقة` : ""}</div>
+      <div class="muted">${m.link ? `💻 أونلاين: <a href="${esc(m.link)}" target="_blank" rel="noopener">رابط الاجتماع</a>` : `📍 ${esc(m.place || "حضوري")}`}</div>
+      <div class="muted" style="font-size:13px">من: ${esc(MEET_N[m.by] || m.by)} · المدعوين: ${(m.to || []).includes("all") ? "كل الإدارات" : to.map(r => MEET_N[r] || r).join("، ")}</div></div>
+    ${!boss && !cx && !past ? `<div class="row" style="gap:6px;align-self:flex-start"><button class="btn sm ${rs[S.adminRole] === "yes" ? "pri" : ""}" data-mrs="${esc(m.id)}:yes">سأحضر ✓</button><button class="btn sm ${rs[S.adminRole] === "no" ? "danger" : ""}" data-mrs="${esc(m.id)}:no">أعتذر</button></div>` : ""}</div>
+    ${m.notes ? `<div style="white-space:pre-wrap;margin-top:8px;padding:8px 10px;background:var(--bg);border-radius:8px"><b>جدول الأعمال:</b>\n${linkify(esc(m.notes))}</div>` : ""}
+    ${boss ? `<div class="muted" style="margin-top:8px;font-size:13px">✓ يحضرون: ${yes.map(r => MEET_N[r]).join("، ") || "—"} · ✗ يعتذرون: ${no.map(r => MEET_N[r]).join("، ") || "—"} · ما ردّوا: ${to.filter(r => !rs[r]).map(r => MEET_N[r]).join("، ") || "—"}</div>
+      ${!cx ? `<div class="row" style="gap:6px;margin-top:8px"><button class="btn sm" data-medit="${esc(m.id)}">تعديل الموعد</button><button class="btn sm danger" data-mcx="${esc(m.id)}">إلغاء الاجتماع</button></div>` : `<div class="row" style="margin-top:8px"><button class="btn sm danger" data-mdel="${esc(m.id)}">حذف</button></div>`}` : ""}</div>`;
+}
+function meetingsTab(el){
+  watchMeetings();
+  const boss = meetBoss(), F = S._mtF = S._mtF || {title: "", date: today(), time: "10:00", mins: 60, kind: "in", place: "قاعة الاجتماعات", link: "", to: ["all"], notes: "", edit: null};
+  const up = meetUpcoming(), past = (S.meetings || []).filter(m => !up.includes(m)).reverse().slice(0, 20);
+  const others = MEET_DEPTS.filter(r => r !== S.adminRole);
+  el.innerHTML = `${boss ? `<div class="card"><h2 style="margin-top:0">${F.edit ? "تعديل موعد الاجتماع" : "📅 اجتماع جديد"}</h2>
+      <label class="f">الموضوع<input type="text" id="mtT" maxlength="150" value="${esc(F.title)}" placeholder="مثل: اجتماع الإدارات الشهري"></label>
+      <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px"><label class="f" style="width:170px">التاريخ<input type="date" id="mtD" value="${esc(F.date)}" min="${today()}"></label><label class="f" style="width:130px">الوقت<input type="time" id="mtH" value="${esc(F.time)}"></label><label class="f" style="width:120px">المدة (دقيقة)<input type="number" id="mtM" min="10" max="480" value="${F.mins}"></label>
+        <label class="f" style="width:150px">النوع<select id="mtK"><option value="in" ${F.kind === "in" ? "selected" : ""}>حضوري</option><option value="on" ${F.kind === "on" ? "selected" : ""}>أونلاين</option></select></label></div>
+      ${F.kind === "on" ? `<label class="f" style="margin-top:8px">رابط الاجتماع (Teams أو Zoom أو Google Meet)<input type="url" id="mtL" dir="ltr" value="${esc(F.link)}" placeholder="https://…"></label>` : `<label class="f" style="margin-top:8px">المكان<input type="text" id="mtP" maxlength="100" value="${esc(F.place)}"></label>`}
+      ${F.edit ? "" : `<div style="margin-top:10px"><b>المدعوين:</b><div class="row" style="gap:12px;flex-wrap:wrap;margin-top:6px"><label class="row" style="gap:4px"><input type="checkbox" data-mto="all" ${F.to.includes("all") ? "checked" : ""}> <b>كل الإدارات</b></label>${others.map(r => `<label class="row" style="gap:4px"><input type="checkbox" data-mto="${r}" ${F.to.includes(r) ? "checked" : ""}> ${MEET_N[r]}</label>`).join("")}</div></div>
+      <label class="f" style="margin-top:8px">جدول الأعمال (اختياري)<textarea id="mtN" rows="3" maxlength="2000">${esc(F.notes)}</textarea></label>`}
+      <div class="row" style="gap:8px;margin-top:10px"><button class="btn pri" id="mtSave">${F.edit ? "حفظ الموعد الجديد" : "إرسال الدعوة"}</button>${F.edit ? `<button class="btn" id="mtCancelEd">تراجع</button>` : ""}<span class="muted">يوصلهم إشعار، ويردّون بـ «سأحضر» أو «أعتذر».</span></div></div>` : ""}
+    <div class="card"><h2 style="margin-top:0">الاجتماعات القادمة (${up.length})</h2>${up.map(meetCard).join("") || `<div class="empty">ما فيه اجتماعات قادمة.</div>`}</div>
+    ${past.length ? `<details class="card"><summary><b>الاجتماعات السابقة والملغاة (${past.length})</b></summary>${past.map(meetCard).join("")}</details>` : ""}`;
+  if (boss) {
+    const sync = () => { F.title = $("#mtT").value; F.date = $("#mtD").value; F.time = $("#mtH").value; F.mins = Number($("#mtM").value) || 60; F.kind = $("#mtK").value; if ($("#mtL")) F.link = $("#mtL").value.trim(); if ($("#mtP")) F.place = $("#mtP").value; if ($("#mtN")) F.notes = $("#mtN").value; };
+    el.querySelectorAll("#mtT,#mtD,#mtH,#mtM,#mtL,#mtP,#mtN").forEach(x => x.oninput = sync);
+    $("#mtK").onchange = () => { sync(); render(); };
+    el.querySelectorAll("[data-mto]").forEach(c => c.onchange = () => { sync(); const r = c.dataset.mto; F.to = c.checked ? (r === "all" ? ["all"] : [...F.to.filter(x => x !== "all"), r]) : F.to.filter(x => x !== r); render(); });
+    if ($("#mtCancelEd")) $("#mtCancelEd").onclick = () => { S._mtF = null; render(); };
+    $("#mtSave").onclick = async e => {
+      sync(); if (!F.title.trim()) return toast("اكتب موضوع الاجتماع"); if (!F.date || !F.time) return toast("حدد التاريخ والوقت");
+      if (F.kind === "on" && !/^https:\/\/\S+$/.test(F.link)) return toast("الصق رابط الاجتماع (يبدأ بـ https://)");
+      if (!F.edit && !F.to.length) return toast("اختر المدعوين");
+      e.target.disabled = true;
+      const base = {title: F.title.trim().slice(0, 150), date: F.date, time: F.time, mins: F.mins, place: F.kind === "on" ? "" : F.place.trim().slice(0, 100), link: F.kind === "on" ? F.link.slice(0, 500) : ""};
+      try {
+        if (F.edit) { const m = S.meetings.find(x => x.id === F.edit); await setDoc(ref("meetings/" + m.id), {...base, rev: (m.rev || 0) + 1, updatedAt: new Date().toISOString()}, {merge: true}); notify("meeting", m.id); logAction("تعديل موعد اجتماع", `${base.title} · ${base.date} ${base.time}`); toast("تعدّل الموعد، ووصلهم إشعار"); }
+        else { const id = "mt-" + Date.now().toString(36) + uid(); await setDoc(ref("meetings/" + id), {...base, to: F.to, notes: F.notes.trim().slice(0, 2000), by: S.adminRole, status: "scheduled", rsvp: {}, rev: 0, at: new Date().toISOString()}); notify("meeting", id);
+          logAction("دعوة اجتماع", `${base.title} · ${base.date} ${base.time} · ${F.to.includes("all") ? "كل الإدارات" : F.to.map(r => MEET_N[r]).join("، ")}`); toast("انرسلت الدعوة ✓"); }
+        S._mtF = null; render();
+      } catch (x) { e.target.disabled = false; handleWriteErr(x); }
+    };
+    el.querySelectorAll("[data-medit]").forEach(b => b.onclick = () => { const m = S.meetings.find(x => x.id === b.dataset.medit); S._mtF = {...F, title: m.title, date: m.date, time: m.time, mins: m.mins || 60, kind: m.link ? "on" : "in", place: m.place || "", link: m.link || "", edit: m.id}; render(); window.scrollTo(0, 0); });
+    el.querySelectorAll("[data-mcx]").forEach(b => b.onclick = async () => { if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟ يوصلهم إشعار"; return; }
+      const m = S.meetings.find(x => x.id === b.dataset.mcx); try { await setDoc(ref("meetings/" + m.id), {status: "cancelled", updatedAt: new Date().toISOString()}, {merge: true}); notify("meeting", m.id); logAction("إلغاء اجتماع", m.title); toast("انلغى الاجتماع"); } catch (x) { handleWriteErr(x); } });
+    el.querySelectorAll("[data-mdel]").forEach(b => b.onclick = async () => { if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟"; return; } try { await deleteDoc(ref("meetings/" + b.dataset.mdel)); } catch (x) { handleWriteErr(x); } });
+  }
+  el.querySelectorAll("[data-mrs]").forEach(b => b.onclick = async () => { const [id, v] = b.dataset.mrs.split(":");
+    try { await setDoc(ref("meetings/" + id), {rsvp: {[S.adminRole]: v}}, {merge: true}); toast(v === "yes" ? "تمام، ردّك: سأحضر ✓" : "انسجل اعتذارك"); } catch (x) { handleWriteErr(x); } });
+}
+
 /* ---------- top bar ---------- */
 const trainerTitle = t => (t.gender === "f" ? "المدربة " : "المدرب ") + t.name;
 function renderTop(){
@@ -861,9 +1026,10 @@ function renderTop(){
     if (S.role === "trainer" && S.trainers[S.me]) who = trainerTitle(S.trainers[S.me]);
     if (S.role === "admin") who = ROLES[S.adminRole];
     if (S.role === "student" && S.myStudent) who = S.myStudent.name;
-    w.innerHTML = `<span>${esc(who)}</span>${S.role ? `<button class="btn ghost sm" id="guideBtn">📘 الأدلة</button>` : ""}${S.site && S.site.vapid && !pushOn() ? `<button class="btn ghost sm" id="pushBtn">تفعيل الإشعارات</button>` : ""}<button class="btn ghost sm" id="out">خروج</button>`;
+    w.innerHTML = `<span>${esc(who)}</span>${S.role ? `<button class="btn ghost sm" id="guideBtn">📘 الأدلة</button>${S.adminRole === "tech" && S.role === "admin" ? "" : `<button class="btn ghost sm" id="tkBtn">🛠️ الدعم التقني${tkMineBadge()}</button>`}` : ""}${S.site && S.site.vapid && !pushOn() ? `<button class="btn ghost sm" id="pushBtn">تفعيل الإشعارات</button>` : ""}<button class="btn ghost sm" id="out">خروج</button>`;
     if ($("#pushBtn")) $("#pushBtn").onclick = () => enablePush(false);
     if ($("#guideBtn")) $("#guideBtn").onclick = () => guidesModal();
+    if ($("#tkBtn")) $("#tkBtn").onclick = () => ticketsModal();
     $("#out").onclick = () => { S.view = "home"; logout(); };
   } else if (S.view !== "home") {
     w.innerHTML = `<button class="btn ghost sm" id="homeBtn">الرئيسية</button>`;
@@ -3035,11 +3201,11 @@ function writeGroup(gid, d){
 
 function renderAdmin(app){
   if (RO()) {
-    const tabsRO = [["tasks", "المهام" + taskBadge()], ["memos", "المراسلات" + memoBadge()], ["weekly", "التقرير الأسبوعي"], ["dash", "لوحة اليوم"], ["kpi", "المؤشرات"], ["follow", "المتابعة"], ["report", "التقارير"], ["finance", "المالية"], ["hr", "الموارد البشرية"], ["trmsgs", "رسائل المدربين"], ["sreq", "طلبات الإجازة"], ["logs", "سجل الإدارات"], ["archive", "الأرشيف"]];
+    const tabsRO = [["tasks", "المهام" + taskBadge()], ["meet", "الاجتماعات" + meetBadge()], ["memos", "المراسلات" + memoBadge()], ["weekly", "التقرير الأسبوعي"], ["dash", "لوحة اليوم"], ["kpi", "المؤشرات"], ["follow", "المتابعة"], ["report", "التقارير"], ["finance", "المالية"], ["hr", "الموارد البشرية"], ["trmsgs", "رسائل المدربين"], ["sreq", "طلبات الإجازة"], ["logs", "سجل الإدارات"], ["archive", "الأرشيف"]];
     if (!tabsRO.some(([k]) => k === S.aTab)) S.aTab = "tasks";
     app.innerHTML = `<div class="notice">بوابة الجهة الرقابية: تطّلع على كل أعمال المعهد وتصدّرها، وترسل مهام للإدارات وتستلم تقاريرها. التعديل على البيانات يبقى عند الإدارات.</div><div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabsRO.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
     app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
-    ({tasks: tasksTab, memos: memosTab, weekly: weeklyTab, dash: adminDash, kpi: adminKpi, follow: adminFollow, report: adminReport, finance: adminFinance, hr: hrTab, trmsgs: adminTrMsgs, sreq: staffReqsView, logs: adminLogs, archive: adminArchive})[S.aTab]($("#ab"));
+    ({tasks: tasksTab, meet: meetingsTab, memos: memosTab, weekly: weeklyTab, dash: adminDash, kpi: adminKpi, follow: adminFollow, report: adminReport, finance: adminFinance, hr: hrTab, trmsgs: adminTrMsgs, sreq: staffReqsView, logs: adminLogs, archive: adminArchive})[S.aTab]($("#ab"));
     if (["finance", "hr", "logs"].includes(S.aTab)) ownerReadOnly($("#ab"));
     if (RO()) app.querySelectorAll("#ab [data-issue], #issueAll, #cIssue, [data-rc], [data-twa], [data-wabs], [data-warn]").forEach(x => x.remove());
     return;
@@ -3048,20 +3214,20 @@ function renderAdmin(app){
     app.innerHTML = `<div id="ab"></div>`; adminFinance($("#ab")); return;
   }
   if (MAILONLY()) {
-    const mt = [...(S.adminRole === "hr" ? [["hr", "الموارد البشرية"]] : []), ["memos", "المراسلات" + memoBadge()], ["mail", "البريد" + mailBadge()], ["tasks", "مهام الجهة الرقابية" + taskBadge()], ["sreq", "طلبات الإجازة" + srBadge()]];
+    const mt = [...(S.adminRole === "hr" ? [["hr", "الموارد البشرية"]] : []), ...(S.adminRole === "tech" ? [["tickets", "البلاغات التقنية" + tkBadge()]] : []), ["memos", "المراسلات" + memoBadge()], ["meet", "الاجتماعات" + meetBadge()], ["mail", "البريد" + mailBadge()], ["tasks", "مهام الجهة الرقابية" + taskBadge()], ["sreq", "طلبات الإجازة" + srBadge()]];
     if (!mt.some(([k]) => k === S.aTab)) S.aTab = mt[0][0];
     app.innerHTML = `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${mt.map(([k, v]) => `<button class="tab ${S.aTab === k ? "on" : ""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
     app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
-    ({hr: hrTab, memos: memosTab, mail: mailTab, tasks: tasksTab, sreq: staffReqsView})[S.aTab]($("#ab")); return;
+    ({hr: hrTab, tickets: techTicketsTab, meet: meetingsTab, memos: memosTab, mail: mailTab, tasks: tasksTab, sreq: staffReqsView})[S.aTab]($("#ab")); return;
   }
-  const tabs = [["dash","لوحة اليوم"],["kpi","المؤشرات"],["groups","المقررات والطلاب"],["students","الطلاب"],["msgs","الرسائل الجماعية"],["trainers","المدربين والرموز"],["grades","الدرجات"],["exams","الاختبارات"],["camp","المعسكر"],["follow","المتابعة"],["excuses","الأعذار"],["areqs","طلبات الطلاب" + ((S.aReqs || []).some(r => r.status === "new") ? ` (${S.aReqs.filter(r => r.status === "new").length})` : "")],["evals","التقييمات"],["report","التقارير"],["courses","الدورات والشهادات"],["sign","طلبات التوقيع"],["tasks","مهام الجهة الرقابية" + taskBadge()],["trmsgs","رسائل المدربين" + trmBadge()],["sreq","طلبات الإجازة" + srBadge()],["memos","المراسلات" + memoBadge()],["mail","البريد" + mailBadge()],...(MEET() ? [["live","المحاضرات والتسجيلات"]] : []),["system","النظام"],...(S.adminRole === "admin" ? [["hr","الموارد البشرية"]] : []),...(SEES_FIN() ? [["finance","المالية" + ((S.fReqs || []).some(r => r.status === "fin_signed") ? ` (${(S.fReqs || []).filter(r => r.status === "fin_signed").length})` : "")]] : []),["archive","الأرشيف"],...(S.adminRole === "admin" ? [["weekly","التقرير الأسبوعي"],["logs","السجل"]] : [])];
+  const tabs = [["dash","لوحة اليوم"],["kpi","المؤشرات"],["groups","المقررات والطلاب"],["students","الطلاب"],["msgs","الرسائل الجماعية"],["trainers","المدربين والرموز"],["grades","الدرجات"],["exams","الاختبارات"],["camp","المعسكر"],["follow","المتابعة"],["excuses","الأعذار"],["areqs","طلبات الطلاب" + ((S.aReqs || []).some(r => r.status === "new") ? ` (${S.aReqs.filter(r => r.status === "new").length})` : "")],["evals","التقييمات"],["report","التقارير"],["courses","الدورات والشهادات"],["sign","طلبات التوقيع"],["tasks","مهام الجهة الرقابية" + taskBadge()],["trmsgs","رسائل المدربين" + trmBadge()],["sreq","طلبات الإجازة" + srBadge()],["memos","المراسلات" + memoBadge()],["meet","الاجتماعات" + meetBadge()],...(S.adminRole === "admin" ? [["tickets","البلاغات التقنية" + tkBadge()]] : []),["mail","البريد" + mailBadge()],...(MEET() ? [["live","المحاضرات والتسجيلات"]] : []),["system","النظام"],...(S.adminRole === "admin" ? [["hr","الموارد البشرية"]] : []),...(SEES_FIN() ? [["finance","المالية" + ((S.fReqs || []).some(r => r.status === "fin_signed") ? ` (${(S.fReqs || []).filter(r => r.status === "fin_signed").length})` : "")]] : []),["archive","الأرشيف"],...(S.adminRole === "admin" ? [["weekly","التقرير الأسبوعي"],["logs","السجل"]] : [])];
   if (!tabs.some(([k]) => k === S.aTab)) S.aTab = "dash";
   const waiting = Object.values(S.grades).filter(x => x.status === "submitted").length;
   app.innerHTML = `${backupNag()}${quotaNag()}${absNag()}${S.sys && S.sys.maintenance ? `<div class="notice err">وضع الصيانة شغّال: الموقع مقفل على الكل ما عدا الإدارة. تطفيه من تبويب "النظام".</div>` : ""}<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}${k === "grades" && waiting ? ` (${waiting})` : ""}${k === "follow" && S.allAtt && ["academic", "admin"].includes(S.adminRole) ? (n => n ? ` (${n})` : "")(absAlerts().alerts.filter(alertWaiting).length) : ""}${k === "excuses" && (S.excuses || []).filter(x => x.status === "pending").length ? ` (${S.excuses.filter(x => x.status === "pending").length})` : ""}</button>`).join("")}</div></div><div id="ab"></div>`;
   app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
   if ($("#nagAbs")) $("#nagAbs").onclick = () => { S.aTab = "follow"; render(); };
   if ($("#nagBk")) $("#nagBk").onclick = async e => { e.target.disabled = true; try { await backupAll(); toast("نزلت النسخة الاحتياطية"); render(); } catch (x) { console.error(x); toast("تعذّر أخذ النسخة"); e.target.disabled = false; } };
-  ({dash: adminDash, kpi: adminKpi, groups: adminGroups, students: adminStudents, msgs: adminMessages, trainers: adminTrainers, grades: adminGrades, exams: adminExams, camp: campTab, hr: hrTab, follow: adminFollow, excuses: adminExcuses, areqs: adminAcReqs, evals: adminEvals, report: adminReport, courses: adminCourses, sign: signRequests, tasks: tasksTab, weekly: weeklyTab, trmsgs: adminTrMsgs, sreq: staffReqsView, memos: memosTab, mail: mailTab, live: liveTab, system: el => { adminSystem(el); attArchiveCard(el); }, archive: adminArchive, finance: adminFinance, logs: adminLogs})[S.aTab]($("#ab"));
+  ({meet: meetingsTab, tickets: techTicketsTab, dash: adminDash, kpi: adminKpi, groups: adminGroups, students: adminStudents, msgs: adminMessages, trainers: adminTrainers, grades: adminGrades, exams: adminExams, camp: campTab, hr: hrTab, follow: adminFollow, excuses: adminExcuses, areqs: adminAcReqs, evals: adminEvals, report: adminReport, courses: adminCourses, sign: signRequests, tasks: tasksTab, weekly: weeklyTab, trmsgs: adminTrMsgs, sreq: staffReqsView, memos: memosTab, mail: mailTab, live: liveTab, system: el => { adminSystem(el); attArchiveCard(el); }, archive: adminArchive, finance: adminFinance, logs: adminLogs})[S.aTab]($("#ab"));
 }
 
 function adminDash(el){
@@ -3968,6 +4134,9 @@ function adminSystem(el){
   </div>`;
   if ($("#rsF")) $("#rsF").onchange = e => { const f = e.target.files[0]; if (f) restoreRead(f); };
   bindAutoBk(el);
+  if ($("#mvFiles")) $("#mvFiles").onclick = async e => { e.target.disabled = true;
+    try { await moveFilesToServer(e.target, $("#mvOut")); } catch (x) { console.error(x); $("#mvOut").textContent = x.status === 404 ? "حدّث worker في Cloudflare لآخر نسخة" : "توقف النقل: " + (x.detail || x.message) + " · جرّب مرة ثانية"; }
+    e.target.disabled = false; };
   $("#bkB").onclick = async () => { $("#bkB").disabled = true; try { await backupAll(); toast("نزلت النسخة الاحتياطية"); } catch (e) { console.error(e); toast("تعذّر أخذ النسخة"); } $("#bkB").disabled = false; };
   $("#arB").onclick = async () => {
     const term = $("#arName").value.trim();
@@ -4194,14 +4363,14 @@ function adminFollow(el){
    Messages arrive through Cloudflare Email Routing into the push service, which stores them in mbox/{role}/m (list) and mbox/{role}/b (body). */
 const MAIL_DOMAIN = "osustl.com";
 const MBOXES = {ceo: ["admin", "الإدارة العامة"], info: ["admin", "الإيميل العام"], academic: ["academic", "الشؤون الأكاديمية"], finance: ["finance", "المالية"],
-  admission: ["admission", "القبول والتسجيل"], support: ["admission", "خدمة العملاء"], hr: ["hr", "الموارد البشرية"], business: ["business", "قطاع الشركات"]};
+  admission: ["admission", "القبول والتسجيل"], support: ["admission", "خدمة العملاء"], hr: ["hr", "الموارد البشرية"], business: ["business", "قطاع الشركات"], tech: ["tech", "القسم التقني"]};
 const MAIL_ROLES_ALL = ["admin", "academic", "finance", ...MAIL_STAFF];
 // a trainer's own mailbox: tr{number}@osustl.com, kept under mbox/{trainer id}
 // the address is the name the administration chose (t.mail), else tr{number}; tr{number} keeps working as a second address
 const trLocal = t => t ? (t.mail || (t.num ? "tr" + t.num : "")) : "";
 const trMe = () => S.role === "trainer" && S.me && S.trainers && S.trainers[S.me] && trLocal(S.trainers[S.me]) ? S.trainers[S.me] : null;
 const trAddr = t => trLocal(t) ? `${trLocal(t)}@${MAIL_DOMAIN}` : "";
-const MAIL_RESERVED = ["ceo", "info", "academic", "finance", "admission", "support", "hr", "business", "admin", "postmaster", "abuse", "noreply", "no-reply", "root", "webmaster", "hostmaster", "security", "mail", "contact", "sales"];
+const MAIL_RESERVED = ["tech", "it", "ceo", "info", "academic", "finance", "admission", "support", "hr", "business", "admin", "postmaster", "abuse", "noreply", "no-reply", "root", "webmaster", "hostmaster", "security", "mail", "contact", "sales"];
 const myMailRoles = () => trMe() ? [S.me] : S.adminRole === "admin" ? MAIL_ROLES_ALL : MAIL_ROLES_ALL.includes(S.adminRole) ? [S.adminRole] : [];
 const myBoxes = () => trMe() ? [trLocal(trMe())] : Object.keys(MBOXES).filter(b => S.adminRole === "admin" || MBOXES[b][0] === S.adminRole);
 const mailAll = () => Object.values(S.mail || {}).flat().sort((a, b) => (b.at || "").localeCompare(a.at || ""));
@@ -4432,9 +4601,9 @@ function mailCompose(el){
 /* ---------- department chat (WhatsApp-like): one conversation with each department, and a group for all of them.
    memos/{id}: from, to (a department, or "all"), text, at, readAt (direct messages). The general administration
    and the auditor can read every message; the others only their own and the group's. */
-const CHAT_ROLES = ["admin", "academic", "finance", "hr", "admission", "business", "auditor"];
+const CHAT_ROLES = ["admin", "academic", "finance", "hr", "admission", "business", "auditor", "tech"];
 const CHAT_TOP = ["admin", "auditor"];                                   // reached only by the departments, never by trainers
-const CHAT_TR_DEPTS = ["academic", "finance", "hr", "admission", "business"];
+const CHAT_TR_DEPTS = ["academic", "finance", "hr", "admission", "business", "tech"];
 const chatMe = () => S.role === "trainer" ? S.me : S.adminRole;
 const chatName = k => CHAT_N[k] || (S.trainers && S.trainers[k] ? trainerTitle(S.trainers[k]) : /^t-/.test(k) ? "مدرب" : k);
 const chatTrainers = () => Object.values(S.trainers || {}).filter(t => t.id !== chatMe() && !(S.disabled || {})[t.id] && !t.disabled).sort((a, b) => String(a.name).localeCompare(String(b.name), "ar")).map(t => t.id);
@@ -4444,7 +4613,7 @@ function chatContacts(){
   if (CHAT_TOP.includes(me)) return ["all", ...CHAT_ROLES.filter(r => r !== me)];
   return ["all", ...CHAT_ROLES.filter(r => r !== me), ...chatTrainers()];
 }
-const CHAT_N = {all: "👥 كل الإدارات", admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", hr: "الموارد البشرية", admission: "القبول والتسجيل", business: "الشراكات وقطاع الشركات", auditor: "الجهة الرقابية"};
+const CHAT_N = {tech: "🛠️ القسم التقني", all: "👥 كل الإدارات", admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", hr: "الموارد البشرية", admission: "القبول والتسجيل", business: "الشراكات وقطاع الشركات", auditor: "الجهة الرقابية"};
 const MEMO_ROLES = CHAT_ROLES;
 const memoSeenKey = () => "memoSeenAll_" + chatMe();
 const memoSeenAll = () => { try { return localStorage.getItem(memoSeenKey()) || ""; } catch { return ""; } };
@@ -4452,7 +4621,7 @@ const memoThread = k => { const me = chatMe(); return (S.memos || []).filter(m =
 const memoUnreadIn = k => { const me = chatMe(); return k === "all" ? memoThread("all").filter(m => m.from !== me && String(m.at || "") > memoSeenAll()) : memoThread(k).filter(m => m.to === me && !m.readAt); };
 const memoUnread = () => chatContacts().flatMap(memoUnreadIn);
 const memoBadge = () => { const n = memoUnread().length; return n ? ` (${n})` : ""; };
-const isChatTab = () => S.role === "trainer" ? !!S.trChat : FIN() ? S.finTab === "memos" : S.aTab === "memos";
+const isChatTab = () => S.role === "trainer" ? !!S.trChat : FIN() ? S.finTab === "memo" : S.aTab === "memos";
 function watchMemos(){
   if (S._memoSub || !S.authUser) return;
   if (!(S.role === "trainer" && S.me) && !(S.role === "admin" && CHAT_ROLES.includes(S.adminRole))) return; S._memoSub = true;
@@ -4609,7 +4778,7 @@ function adminTrMsgs(el){
    staffReqs/{id}: the request moves along roles[] (cur = whose turn); each step approves or rejects with a note.
    trainer → academic affairs → human resources → general administration; department head → human resources → general administration */
 const SR_CHAIN = r => r === "trainer" ? ["academic", "hr", "admin"] : r === "hr" ? ["admin"] : ["hr", "admin"];
-const SR_CAN = () => S.role === "trainer" ? !!S.me : S.role === "admin" && ["academic", "finance", "hr", "admission", "business"].includes(S.adminRole);
+const SR_CAN = () => S.role === "trainer" ? !!S.me : S.role === "admin" && ["academic", "finance", "hr", "admission", "business", "tech"].includes(S.adminRole);
 const SR_APPROVER = () => S.role === "admin" && ["academic", "hr", "admin"].includes(S.adminRole);
 const SR_ROLE_N = {academic: "الشؤون الأكاديمية", hr: "الموارد البشرية", admin: "الإدارة العامة"};
 const SR_KIND = {leave: "طلب إجازة", sick: "عذر طبي"};
@@ -5460,7 +5629,7 @@ function adminLogs(el){
 /* ---------- owner's portal: tasks to the departments and the weekly report ----------
    The owner (the oversight account) sends a task to one department. Only that department, the general administration
    and the owner see it. The department reports back (text + an optional file); the owner approves it or returns it. */
-const TASK_TO = {admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", admission: "القبول والتسجيل وخدمة العملاء", business: "الشراكات وقطاع الشركات", hr: "الموارد البشرية"};
+const TASK_TO = {tech: "القسم التقني", admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", admission: "القبول والتسجيل وخدمة العملاء", business: "الشراكات وقطاع الشركات", hr: "الموارد البشرية"};
 const TASK_ST = {new: "جديدة", seen: "قيد التنفيذ", done: "منجزة · بانتظار اعتماد الجهة الرقابية", returned: "معادة للاستكمال", closed: "معتمدة ✓"};
 const TASK_PILL = {new: "l", seen: "", done: "l", returned: "a", closed: "p"};
 const TASK_MAX = 760 * 1024;
@@ -5735,9 +5904,9 @@ async function setDisabled(coll, id, on, name){
 /* ---------- backup ---------- */
 const ALL_COLLS = ["public", "ann", "trainers", "groups", "students", "secrets", "studentSecrets", "att", "grades", "results", "joins", "excuses", "warnings", "evals", "certs", "idcards", "archives", "logs", "surveys", "fin", "finAccounts", "payments", "salaryPays", "expenses", "commPays", "finClear", "receipts", "courses", "finReqs", "sigs", "signReqs", "signFiles", "waivers", "acReqs", "memos", "live",
   "exams", "examQs", "examKeys", "examSubs", "msgs", "msgReads", "tasks", "taskFiles", "weekly", "trMsgs", "staffReqs", "staffReqFiles", "camp", "campLab", "labCfg", "studentDocs",
-  "hrStaff", "hrAtt", "hrLeaves", "hrNotices", "hrCfg", "hrPayroll", "coffeePub", "coffeeReqs"];
+  "hrStaff", "hrAtt", "hrLeaves", "hrNotices", "hrCfg", "hrPayroll", "coffeePub", "coffeeReqs", "tickets", "meetings", "guides", "mailBook"];
 // kept in the backup for the record, but brought back only by the people who wrote them (their own security rules)
-const NO_RESTORE = ["logs", "weekly", "msgReads", "tasks", "taskFiles", "trMsgs", "staffReqs", "staffReqFiles", "examSubs", "coffeeReqs"];
+const NO_RESTORE = ["tickets", "logs", "weekly", "msgReads", "tasks", "taskFiles", "trMsgs", "staffReqs", "staffReqFiles", "examSubs", "coffeeReqs"];
 const APPEND_ONLY = ["payments", "expenses", "commPays"];   // money records are never deleted or rewritten: a restore only brings back missing ones
 const canon = v => JSON.stringify(v, (k, x) => x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(key => [key, x[key]])) : x);   // the audit log is append-only; a restore never rewrites it
 const toPlain = v => v && typeof v.toDate === "function" && "seconds" in v ? {__ts: v.toDate().toISOString()} : Array.isArray(v) ? v.map(toPlain) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, toPlain(x)])) : v;
@@ -5811,6 +5980,27 @@ function backupNag(){
   if (at && days < 7) return "";
   return `<div class="notice err" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="grow">${at ? `آخر نسخة احتياطية قبل ${days} يوم.` : "ما فيه نسخة احتياطية مسجّلة."} نزّل نسخة الحين واحفظها في مكان آمن.</span><button class="btn sm pri" id="nagBk">تنزيل نسخة احتياطية</button></div>`;
 }
+/* one-time move: receipts and signing files already kept inside Firestore go to the classroom server (300 GB) */
+async function moveFilesToServer(btn, out){
+  const say = t => { if (out) out.textContent = t; };
+  let moved = 0, freed = 0, failed = 0;
+  const jobs = [["receipts", "img", "إيصال"], ["signFiles", "data", "ملف توقيع"]];
+  for (const [coll, field, label] of jobs) {
+    const sn = await getDocs(collection(db, coll)); let i = 0;
+    for (const d of sn.docs) {
+      i++; const v = d.data()[field];
+      if (typeof v !== "string" || !v.startsWith("data:") || v.length < 60000) continue;
+      say(`${label} ${i} من ${sn.size}… (نقلنا ${moved})`);
+      try {
+        const type = (/^data:([^;,]+)/.exec(v) || [])[1] || "application/octet-stream", ext = type.includes("pdf") ? "pdf" : type.includes("png") ? "png" : "jpg";
+        const mk = await srvPut(new Blob([dataBytes(v)], {type}), `${coll}-${d.id}.${ext}`, type);
+        await setDoc(ref(`${coll}/${d.id}`), {[field]: mk}, {merge: true}); moved++; freed += v.length;
+      } catch (e) { console.error(coll, d.id, e); failed++; }
+    }
+  }
+  logAction("نقل الملفات لسيرفر المعهد", `${moved} ملف · ${Math.round(freed / 1024 / 1024 * 10) / 10} ميجا`);
+  say(`خلصنا ✓ نقلنا ${moved} ملف ووفّرنا تقريباً ${Math.round(freed / 1024 / 1024 * 10) / 10} ميجا من Firebase${failed ? ` · ${failed} ما انتقلت (جرّب مرة ثانية)` : ""}. نزّل نسخة احتياطية عشان يتحدّث رقم المساحة.`);
+}
 function usageCard(){
   loadUsage();
   const u = S.usage;
@@ -5827,6 +6017,9 @@ function usageCard(){
     <div style="height:10px;border-radius:6px;background:#e5e7eb;overflow:hidden;margin:8px 0"><div style="height:100%;width:${Math.max(pct, 0.5)}%;background:${col}"></div></div>
     <p class="muted" style="margin:0 0 8px">آخر قياس: ${esc(when)} (يتحدث كل ما نزّلت نسخة احتياطية من حساب الإدارة العامة).</p>
     ${top.map(([c, b]) => `<div class="item" style="padding:6px 12px"><span class="grow">${esc(NAMES[c] || c)}<span class="muted"> · ${(u.docs || {})[c] || 0} سجل</span></span><span class="muted">${mb(b * 2)}</span></div>`).join("")}
+    ${S.adminRole === "admin" && (S.site || {}).pushUrl ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><b>نقل الملفات لسيرفر المعهد</b>
+      <p class="muted" style="margin:4px 0 8px">صور الإيصالات وملفات التوقيع القديمة تنتقل من Firebase (1 جيجا) لسيرفر المعهد (300 جيجا)، وتبقى تفتح عادي. تسويها مرة وحدة، وتقدر تعيدها بأمان.</p>
+      <button class="btn gold" id="mvFiles">نقل الملفات الحين</button> <span class="muted" id="mvOut"></span></div>` : ""}
   </div>`;
 }
 
@@ -6221,12 +6414,12 @@ const paysOf = num => (S.pays || []).filter(p => p.num === num);
 function adminFinance(el){
   let t = S.finTab || "sum";
   const nW = fReqWaiting();
-  const tabs = [["sum", "الملخص"], ["req", "طلبات الطلاب" + (nW ? ` (${nW})` : "")], ["acc", "حسابات الطلاب"], ["pay", "الدفعات"], ["rcpt", "الإيصالات"], ["late", "المتأخرين"], ["exp", "المصروفات"], ["sal", "رواتب المدربين"], ["part", "الشركاء والعمولات"], ["rep", "التقرير الشهري"], ["hrpay", "رواتب الموظفين"], ...(FIN() ? [["tasks", "مهام الجهة الرقابية" + taskBadge()], ["sreq", "طلبات الإجازة" + srBadge()], ["sign", "طلبات التوقيع"], ["memo", "المراسلات" + memoBadge()], ["mail", "البريد" + mailBadge()]] : []), ...(RO() ? [] : [["set", "الإعدادات"]])];
+  const tabs = [["sum", "الملخص"], ["req", "طلبات الطلاب" + (nW ? ` (${nW})` : "")], ["acc", "حسابات الطلاب"], ["pay", "الدفعات"], ["rcpt", "الإيصالات"], ["late", "المتأخرين"], ["exp", "المصروفات"], ["sal", "رواتب المدربين"], ["part", "الشركاء والعمولات"], ["rep", "التقرير الشهري"], ["hrpay", "رواتب الموظفين"], ...(FIN() ? [["meet", "الاجتماعات" + meetBadge()], ["tasks", "مهام الجهة الرقابية" + taskBadge()], ["sreq", "طلبات الإجازة" + srBadge()], ["sign", "طلبات التوقيع"], ["memo", "المراسلات" + memoBadge()], ["mail", "البريد" + mailBadge()]] : []), ...(RO() ? [] : [["set", "الإعدادات"]])];
   if (RO()) { const keep = ["sum", "acc", "pay", "rcpt", "late", "exp", "sal", "part", "rep", "hrpay"]; for (let i = tabs.length - 1; i >= 0; i--) if (!keep.includes(tabs[i][0])) tabs.splice(i, 1); if (!keep.includes(S.finTab || "sum")) S.finTab = "sum"; t = S.finTab || "sum"; }
   el.innerHTML = `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k, v]) => `<button class="tab ${t === k ? "on" : ""}" data-ft="${k}">${v}</button>`).join("")}</div></div><div id="fb"></div>`;
   el.querySelectorAll("[data-ft]").forEach(b => b.onclick = () => { S.finTab = b.dataset.ft; render(); });
   if (!S.finSet) { $("#fb").innerHTML = `<div class="card"><p class="muted" style="margin:0">جاري التحميل…</p></div>`; return; }
-  ({sum: finSummary, req: finReqTab, acc: finAccounts, pay: finPayments, rcpt: finReceipts, late: finLate, exp: finExpenses, sal: finSalaries, part: finPartners, rep: finReport, sign: signRequests, memo: memosTab, mail: mailTab, set: finSettings, tasks: tasksTab, hrpay: finHrPay, sreq: staffReqsView})[S.finTab || "sum"]($("#fb"));
+  ({sum: finSummary, req: finReqTab, acc: finAccounts, pay: finPayments, rcpt: finReceipts, late: finLate, exp: finExpenses, sal: finSalaries, part: finPartners, rep: finReport, sign: signRequests, memo: memosTab, meet: meetingsTab, mail: mailTab, set: finSettings, tasks: tasksTab, hrpay: finHrPay, sreq: staffReqsView})[S.finTab || "sum"]($("#fb"));
 }
 /* employees' payroll sheets sent by human resources (attendance deductions already applied) */
 function finHrPay(el){
@@ -6661,7 +6854,8 @@ function finReceipts(el){
   const printList = async (items, title) => {
     const w = openPrint(); if (!w) return;
     try {
-      const imgs = await Promise.all(items.map(r => getDoc(ref("receipts/" + r.id)).then(x => x.exists() ? x.data().img : null).catch(() => null)));
+      const imgs = await Promise.all(items.map(r => getDoc(ref("receipts/" + r.id)).then(x => x.exists() ? x.data().img : null)
+        .then(d => isSrv(d) && /^image\//.test(srvMeta(d).type) ? srvData(d) : d).catch(() => null)));
       const pages = items.map((r, i) => ({html: `<h1>${r.coll === "payments" ? "إيصال دفعة" : "إيصال مصروف"}</h1>
         <table><tbody>
           <tr><td class="n" style="width:28%"><b>${r.coll === "payments" ? "الطالب" : "البند"}</b></td><td class="n">${esc(r.title)}</td></tr>
