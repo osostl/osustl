@@ -643,7 +643,7 @@ function startData(){
   annDocs.forEach(k => S.subs.push(onSnapshot(ref("ann/" + k), snap => { S.ann[k] = (snap.exists() && snap.data().items) || []; renderAnn(); }, () => {})));
   sub(collection(db, "trainers"), snap => {
     S.trainers = {}; snap.docs.forEach(d => S.trainers[d.id] = {id: d.id, ...d.data()});
-    if (S.role === "trainer") { const t = Object.values(S.trainers).find(t => t.uid === S.authUser.uid); S.me = t ? t.id : null; if (S.me) { watchMsgs(); watchTrMsgs(); watchStaffReqs(); } }
+    if (S.role === "trainer") { const t = Object.values(S.trainers).find(t => t.uid === S.authUser.uid); S.me = t ? t.id : null; if (S.me) { watchMsgs(); watchTrMsgs(); watchStaffReqs(); if (!S.mail && trMe()) mailSubs(); } }
     S.loaded.trainers = true; afterData();
   });
   if (S.role === "student") {
@@ -789,6 +789,65 @@ async function enablePush(silent){
   } catch (e) { console.error(e); if (!silent) toast("تعذّر تفعيل الإشعارات"); }
 }
 
+/* ---------- user guides (PDFs on the classroom server), for everyone by audience ---------- */
+const GUIDE_AUD = {all: "الكل", trainer: "المدربين", student: "الطلاب", staff: "الإدارات"};
+const guideKind = () => S.role === "trainer" ? "trainer" : S.role === "student" ? "student" : "staff";
+const guideEditor = () => S.role === "admin" && ["admin", "academic"].includes(S.adminRole);
+async function loadGuides(){
+  try { const sn = await getDocs(collection(db, "guides")); S.guides = sn.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => (a.order || 0) - (b.order || 0) || String(b.at).localeCompare(String(a.at))); }
+  catch (e) { console.error(e); S.guides = S.guides || []; }
+}
+async function guidesModal(){
+  $("#modalBox").innerHTML = `<p class="muted">جاري التحميل…</p>`; $("#modal").classList.add("on");
+  await loadGuides(); guidesRender();
+}
+function guidesRender(){
+  const k = guideKind(), ed = guideEditor();
+  const L = (S.guides || []).filter(g => ed || S.role === "admin" || (g.aud || ["all"]).some(a => a === "all" || a === k));
+  const F = S._gF = S._gF || {title: "", aud: ["all"]};
+  $("#modalBox").innerHTML = `<div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">📘 أدلة الاستخدام</h2><button class="btn sm" id="gX">إغلاق</button></div>
+    <div class="list" style="margin-top:10px">${L.map(g => `<div class="item" style="flex-wrap:wrap"><span class="grow" style="min-width:180px"><b>${esc(g.title)}</b><div class="muted" style="font-size:13px">${esc(fmtSize(g.size) || "")}${ed ? ` · يظهر لـ: ${(g.aud || ["all"]).map(a => GUIDE_AUD[a] || a).join("، ")}` : ""}</div></span>
+      <button class="btn sm pri" data-gget="${esc(g.id)}">⬇️ تنزيل</button>${ed ? `<button class="btn sm danger" data-gdel="${esc(g.id)}">حذف</button>` : ""}</div>`).join("") || `<div class="empty">ما فيه أدلة للحين.</div>`}</div>
+    ${ed ? `<div class="card" style="margin-top:12px;padding:12px"><h3 style="margin:0 0 6px">إضافة دليل</h3>
+      <input type="text" id="gT" maxlength="100" placeholder="اسم الدليل، مثل: دليل المدرب" value="${esc(F.title)}" style="width:100%">
+      <div class="row" style="gap:12px;margin:8px 0;flex-wrap:wrap"><span class="muted">يظهر لـ:</span>${Object.entries(GUIDE_AUD).map(([a, v]) => `<label class="row" style="gap:4px"><input type="checkbox" data-gaud="${a}" ${F.aud.includes(a) ? "checked" : ""}> ${v}</label>`).join("")}</div>
+      <input type="file" id="gF" accept=".pdf,.doc,.docx,.ppt,.pptx,.mp4,image/*">
+      <p class="muted" style="margin:6px 0 0;font-size:13px">PDF أو Word أو فيديو، لين 50 ميجا. «الإدارات» تعني كل الإدارات، والإدارة العامة والشؤون الأكاديمية يشوفون كل الأدلة.</p>
+      <div class="row" style="margin-top:8px"><button class="btn pri" id="gUp">رفع الدليل</button><span class="muted" id="gPct"></span></div></div>` : ""}`;
+  $("#gX").onclick = closeModal;
+  $("#modalBox").querySelectorAll("[data-gget]").forEach(b => b.onclick = async () => {
+    b.disabled = true; b.textContent = "جاري…";
+    try { const j = await pushApi("/guides", {action: "get", id: b.dataset.gget}); const a = document.createElement("a"); a.href = j.url; a.rel = "noopener"; document.body.appendChild(a); a.click(); a.remove(); }
+    catch (e) { toast(e.status === 404 ? "حدّث worker في Cloudflare لآخر نسخة" : "تعذّر التنزيل، حاول مرة ثانية"); }
+    b.disabled = false; b.textContent = "⬇️ تنزيل";
+  });
+  if (!ed) return;
+  $("#gT").oninput = e => { F.title = e.target.value; };
+  $("#modalBox").querySelectorAll("[data-gaud]").forEach(c => c.onchange = () => {
+    const a = c.dataset.gaud; F.aud = c.checked ? (a === "all" ? ["all"] : [...F.aud.filter(x => x !== "all"), a]) : F.aud.filter(x => x !== a); if (!F.aud.length) F.aud = ["all"]; guidesRender(); });
+  $("#modalBox").querySelectorAll("[data-gdel]").forEach(b => b.onclick = async () => {
+    if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟"; return; }
+    b.disabled = true; const g = S.guides.find(x => x.id === b.dataset.gdel);
+    try { await pushApi("/guides", {action: "del", id: b.dataset.gdel}); logAction("حذف دليل استخدام", g ? g.title : ""); await loadGuides(); guidesRender(); }
+    catch (e) { b.disabled = false; toast("تعذّر الحذف"); }
+  });
+  $("#gUp").onclick = async e => {
+    const file = $("#gF").files[0], title = (F.title || "").trim();
+    if (!title) return toast("اكتب اسم الدليل"); if (!file) return toast("اختر الملف");
+    if (file.size > 50 * 1024 ** 2) return toast("الملف أكبر من 50 ميجا");
+    e.target.disabled = true;
+    try {
+      const t = await pushApi("/guides", {action: "up", size: file.size});
+      await new Promise((ok, no) => { const x = new XMLHttpRequest(); x.open("PUT", t.url);
+        x.upload.onprogress = ev => { if (ev.lengthComputable && $("#gPct")) $("#gPct").textContent = Math.floor(ev.loaded / ev.total * 100) + "%"; };
+        x.onload = () => x.status === 200 ? ok() : no(new Error("up " + x.status)); x.onerror = () => no(new Error("net")); x.send(file); });
+      await setDoc(ref("guides/g" + uid() + uid()), {title: title.slice(0, 100), aud: F.aud, rid: t.rid, name: file.name.slice(0, 150), size: file.size, type: file.type || "application/octet-stream", at: new Date().toISOString(), by: ROLES[S.adminRole] || S.adminRole});
+      logAction("إضافة دليل استخدام", `${title} · ${F.aud.map(a => GUIDE_AUD[a]).join("، ")}`);
+      S._gF = null; toast("انرفع الدليل ✓"); await loadGuides(); guidesRender();
+    } catch (x) { console.error(x); e.target.disabled = false; toast(x.status === 404 ? "حدّث worker في Cloudflare لآخر نسخة" : x.status === 503 ? "سيرفر القاعة مو مربوط" : "تعذّر الرفع: " + (x.detail || x.message), 1); }
+  };
+}
+
 /* ---------- top bar ---------- */
 const trainerTitle = t => (t.gender === "f" ? "المدربة " : "المدرب ") + t.name;
 function renderTop(){
@@ -800,8 +859,9 @@ function renderTop(){
     if (S.role === "trainer" && S.trainers[S.me]) who = trainerTitle(S.trainers[S.me]);
     if (S.role === "admin") who = ROLES[S.adminRole];
     if (S.role === "student" && S.myStudent) who = S.myStudent.name;
-    w.innerHTML = `<span>${esc(who)}</span>${S.site && S.site.vapid && !pushOn() ? `<button class="btn ghost sm" id="pushBtn">تفعيل الإشعارات</button>` : ""}<button class="btn ghost sm" id="out">خروج</button>`;
+    w.innerHTML = `<span>${esc(who)}</span>${S.role ? `<button class="btn ghost sm" id="guideBtn">📘 الأدلة</button>` : ""}${S.site && S.site.vapid && !pushOn() ? `<button class="btn ghost sm" id="pushBtn">تفعيل الإشعارات</button>` : ""}<button class="btn ghost sm" id="out">خروج</button>`;
     if ($("#pushBtn")) $("#pushBtn").onclick = () => enablePush(false);
+    if ($("#guideBtn")) $("#guideBtn").onclick = () => guidesModal();
     $("#out").onclick = () => { S.view = "home"; logout(); };
   } else if (S.view !== "home") {
     w.innerHTML = `<button class="btn ghost sm" id="homeBtn">الرئيسية</button>`;
@@ -2381,12 +2441,18 @@ function renderTrainer(app){
   if (!t) { app.innerHTML = `<div class="notice err">هذا الحساب غير مربوط بمدرب. تواصل مع الشؤون الأكاديمية.</div>`; return; }
   if (!S.tGroup && S.trmOpen) return trainerMsgs(app);
   if (!S.tGroup && S.sreqOpen) { app.innerHTML = `<div id="srBox"></div>`; return staffReqsView($("#srBox"), true); }
+  if (!S.tGroup && S.trMail && trMe()) {
+    if (!S.mail) mailSubs();
+    app.innerHTML = `<div class="card" style="padding:10px 14px"><div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div><b>📧 بريدي</b> <span class="muted" dir="ltr">${esc(trAddr(trMe()))}</span></div><button class="btn sm" id="tmBack">→ رجوع</button></div></div><div id="tmBox"></div>`;
+    $("#tmBack").onclick = () => { S.trMail = false; S.mailDraft = null; S.mailOpen = null; render(); };
+    return mailTab($("#tmBox"));
+  }
   if (!S.tGroup) {
     const gs = myGroups();
     const rows = []; gs.forEach(g => (g.sessions || []).forEach(s => rows.push({course: g.course + (s.g ? ` (${s.g === "f" ? "طالبات" : "طلاب"})` : ""), trainer: trainerTitle(t), s})));
     app.innerHTML = `
     <div class="card"><div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div><h2 style="margin:0">أهلاً ${esc(trainerTitle(t))}</h2><p class="muted" style="margin:4px 0 0">اختر المقرر للتحضير أو رصد الدرجات.</p></div>
-      <div class="row" style="gap:6px"><button class="btn ${trmUnread().length ? "gold" : ""}" id="trmOpen">💬 مراسلة الشؤون الأكاديمية${trmBadge()}</button><button class="btn" id="srOpen">📝 إجازة / عذر طبي${srBadge()}</button></div></div></div>
+      <div class="row" style="gap:6px"><button class="btn ${trmUnread().length ? "gold" : ""}" id="trmOpen">💬 مراسلة الشؤون الأكاديمية${trmBadge()}</button>${trMe() ? `<button class="btn ${trMe() && S.mail && mailUnread().length ? "gold" : ""}" id="tmOpen">📧 بريدي${S.mail ? mailBadge() : ""}</button>` : ""}<button class="btn" id="srOpen">📝 إجازة / عذر طبي${srBadge()}</button></div></div></div>
     ${gs.length ? `<div class="ggrid">${gs.map(g => `
       <button class="groupcard" data-g="${esc(g.id)}">
         <span style="font-weight:700;color:var(--green)">${esc(g.course)}</span>
@@ -2398,6 +2464,7 @@ function renderTrainer(app){
     app.querySelectorAll("[data-g]").forEach(b => b.onclick = () => { S.tGroup = b.dataset.g; S.tDate = today(); S.tTab = "roll"; startAtt(); render(); });
     $("#trmOpen").onclick = () => { S.trmOpen = true; render(); window.scrollTo(0, 0); };
     $("#srOpen").onclick = () => { S.sreqOpen = true; render(); window.scrollTo(0, 0); };
+    if ($("#tmOpen")) $("#tmOpen").onclick = () => { S.trMail = true; render(); window.scrollTo(0, 0); };
     return;
   }
   const g = S.groups[S.tGroup];
@@ -3519,7 +3586,7 @@ function openWhatsApp(num, preset){
 
 function trainerText(tid, type, note){
   const t = S.trainers[tid] || {}, hi = `${t.gender === "f" ? "الأستاذة" : "الأستاذ"} ${t.name}\n\n`;
-  if (type === "login") return `${hi}بيانات دخولك لبوابة المدربين:\nرقم المدرب: ${t.num || "—"}\nرمز الدخول: ${S.secrets[tid] || "—"}\nالرابط: ${location.href.split("#")[0].split("?")[0]}${SIGN}`;
+  if (type === "login") return `${hi}بيانات دخولك لبوابة المدربين:\nرقم المدرب: ${t.num || "—"}\n${t.num ? `بريدك في المعهد: ${trAddr(t)}\n` : ""}رمز الدخول: ${S.secrets[tid] || "—"}\nالرابط: ${location.href.split("#")[0].split("?")[0]}${SIGN}`;
   return `${hi}${note || ""}${SIGN}`;
 }
 function openWhatsAppTrainer(tid){
@@ -4121,13 +4188,30 @@ const MAIL_DOMAIN = "osustl.com";
 const MBOXES = {ceo: ["admin", "الإدارة العامة"], info: ["admin", "الإيميل العام"], academic: ["academic", "الشؤون الأكاديمية"], finance: ["finance", "المالية"],
   admission: ["admission", "القبول والتسجيل"], support: ["admission", "خدمة العملاء"], hr: ["hr", "الموارد البشرية"], business: ["business", "قطاع الشركات"]};
 const MAIL_ROLES_ALL = ["admin", "academic", "finance", ...MAIL_STAFF];
-const myMailRoles = () => S.adminRole === "admin" ? MAIL_ROLES_ALL : MAIL_ROLES_ALL.includes(S.adminRole) ? [S.adminRole] : [];
-const myBoxes = () => Object.keys(MBOXES).filter(b => S.adminRole === "admin" || MBOXES[b][0] === S.adminRole);
+// a trainer's own mailbox: tr{number}@osustl.com, kept under mbox/{trainer id}
+// the address is the name the administration chose (t.mail), else tr{number}; tr{number} keeps working as a second address
+const trLocal = t => t ? (t.mail || (t.num ? "tr" + t.num : "")) : "";
+const trMe = () => S.role === "trainer" && S.me && S.trainers && S.trainers[S.me] && trLocal(S.trainers[S.me]) ? S.trainers[S.me] : null;
+const trAddr = t => trLocal(t) ? `${trLocal(t)}@${MAIL_DOMAIN}` : "";
+const MAIL_RESERVED = ["ceo", "info", "academic", "finance", "admission", "support", "hr", "business", "admin", "postmaster", "abuse", "noreply", "no-reply", "root", "webmaster", "hostmaster", "security", "mail", "contact", "sales"];
+const myMailRoles = () => trMe() ? [S.me] : S.adminRole === "admin" ? MAIL_ROLES_ALL : MAIL_ROLES_ALL.includes(S.adminRole) ? [S.adminRole] : [];
+const myBoxes = () => trMe() ? [trLocal(trMe())] : Object.keys(MBOXES).filter(b => S.adminRole === "admin" || MBOXES[b][0] === S.adminRole);
 const mailAll = () => Object.values(S.mail || {}).flat().sort((a, b) => (b.at || "").localeCompare(a.at || ""));
 const mailUnread = () => mailAll().filter(m => m.dir === "in" && !m.read && !m.trash);
 const mailBadge = () => { const n = mailUnread().length; return n ? ` (${n})` : ""; };
+/* saved addresses: one book per mailbox owner (department role, or the trainer's id) in mailBook/{key} */
+const bookKey = () => trMe() ? S.me : S.adminRole;
+const bookList = () => ((S.book || {}).list || []);
+const bookHas = a => bookList().some(x => x.addr === String(a).toLowerCase());
+async function bookSave(list){
+  list = list.filter(x => x && /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(x.addr)).map(x => ({name: String(x.name || "").trim().slice(0, 80) || x.addr.split("@")[0], addr: String(x.addr).trim().toLowerCase()}))
+    .filter((x, i, a) => a.findIndex(y => y.addr === x.addr) === i).sort((a, b) => a.name.localeCompare(b.name, "ar")).slice(0, 500);
+  S.book = {list}; await setDoc(doc(db, "mailBook", bookKey()), {list, at: new Date().toISOString()});
+}
 function mailSubs(){
   S.mail = {}; S.mailLim = S.mailLim || 120;
+  if (S._bookSub) { try { S._bookSub(); } catch {} }
+  if (bookKey()) S._bookSub = onSnapshot(doc(db, "mailBook", bookKey()), x => { S.book = x.exists() ? x.data() : {list: []}; if (S.mailDraft && !busyEditing()) render(); }, () => { S.book = {list: []}; });
   (S._mailSubs || []).forEach(u => { try { u(); } catch {} });
   S._mailSubs = myMailRoles().map(r => onSnapshot(query(collection(db, "mbox", r, "m"), orderBy("at", "desc"), limit(S.mailLim)), snap => {
     const old = (S.mail[r] || []).length;
@@ -4138,7 +4222,7 @@ function mailSubs(){
   S.subs.push(() => { (S._mailSubs || []).forEach(u => { try { u(); } catch {} }); S._mailSubs = []; });
   setTimeout(() => { S._mailReady = true; }, 4000);
 }
-const isMailTab = () => (FIN() ? S.finTab === "mail" : S.aTab === "mail");
+const isMailTab = () => S.role === "trainer" ? !!S.trMail : (FIN() ? S.finTab === "mail" : S.aTab === "mail");
 async function mailApi(body){
   const url = ((S.site || {}).pushUrl || "").replace(/\/+$/, ""); if (!url) throw new Error("no service");
   const r = await fetch(url + "/mail", {method: "POST", headers: {"content-type": "application/json", authorization: "Bearer " + await S.authUser.getIdToken()}, body: JSON.stringify(body)});
@@ -4146,21 +4230,22 @@ async function mailApi(body){
 }
 const mailWhen = iso => { if (!iso) return ""; const d = new Date(iso), t = d.toLocaleDateString("en-CA"); return t === today() ? d.toLocaleTimeString("ar-SA-u-nu-latn", {hour: "numeric", minute: "2-digit"}) : d.toLocaleDateString("ar-SA-u-ca-gregory-nu-latn", {day: "numeric", month: "short"}); };
 const mailWhenFull = iso => iso ? new Date(iso).toLocaleString("ar-SA-u-ca-gregory-nu-latn", {weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit"}) : "";
-const boxLabel = b => MBOXES[b] ? `${MBOXES[b][1]} (${b}@)` : b;
-const MAIL_ERR = {"bad address": "فيه عنوان إيميل غير صحيح", "too big": "المرفقات أكبر من 20 ميجا", "attachment missing": "مرفق ما انرفع، احذفه وأعد إرفاقه", "sending off": "الإرسال ما تفعّل للحين في Cloudflare",
+const boxLabel = b => MBOXES[b] ? `${MBOXES[b][1]} (${b}@)` : trMe() ? `بريدي (${b}@)` : b;
+const MAIL_ERR = {"bad address": "فيه عنوان إيميل غير صحيح", "unknown address": "فيه عنوان داخلي @osustl.com مو موجود. اختره من «دليل البريد»", "too big": "المرفقات أكبر من 20 ميجا", "attachment missing": "مرفق ما انرفع، احذفه وأعد إرفاقه", "sending off": "الإرسال ما تفعّل للحين في Cloudflare",
   E_RECIPIENT_PLAN_RESTRICTED: "الإرسال للخارج يحتاج خطة Workers المدفوعة", E_SENDER_DOMAIN_NOT_CONFIGURED: "الدومين ما تجهّز للإرسال في Cloudflare", E_EMAIL_SENDING_NOT_READY: "الإرسال للحين يتجهّز في Cloudflare، جرّب بعد شوي",
   E_RECIPIENT_SUPPRESSED: "هذا العنوان موقوف عنه الإرسال (رجع منه بريد قبل)", E_DAILY_LIMIT_EXCEEDED: "وصلتوا حد الإرسال اليومي", E_RATE_LIMIT_EXCEEDED: "إرسال كثير بوقت قصير، انتظر شوي"};
 function mailTab(el){
   if (!S.mail) mailSubs();
   const boxes = myBoxes(), all = mailAll();
   if (S.mailDraft) return mailCompose(el);
+  if (S.mailBookOpen) return mailBookView(el);
   if (S.mailOpen) { const m = all.find(x => x.id === S.mailOpen.id && x.r === S.mailOpen.r); if (m) return mailView(el, m); S.mailOpen = null; }
   const f = S.mailF || "in", bx = boxes.includes(S.mailBox) ? S.mailBox : "", q = (S.mailQ || "").trim().toLowerCase();
   const inBox = m => !bx || m.box === bx;
   const list = all.filter(inBox).filter(m => f === "trash" ? m.trash : !m.trash && (f === "star" ? m.star : m.dir === f))
     .filter(m => !q || [m.subject, m.fromName, m.from, (m.to || []).join(" "), m.snip].join(" ").toLowerCase().includes(q));
   const un = b => all.filter(m => (!b || m.box === b) && m.dir === "in" && !m.read && !m.trash).length;
-  el.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">البريد</h2><button class="btn pri" id="mlNew">✉️ رسالة جديدة</button></div>
+  el.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">البريد</h2><div class="row" style="gap:6px"><button class="btn" id="mlBook">📒 العناوين المحفوظة</button><button class="btn pri" id="mlNew">✉️ رسالة جديدة</button></div></div>
     ${boxes.length > 1 ? `<div class="row" style="margin-top:10px;gap:6px">${["", ...boxes].map(b => `<button class="btn sm ${bx === b ? "pri" : ""}" data-mlbx="${b}">${b ? esc(MBOXES[b][1]) : "الكل"}${un(b) ? ` <b>(${un(b)})</b>` : ""}</button>`).join("")}</div>` : `<p class="muted" style="margin:6px 0 0" dir="ltr">${esc(boxes[0] || "")}@${MAIL_DOMAIN}</p>`}
     <div class="row" style="margin-top:10px;gap:6px">${[["in", "الوارد"], ["out", "المرسل"], ["star", "★ المميزة"], ["trash", "المحذوفات"]].map(([k, v]) => `<button class="btn sm ${f === k ? "pri" : ""}" data-mlf="${k}">${v}${k === "in" && un(bx) ? ` (${un(bx)})` : ""}</button>`).join("")}</div>
     <input type="search" id="mlQ" placeholder="بحث بالاسم أو الإيميل أو العنوان" value="${esc(S.mailQ || "")}" style="margin-top:10px;width:100%"></div>
@@ -4172,7 +4257,8 @@ function mailTab(el){
         <div class="muted" style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${!bx && boxes.length > 1 ? `<span class="pill" style="margin-inline-end:4px">${esc(MBOXES[m.box] ? MBOXES[m.box][1] : m.box)}</span>` : ""}${m.sus ? `<span class="pill a" style="margin-inline-end:4px">مشبوه</span>` : ""}${m.replied ? `<span class="pill p" style="margin-inline-end:4px">تم الرد</span>` : ""}${esc(m.snip || "")}</div>
       </div></div>`).join("") || `<div class="card empty">${f === "in" ? "ما فيه رسائل واردة." : f === "out" ? "ما أرسلت شي للحين." : f === "star" ? "ما ميّزت أي رسالة." : "المحذوفات فاضية."}</div>`}</div>
   ${all.length >= S.mailLim * 0.9 ? `<div style="text-align:center;margin:10px 0"><button class="btn" id="mlMore">عرض رسائل أقدم</button></div>` : ""}`;
-  $("#mlNew").onclick = () => { S.mailDraft = {box: bx || boxes[0], to: "", cc: "", subject: "", body: "", atts: []}; render(); };
+  $("#mlNew").onclick = () => { S.mailDraft = {box: bx || boxes[0], to: "", cc: "", subject: "", body: "", atts: [], _dir: true}; loadMailDir(); render(); };
+  if ($("#mlBook")) $("#mlBook").onclick = () => { S.mailBookOpen = true; render(); };
   el.querySelectorAll("[data-mlbx]").forEach(b => b.onclick = () => { S.mailBox = b.dataset.mlbx; render(); });
   el.querySelectorAll("[data-mlf]").forEach(b => b.onclick = () => { S.mailF = b.dataset.mlf; render(); });
   const q2 = $("#mlQ"); q2.oninput = () => { S.mailQ = q2.value; clearTimeout(S._mlT); S._mlT = setTimeout(() => { render(); const x = $("#mlQ"); if (x) { x.focus(); x.setSelectionRange(x.value.length, x.value.length); } }, 300); };
@@ -4199,7 +4285,7 @@ function mailView(el, m){
     <h2 style="margin:0 0 8px">${esc(m.subject || "(بدون عنوان)")}</h2>
     ${m.sus ? `<div class="notice" style="background:#fdecea;border-color:#f5c2c0;margin-bottom:8px">⚠️ هذي الرسالة ما اجتازت فحص المرسل، ممكن تكون احتيال. لا تفتح روابطها ولا مرفقاتها ولا ترسل أي بيانات.</div>` : ""}
     <div class="muted" style="line-height:1.9">
-      <div><b>من:</b> ${m.dir === "out" ? esc(boxLabel(m.box)) : `${esc(m.fromName || "")} <span dir="ltr">&lt;${esc(m.from)}&gt;</span>`}</div>
+      <div><b>من:</b> ${m.dir === "out" ? esc(boxLabel(m.box)) : `${esc(m.fromName || "")} <span dir="ltr">&lt;${esc(m.from)}&gt;</span>${!String(m.from || "").endsWith("@" + MAIL_DOMAIN) && !bookHas(m.replyTo || m.from) && !m.sus ? ` <button class="btn sm" id="mvSave" style="padding:1px 8px">⭐ حفظ</button>` : ""}`}</div>
       <div><b>إلى:</b> ${addr(m.to)}</div>${(m.cc || []).length ? `<div><b>نسخة:</b> ${addr(m.cc)}</div>` : ""}
       <div><b>التاريخ:</b> ${esc(mailWhenFull(m.at))}${myBoxes().length > 1 ? ` · <b>الصندوق:</b> ${esc(boxLabel(m.box))}` : ""}</div></div>
     ${(m.atts || []).length ? `<div class="row" style="margin-top:10px;gap:6px">${m.atts.map((a, i) => a.rid ? `<button class="btn sm" data-mvatt="${i}">📎 ${esc(a.name)} <span class="muted">${esc(fmtSize(a.size))}</span></button>` : `<span class="pill">📎 ${esc(a.name)} (ما انحفظ)</span>`).join("")}</div>` : ""}
@@ -4220,6 +4306,7 @@ function mailView(el, m){
     render(); window.scrollTo(0, 0);
   };
   if ($("#mvRe")) $("#mvRe").onclick = () => reply(false);
+  if ($("#mvSave")) $("#mvSave").onclick = async () => { try { await bookSave([...bookList(), {name: m.fromName || m.from.split("@")[0], addr: m.replyTo || m.from}]); toast("انحفظ في العناوين ✓"); render(); } catch (e) { handleWriteErr(e); } };
   if ($("#mvReAll")) $("#mvReAll").onclick = () => reply(true);
   if ($("#mvFw")) $("#mvFw").onclick = () => { S.mailDraft = {box: m.box, to: "", cc: "", subject: "إعادة توجيه: " + (m.subject || ""), body: "\n\n" + mailQuote(m, b, true), atts: (m.atts || []).filter(a => a.rid).map(a => ({...a, done: true}))}; render(); window.scrollTo(0, 0); };
   if ($("#mvStar")) $("#mvStar").onclick = () => mailMark(m, {star: !m.star});
@@ -4244,23 +4331,63 @@ function mailQuote(m, b, fw){
   const body = txt.slice(0, 4000);
   return head + (fw ? body : body.split("\n").map(l => "> " + l).join("\n"));
 }
+/* the institute's address book (departments and trainers), from the push service */
+function loadMailDir(force){
+  if ((S.mailDir && !force) || S._mdBusy || (S.mailDirErr && !force)) return; S._mdBusy = true;
+  mailApi({action: "dir"}).then(j => { S.mailDir = j.dir || []; S.mailDirErr = null; }).catch(e => { console.error(e); S.mailDir = null; S.mailDirErr = "failed"; })
+    .finally(() => { S._mdBusy = false; if (S.mailDraft || !busyEditing()) render(); });
+}
+function mailDirHTML(){
+  const q = (S.mailDirQ || "").trim().toLowerCase(), hit = x => !q || (x.name + " " + x.addr).toLowerCase().includes(q);
+  const chip = x => `<button type="button" class="btn sm" data-mdadd="${esc(x.addr)}" style="margin:0 0 4px 4px">${esc(x.name)} <span class="muted" dir="ltr">${esc(x.addr)}</span></button>`;
+  const sec = (t, a, empty) => `<div class="muted" style="margin:8px 0 4px;font-weight:700">${t}</div>${a.length ? a.map(chip).join("") : `<div class="muted" style="font-size:13px">${empty}</div>`}`;
+  const saved = bookList().filter(hit), dir = S.mailDir || [];
+  return `<div class="card" style="margin:6px 0;padding:10px;max-height:300px;overflow:auto"><input type="search" id="mdQ" placeholder="بحث بالاسم أو الإيميل" value="${esc(S.mailDirQ || "")}" style="width:100%">
+    ${sec("⭐ المحفوظة", saved, q ? "ما فيه نتائج." : "للحين ما حفظت عناوين. أي إيميل خارجي ترسل له ينحفظ هنا لحاله، أو أضفه من «العناوين المحفوظة».")}
+    ${S.mailDir ? sec("الإدارات", dir.filter(x => x.kind === "dept" && hit(x)), "ما فيه نتائج.") + sec("المدربين", dir.filter(x => x.kind === "trainer" && hit(x)), "ما فيه نتائج.")
+      : `<p class="muted" style="margin:8px 0 0">${S._mdBusy ? "جاري تحميل الإدارات والمدربين…" : "تعذّر تحميل الإدارات والمدربين. تأكد إن worker في Cloudflare محدّث."}</p>`}
+    <p class="muted" style="margin:6px 0 0;font-size:12px">اضغط الاسم ينضاف للمستلمين. الرسائل بين عناوين المعهد توصل فوراً داخل البوابة.</p></div>`;
+}
+function mailBookView(el){
+  const L = bookList(), F = S._bkF = S._bkF || {name: "", addr: ""};
+  el.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">📒 العناوين المحفوظة</h2><button class="btn sm" id="bkBack">→ رجوع للبريد</button></div>
+    <p class="muted" style="margin:6px 0 0">تطلع لك في «رسالة جديدة» عشان تختار بدل ما تكتب. الإدارات والمدربين موجودين هناك لحالهم، ما يحتاج تضيفهم.</p>
+    <div class="row" style="margin-top:10px;gap:6px;flex-wrap:wrap"><input type="text" id="bkN" class="grow" placeholder="الاسم (مثل: شركة الأفق)" maxlength="80" value="${esc(F.name)}"><input type="text" inputmode="email" id="bkA" dir="ltr" class="grow" placeholder="name@example.com" value="${esc(F.addr)}"><button class="btn pri" id="bkAdd">+ إضافة</button></div></div>
+  <div class="list">${L.map((x, i) => `<div class="item"><span class="grow"><b>${esc(x.name)}</b> <span class="muted" dir="ltr">${esc(x.addr)}</span></span><button class="btn sm" data-bkw="${i}">✉️ رسالة</button><button class="btn sm" data-bke="${i}">تعديل الاسم</button><button class="btn sm danger" data-bkd="${i}">حذف</button></div>`).join("") || `<div class="card empty">للحين ما فيه عناوين محفوظة.</div>`}</div>`;
+  const sync = () => { F.name = $("#bkN").value; F.addr = $("#bkA").value; };
+  $("#bkN").oninput = $("#bkA").oninput = sync;
+  $("#bkBack").onclick = () => { S.mailBookOpen = false; render(); };
+  $("#bkAdd").onclick = async () => { sync(); const a = F.addr.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(a)) return toast("اكتب إيميل صحيح"); if (bookHas(a)) return toast("هذا الإيميل محفوظ من قبل");
+    try { await bookSave([...L, {name: F.name, addr: a}]); S._bkF = null; toast("انحفظ ✓"); render(); } catch (e) { handleWriteErr(e); } };
+  el.querySelectorAll("[data-bkd]").forEach(b => b.onclick = async () => { if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟"; return; } try { await bookSave(L.filter((_, i) => i !== Number(b.dataset.bkd))); render(); } catch (e) { handleWriteErr(e); } });
+  el.querySelectorAll("[data-bke]").forEach(b => b.onclick = async () => { const x = L[Number(b.dataset.bke)], n = prompt("الاسم", x.name); if (n == null) return; try { await bookSave(L.map((y, i) => i === Number(b.dataset.bke) ? {...y, name: n} : y)); render(); } catch (e) { handleWriteErr(e); } });
+  el.querySelectorAll("[data-bkw]").forEach(b => b.onclick = () => { S.mailBookOpen = false; S.mailDraft = {box: myBoxes()[0], to: L[Number(b.dataset.bkw)].addr, cc: "", subject: "", body: "", atts: []}; render(); });
+}
 function mailCompose(el){
   const d = S.mailDraft, boxes = myBoxes();
+  if (d._dir) loadMailDir();
   if (!boxes.includes(d.box)) d.box = boxes[0];
   const busy = d.atts.some(a => !a.done && !a.err);
   el.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">${d.replyId ? "رد" : "رسالة جديدة"}</h2><button class="btn sm" id="mcX">إلغاء</button></div>
     <label for="mcB">من</label>${boxes.length > 1 ? `<select id="mcB">${boxes.map(b => `<option value="${b}" ${d.box === b ? "selected" : ""}>${esc(MBOXES[b][1])} — ${b}@${MAIL_DOMAIN}</option>`).join("")}</select>` : `<div dir="ltr" style="padding:6px 0">${esc(d.box)}@${MAIL_DOMAIN}</div>`}
-    <label for="mcTo">إلى</label><input type="text" id="mcTo" dir="ltr" inputmode="email" placeholder="name@example.com" value="${esc(d.to)}">
+    <div class="row" style="justify-content:space-between;align-items:flex-end;margin-top:8px"><label for="mcTo" style="margin:0">إلى</label><button class="btn sm" id="mcDir" type="button">📒 اختر من العناوين</button></div>
+    ${d._dir ? mailDirHTML() + `<label class="row" style="gap:6px;margin:0 0 6px;font-size:13px"><input type="checkbox" id="mdCc" ${S.mailPickCc ? "checked" : ""}> اللي أختاره يروح «نسخة» بدل «إلى»</label>` : ""}
+    <input type="text" id="mcTo" dir="ltr" inputmode="email" placeholder="name@example.com" value="${esc(d.to)}">
     <label for="mcCc">نسخة (اختياري)</label><input type="text" id="mcCc" dir="ltr" inputmode="email" placeholder="افصل بين العناوين بفاصلة" value="${esc(d.cc)}">
     <label for="mcS">العنوان</label><input type="text" id="mcS" maxlength="300" value="${esc(d.subject)}">
     <label for="mcT">الرسالة</label><textarea id="mcT" rows="12" style="line-height:1.8">${esc(d.body)}</textarea>
-    <p class="muted" style="margin:4px 0 0">التوقيع (اسم القسم والمعهد والموقع) ينضاف تلقائياً تحت رسالتك.</p>
+    <p class="muted" style="margin:4px 0 0">التوقيع (${trMe() ? "اسمك" : "اسم القسم"} والمعهد والموقع) ينضاف تلقائياً تحت رسالتك.</p>
     <div style="margin-top:10px"><label class="btn sm" for="mcF" style="cursor:pointer">📎 إرفاق ملف</label><input type="file" id="mcF" multiple style="display:none"> <span class="muted">حتى 20 ميجا للرسالة</span></div>
     <div class="row" style="gap:6px;margin-top:8px">${d.atts.map((a, i) => `<span class="pill ${a.err ? "a" : a.done ? "p" : ""}" style="padding:4px 10px">📎 ${esc(a.name)} ${a.err ? "· فشل" : a.done ? `· ${esc(fmtSize(a.size))}` : `· ${a.pct || 0}%`} <a href="#" data-mcrm="${i}" style="margin-inline-start:6px">✕</a></span>`).join("")}</div>
     <div class="row" style="margin-top:14px"><button class="btn pri" id="mcSend" ${busy ? "disabled" : ""}>إرسال</button>${busy ? `<span class="muted">انتظر يخلص رفع المرفقات…</span>` : ""}</div></div>`;
   const sync = () => { d.to = $("#mcTo").value; d.cc = $("#mcCc").value; d.subject = $("#mcS").value; d.body = $("#mcT").value; if ($("#mcB")) d.box = $("#mcB").value; };
   ["#mcTo", "#mcCc", "#mcS", "#mcT", "#mcB"].forEach(s => { const x = $(s); if (x) x.oninput = x.onchange = sync; });
   if (!d.to) $("#mcTo").focus(); else if (d.replyId) { const t = $("#mcT"); t.focus(); t.setSelectionRange(0, 0); t.scrollTop = 0; }
+  $("#mcDir").onclick = () => { sync(); d._dir = !d._dir; loadMailDir(!!S.mailDirErr); render(); };
+  if ($("#mdQ")) { const q = $("#mdQ"); q.oninput = () => { S.mailDirQ = q.value; clearTimeout(S._mdT); S._mdT = setTimeout(() => { render(); const x = $("#mdQ"); if (x) { x.focus(); x.setSelectionRange(x.value.length, x.value.length); } }, 250); }; }
+  el.querySelectorAll("[data-mdadd]").forEach(x => x.onclick = () => { sync(); const a = x.dataset.mdadd, k = S.mailPickCc ? "cc" : "to", cur = d[k].split(/[,;،\s]+/).filter(Boolean); if (!cur.includes(a)) d[k] = [...cur, a].join(", "); render(); });
+  if ($("#mdCc")) $("#mdCc").onchange = e => { S.mailPickCc = e.target.checked; };
   $("#mcX").onclick = () => { if ((d.body || "").trim().length > 20 && !d._sure) { d._sure = 1; $("#mcX").textContent = "متأكد؟ تنحذف المسودة"; return; } S.mailDraft = null; render(); };
   el.querySelectorAll("[data-mcrm]").forEach(x => x.onclick = e => { e.preventDefault(); sync(); d.atts.splice(Number(x.dataset.mcrm), 1); render(); });
   $("#mcF").onchange = async e => {
@@ -4287,6 +4414,8 @@ function mailCompose(el){
     try {
       await mailApi({action: "send", box: d.box, to, cc, subject: d.subject.trim(), body: d.body, atts: d.atts.filter(a => a.done).map(a => ({rid: a.rid, name: a.name, type: a.type})), ...(d.replyId ? {replyId: d.replyId, replyR: d.replyR} : {})});
       logAction("إرسال بريد", `${d.box}@ ← ${to.join("، ")}`);
+      const fresh = [...to, ...cc].map(x => x.toLowerCase()).filter(x => !x.endsWith("@" + MAIL_DOMAIN) && !bookHas(x));
+      if (fresh.length) bookSave([...bookList(), ...fresh.map(a => ({name: a.split("@")[0], addr: a}))]).catch(e => console.error(e));   // new outside addresses are kept for next time
       S.mailDraft = null; S.mailOpen = null; S.mailF = "out"; toast("انرسلت ✓"); render();
     } catch (x) { console.error(x); e.target.disabled = false; e.target.textContent = "إرسال"; toast("ما انرسلت: " + (MAIL_ERR[x.code] || "حاول مرة ثانية")); }
   };
@@ -6589,6 +6718,8 @@ function editTrainer(tid){
     <label for="teN">الاسم</label><input type="text" id="teN" value="${esc(t.name)}" maxlength="80">
     <label for="teG">الصفة</label><select id="teG"><option value="m" ${t.gender !== "f" ? "selected" : ""}>مدرب</option><option value="f" ${t.gender === "f" ? "selected" : ""}>مدربة</option></select>
     <label for="teP">الجوال</label><input type="tel" id="teP" dir="ltr" value="${esc(ph ? "0" + String(ph).replace(/^966/, "") : "")}" placeholder="05xxxxxxxx" inputmode="numeric">
+    <label for="teM">بريد المعهد</label><div class="row" dir="ltr" style="gap:4px;flex-wrap:nowrap"><input type="text" id="teM" dir="ltr" class="grow" value="${esc(t.mail || "")}" placeholder="${esc(t.num ? "tr" + t.num : "ali.alqahtani")}" maxlength="32" autocapitalize="off" spellcheck="false"><span class="muted">@${MAIL_DOMAIN}</span></div>
+    <p class="muted" style="margin:4px 0 0">حروف إنجليزية صغيرة وأرقام ونقطة، مثل <span dir="ltr">ali.alqahtani</span>. لو تركته فاضي يبقى <span dir="ltr">${esc(t.num ? "tr" + t.num : "")}@${MAIL_DOMAIN}</span>. والرسائل القديمة تبقى، والعنوان <span dir="ltr">${esc(t.num ? "tr" + t.num : "")}@</span> يظل يوصله بعد.</p>
     <p class="muted">رقم المدرب (${esc(t.num || "—")}) ورمز الدخول ما يتغيرون. لرمز جديد استخدم زر «رمز جديد».</p>
     <div class="row" style="margin-top:12px"><button class="btn pri" id="teS">حفظ</button></div>`;
   $("#modal").classList.add("on");
@@ -6597,13 +6728,21 @@ function editTrainer(tid){
     const name = $("#teN").value.trim().replace(/\s+/g, " "), gender = $("#teG").value, raw = $("#teP").value.trim(), phone = raw ? normPhone(raw) : "";
     if (name.length < 2) return toast("اكتب الاسم");
     if (phone && !/^9665\d{8}$/.test(phone)) return toast("رقم الجوال غير صحيح");
+    const mail = $("#teM").value.trim().toLowerCase().replace(/@.*$/, "");
+    if (mail) {
+      if (!/^[a-z][a-z0-9.-]{1,30}[a-z0-9]$/.test(mail) || /\.\.|--/.test(mail)) return toast("البريد: حروف إنجليزية صغيرة وأرقام ونقطة، يبدأ بحرف (3 خانات أو أكثر)");
+      if (MAIL_RESERVED.includes(mail) || /^tr\d+$/.test(mail)) return toast("هذا العنوان محجوز، اختر غيره");
+      const dup = Object.values(S.trainers).find(x => x.id !== tid && (x.mail === mail || (x.num && "tr" + x.num === mail)));
+      if (dup) return toast("هذا العنوان مستخدم لـ " + trainerTitle(dup));
+    }
     $("#teS").disabled = true;
     try {
       const b = writeBatch(db);
-      b.set(ref("trainers/" + tid), {name, gender}, {merge: true});
+      b.set(ref("trainers/" + tid), {name, gender, mail}, {merge: true});
       b.set(ref("secrets/" + tid), {phone}, {merge: true});
       await b.commit();
-      logAction("تعديل بيانات مدرب", t.name === name ? name : `${t.name} ← ${name}`);
+      logAction("تعديل بيانات مدرب", (t.name === name ? name : `${t.name} ← ${name}`) + ((t.mail || "") !== mail ? ` · البريد: ${mail || "tr" + t.num}@` : ""));
+      S.mailDir = null;
       toast("انحفظ التعديل"); closeModal();
     } catch (e) { $("#teS").disabled = false; handleWriteErr(e); }
   };
@@ -6630,7 +6769,7 @@ function adminTrainers(el){
   <div class="list">${ts.map(t => {
     const gs = Object.values(S.groups).filter(g => g.trainerId === t.id);
     const n = gs.reduce((a,g) => a + (g.students||[]).length, 0);
-    return `<div class="item"><div class="grow"><div class="t">${esc(trainerTitle(t))}</div><div class="muted">${gs.length} شعبة · ${n} متدرب${gs.length ? " · " + gs.map(g => esc(g.course)).join("، ") : ""}</div></div>
+    return `<div class="item"><div class="grow"><div class="t">${esc(trainerTitle(t))}</div><div class="muted">${gs.length} شعبة · ${n} متدرب${gs.length ? " · " + gs.map(g => esc(g.course)).join("، ") : ""}</div>${t.num ? `<div class="muted" dir="ltr" style="text-align:right">📧 ${esc(trAddr(t))}</div>` : ""}</div>
       <span class="code">${esc(t.num || "—")}</span><span class="code">${esc(S.secrets[t.id] || "••••••")}</span>
       <span class="pill ${(S.trPhones || {})[t.id] ? "p" : ""}" dir="ltr">${esc((S.trPhones || {})[t.id] || "بدون جوال")}</span>
       <button class="btn sm" data-tedit="${esc(t.id)}">تعديل</button>
