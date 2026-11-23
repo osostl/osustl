@@ -5081,7 +5081,7 @@ function signRequests(el){
     if (!title) return toast("اكتب عنوان المستند"); if (!file) return toast("اختر المستند");
     let data;
     try {
-      if (file.type === "application/pdf") { if (file.size > 600000) return toast("ملف PDF كبير، لازم أقل من 600 كيلوبايت"); data = await fileToDataURL(file); }
+      if (file.type === "application/pdf") { if (file.size > 600000) return toast("ملف PDF كبير، لازم أقل من 600 كيلوبايت (يحتاج مكان للتوقيع والختم)"); data = await fileToDataURL(file); }
       else data = await compressImage(file);
     } catch { return toast("تعذّر قراءة الملف"); }
     const note = $("#srN").value.trim();
@@ -5220,7 +5220,7 @@ function adminLogs(el){
 const TASK_TO = {admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", admission: "القبول والتسجيل وخدمة العملاء", business: "الشراكات وقطاع الشركات", hr: "الموارد البشرية"};
 const TASK_ST = {new: "جديدة", seen: "قيد التنفيذ", done: "منجزة · بانتظار اعتماد الجهة الرقابية", returned: "معادة للاستكمال", closed: "معتمدة ✓"};
 const TASK_PILL = {new: "l", seen: "", done: "l", returned: "a", closed: "p"};
-const TASK_MAX = 700 * 1024;
+const TASK_MAX = 760 * 1024;
 function watchTasks(){
   if (S._taskSub || !S.authUser || S.role !== "admin" || !S.adminRole) return; S._taskSub = true;
   const q = RO() || S.adminRole === "admin" ? collection(db, "tasks") : query(collection(db, "tasks"), where("to", "==", S.adminRole));
@@ -5261,7 +5261,7 @@ function taskCard(t, mode){   // mode: owner | dept | view
       ${t.status === "closed" ? `<button class="btn sm" data-tret="${esc(t.id)}">إعادة فتحها</button>` : ""}
       <span class="grow"></span><button class="btn sm danger" data-tdel="${esc(t.id)}">حذف</button></div>` : ""}
     ${canWork ? `<div style="margin-top:10px"><label class="f" for="trp-${esc(t.id)}">${t.status === "done" ? "تعديل التقرير" : "تقرير الإنجاز"}<textarea id="trp-${esc(t.id)}" rows="3" maxlength="5000" placeholder="وش سويتوا، والنتيجة…">${esc(t.report || "")}</textarea></label>
-      <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center"><input type="file" id="trf-${esc(t.id)}" style="max-width:260px"><span class="muted">ملف اختياري (PDF أو صورة أو Excel) حتى 700 ك.ب</span><span class="grow"></span>
+      <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center"><input type="file" id="trf-${esc(t.id)}" style="max-width:260px"><span class="muted">ملف اختياري (PDF أو صورة أو Excel) حتى 760 ك.ب</span><span class="grow"></span>
       <button class="btn pri" data-tdone="${esc(t.id)}">${t.status === "done" ? "تحديث التقرير" : "تسليم: المهمة خلصت"}</button></div>${ATT_NOTE}</div>` : ""}
   </div>`;
 }
@@ -5287,7 +5287,7 @@ function bindTaskCards(el){
       const rfile = f ? await taskFilePut(id, "r", f) : (t.rfile || null);
       await setDoc(ref("tasks/" + id), {status: "done", report, rfile, doneAt: new Date().toISOString(), doneBy: (ROLES[S.adminRole] || S.adminRole)}, {merge: true});
       logAction("تسليم مهمة من الجهة الرقابية", t.title); notify("task", id); toast("تسلّمت المهمة ✓ ووصلت للجهة الرقابية");
-    } catch (e) { console.error(e); toast(e.message === "big" ? "الملف أكبر من 700 ك.ب — صغّره أو ارفعه PDF مضغوط" : "تعذّر التسليم"); b.disabled = false; }
+    } catch (e) { console.error(e); toast(e.message === "big" ? "الملف أكبر من 760 ك.ب — صغّره أو ارفعه PDF مضغوط" : "تعذّر التسليم"); b.disabled = false; }
   });
 }
 function tasksTab(el){
@@ -5314,7 +5314,7 @@ function ownerTasks(el){
         <label class="f" for="tkPri" style="width:130px">الأولوية<select id="tkPri"><option value="normal">عادية</option><option value="high">عاجلة</option></select></label></div>
       <label class="f" for="tkT">عنوان المهمة<input type="text" id="tkT" maxlength="150" placeholder="مثال: تقرير بالطلاب المتأخرين في السداد"></label>
       <label class="f" for="tkB">التفاصيل<textarea id="tkB" rows="4" maxlength="3000" placeholder="وش المطلوب بالضبط…"></textarea></label>
-      <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap"><input type="file" id="tkF" style="max-width:260px"><span class="muted">مرفق اختياري حتى 700 ك.ب</span><span class="grow"></span><button class="btn pri" id="tkSend">إرسال المهمة</button></div>${ATT_NOTE}</div>
+      <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap"><input type="file" id="tkF" style="max-width:260px"><span class="muted">مرفق اختياري حتى 760 ك.ب</span><span class="grow"></span><button class="btn pri" id="tkSend">إرسال المهمة</button></div>${ATT_NOTE}</div>
     <div class="card"><div class="stats">
       <div class="stat"><div class="n">${all.filter(t => t.status !== "closed").length}</div><div class="l">مفتوحة</div></div>
       <div class="stat"><div class="n" style="color:var(--late, #b7791f)">${cnt("done")}</div><div class="l">بانتظار اعتمادك</div></div>
@@ -5327,7 +5327,7 @@ function ownerTasks(el){
   $("#tkfS").onchange = e => { S.tkS = e.target.value; render(); };
   $("#tkSend").onclick = async e => {
     const title = $("#tkT").value.trim(); if (!title) return toast("اكتب عنوان المهمة");
-    const f = $("#tkF").files[0]; if (f && f.size > TASK_MAX) return toast("المرفق أكبر من 700 ك.ب");
+    const f = $("#tkF").files[0]; if (f && f.size > TASK_MAX) return toast("المرفق أكبر من 760 ك.ب");
     e.target.disabled = true;
     const id = "t-" + uid() + uid();
     try {
@@ -6232,15 +6232,15 @@ async function saveRcpt(coll, id, img){
   b.set(ref(`${coll}/${id}`), {hasImg: true}, {merge: true});
   await b.commit();
 }
-/* a receipt is a photo (compressed) or a PDF kept as it is; one Firestore document holds under 1 MB, so a PDF must be under 650 KB */
-const RCPT_PDF_MAX = 650 * 1024;
+/* a receipt is a photo (compressed) or a PDF kept as it is; one Firestore document holds under 1 MB, so a PDF must be under 760 KB */
+const RCPT_PDF_MAX = 760 * 1024;   // one Firestore record holds 1 MB; the file grows by a third when stored
 const isPdfFile = f => f && (f.type === "application/pdf" || /\.pdf$/i.test(f.name || ""));
 async function rcptData(f){
   if (!f) return null;
   if (isPdfFile(f)) { if (f.size > RCPT_PDF_MAX) throw new Error("pdf-big"); const d = await fileToDataURL(f); return d.replace(/^data:[^;,]*/, "data:application/pdf"); }
   return compressImage(f);
 }
-const rcptErr = e => toast(e && e.message === "pdf-big" ? "ملف PDF أكبر من 650 كيلوبايت. اضغطه (مثلاً من ilovepdf) أو صوّره" : "الصورة كبيرة، صوّرها بدقة أقل");
+const rcptErr = e => toast(e && e.message === "pdf-big" ? "ملف PDF أكبر من 760 كيلوبايت. اضغطه (مثلاً من ilovepdf) أو صوّره" : "الصورة كبيرة، صوّرها بدقة أقل");
 const pickedImg = async sel => { const f = $(sel) && $(sel).files[0]; return rcptData(f); };
 const isPdfData = d => /^data:application\/pdf/.test(d || "");
 function openRcptData(w, d){   // shows a stored receipt in a window opened by the click
