@@ -1027,7 +1027,7 @@ const APP_OPEN = ["new", "contact", "finance", "academic"], APP_SEAT = ["finance
 const APP_STAGE = {admission: ["new"], finance: ["finance"], academic: ["academic"]};
 const APP_EDU = ["ابتدائي", "متوسط", "ثانوي", "دبلوم", "بكالوريوس", "ماجستير", "دكتوراه", "أخرى"];
 const APP_SRC = ["تويتر / إكس", "سناب شات", "إنستقرام", "تيك توك", "واتساب", "صديق أو قريب", "مسوّق أو شريك للمعهد", "موقع المعهد", "جهة العمل", "أخرى"];
-const APP_DOC = {id: "صورة الهوية / الإقامة", cert: "المؤهل الدراسي", photo: "صورة شخصية"};
+const APP_DOC = {id: "الهوية الوطنية", cert: "شهادة الثانوية العامة (معتمدة من نور)", photo: "صورة شخصية"};
 const APP_PLEDGE = `أقر أنا الموقّع أدناه بصحة جميع البيانات والمستندات التي قدّمتها، وأتعهد بما يلي:
 1. الالتزام بأنظمة المعهد ولوائحه وأنظمة المؤسسة العامة للتدريب التقني والمهني.
 2. الالتزام بالحضور في المواعيد المحددة، وأعلم أن تجاوز نسبة الغياب المسموحة يعرّضني للحرمان من المقرر.
@@ -1035,6 +1035,50 @@ const APP_PLEDGE = `أقر أنا الموقّع أدناه بصحة جميع ا
 4. أعلم أن استرداد الرسوم يخضع لسياسة الاسترداد المعتمدة في المعهد.
 5. المحافظة على ممتلكات المعهد، واحترام منسوبيه وزملائي المتدربين.
 6. أعلم أن تقديم أي بيانات أو مستندات غير صحيحة يخوّل المعهد إلغاء تسجيلي.`;
+// the institute's programs as published on the old site (osostl.com): added once from «البرامج والإعدادات» ← «إضافة برامج المعهد الجاهزة»
+const APP_CAT = {diploma: ["الدبلومات", "🎓"], qual: ["البرامج التأهيلية", "🎯"], dev: ["البرامج التطويرية", "📈"]};
+const APP_GEN = {mf: "رجالي ونسائي", m: "رجالي", f: "نسائي"};
+const APP_READY = [
+  {name: "دبلوم الشهادة الجامعية المتوسطة - إعلام", cat: "diploma", gender: "mf", duration: "سنتان ونصف", hours: "76", fees: "حسب فئة المتقدم", mode: "مدمج: حضوري في المعهد وعن بُعد عبر المنصة الإلكترونية",
+    note: "دبلوم جامعي متوسط في الإعلام بشهادة معتمدة من المؤسسة العامة للتدريب التقني والمهني.",
+    desc: "دبلوم جامعي متوسط في تخصص الإعلام، بشهادة معتمدة من المؤسسة العامة للتدريب التقني والمهني، يجمع بين الحضور داخل المعهد والتدريب عبر المنصة الإلكترونية، ويهدف إلى تأهيل المتدربين لسوق العمل في المجال الإعلامي بمستوى احترافي.",
+    outline: "التصوير الاحترافي\nإنتاج الفيديو والمونتاج\nالتسجيل الصوتي والبودكاست\nكتابة السيناريو وصناعة المحتوى\nإدارة وسائل التواصل الاجتماعي\nالإخراج الإعلامي\nالصحافة والإعلام الرقمي\nتطبيقات الذكاء الاصطناعي في الإعلام", audience: "الراغبون في بناء مسار مهني في الإعلام وصناعة المحتوى"},
+  {name: "دبلوم الشهادة الجامعية المتوسطة - القانون", cat: "diploma", gender: "mf", duration: "سنتان ونصف", hours: "83", fees: "حسب فئة المتقدم", mode: "حضوري",
+    note: "دبلوم جامعي متوسط في القانون مع تدريب عملي وإمكانية التجسير.",
+    desc: "برنامج تدريبي حضوري يزوّد المتدربين بالمعارف والمهارات الأساسية في المجال القانوني من خلال دراسة الموضوعات القانونية وتطبيقاتها العملية، ويجمع بين الجانب المعرفي والتطبيقي. يتضمن تدريباً عملياً في نهاية البرنامج، مع إمكانية التجسير بعد إتمام الدبلوم وفق المتطلبات والضوابط المعتمدة.",
+    audience: "المهتمون بالمجال القانوني، وطلبة وخريجو التخصصات ذات الصلة، والراغبون في تطوير معارفهم ومهاراتهم القانونية"},
+  {name: "معسكر الأمن السيبراني", cat: "qual", gender: "mf", duration: "3 أشهر", fees: "حسب فئة المتقدم", mode: "حضوري",
+    note: "معسكر بثلاثة مستويات في الأمن السيبراني الهجومي والدفاعي.",
+    desc: "معسكر عملي يكسب المتدرب المهارات اللازمة للعمل في الأمن السيبراني، على ثلاثة مستويات تتدرج من الأساسيات إلى الأساليب المتقدمة في الأمن الهجومي والدفاعي.",
+    outline: "المستوى الأول: أساسيات الشبكات والبرمجة ونظم التشغيل، ومفاهيم اختبار الاختراق ومنهجية التقييم\nالمستوى الثاني: أمن الشبكات وملحقاتها، وأمن تطبيقات الويب، وكتابة التقارير الفنية\nالمستوى الثالث: أساليب وطرق متقدمة في الأمن السيبراني الدفاعي والهجومي"},
+  {name: "دورة التأهيل لاختبار STEP - رجال", cat: "qual", gender: "m", duration: "21 يوماً تدريبياً", fees: "696", mode: "حضوري",
+    note: "تأهيل عملي لاختبار STEP يشمل التكنيكات والاستراتيجيات والتدريب على نماذج محاكية.", desc: "برنامج عملي يغطي تكنيكات اختبار STEP واستراتيجيات الحل، مع التدريب على نماذج محاكية واختبارات تجريبية.", req: "اجتياز اختبار تحديد مستوى قبل تأكيد القبول النهائي"},
+  {name: "دورة التأهيل لاختبار STEP - نساء", cat: "qual", gender: "f", duration: "21 يوماً تدريبياً", fees: "696", mode: "حضوري",
+    note: "تأهيل عملي لاختبار STEP يشمل التكنيكات والاستراتيجيات والتدريب على نماذج محاكية.", desc: "برنامج عملي يغطي تكنيكات اختبار STEP واستراتيجيات الحل، مع التدريب على نماذج محاكية واختبارات تجريبية.", req: "اجتياز اختبار تحديد مستوى قبل تأكيد القبول النهائي"},
+  {name: "اللغة الإنجليزية من التأسيس إلى STEP - رجال", cat: "qual", gender: "m", duration: "122 يوماً تدريبياً (نحو 4 أشهر)", fees: "2750", mode: "حضوري",
+    note: "تأسيس متدرج في اللغة الإنجليزية وصولاً إلى الاستعداد لاختبار STEP.", desc: "يبدأ بتأسيس المهارات اللغوية ثم ينتقل تدريجياً إلى متطلبات اختبار STEP واستراتيجياته."},
+  {name: "اللغة الإنجليزية من التأسيس إلى STEP - نساء", cat: "qual", gender: "f", duration: "122 يوماً تدريبياً (نحو 4 أشهر)", fees: "2750", mode: "حضوري",
+    note: "تأسيس متدرج في اللغة الإنجليزية وصولاً إلى الاستعداد لاختبار STEP.", desc: "يبدأ بتأسيس المهارات اللغوية ثم ينتقل تدريجياً إلى متطلبات اختبار STEP واستراتيجياته."},
+  {name: "دورة التأهيل لاختبار القدرات العامة - رجال", cat: "qual", gender: "m", duration: "28 يوماً تدريبياً (4 أسابيع)", fees: "696", mode: "حضوري",
+    note: "تأهيل حضوري لاختبار القدرات العامة بالتدريب والتطبيق على أنماط الأسئلة.", desc: "برنامج من أربعة أسابيع: تأسيس، ثم تطبيق على أنماط أسئلة الاختبار، ثم جاهزية للاختبار."},
+  {name: "دورة التأهيل لاختبار القدرات العامة - نساء", cat: "qual", gender: "f", duration: "28 يوماً تدريبياً (4 أسابيع)", fees: "696", mode: "حضوري",
+    note: "تأهيل حضوري لاختبار القدرات العامة بالتدريب والتطبيق على أنماط الأسئلة.", desc: "برنامج من أربعة أسابيع: تأسيس، ثم تطبيق على أنماط أسئلة الاختبار، ثم جاهزية للاختبار."},
+  {name: "الدورة التأهيلية للشهادة المهنية GRCP - رجال", cat: "qual", gender: "m", duration: "5 أيام تدريبية", hours: "25", fees: "7300", mode: "حضوري",
+    note: "تأهيل مهني في الحوكمة والمخاطر والالتزام استعداداً لشهادة GRCP.", desc: "دورة تأهيلية في الحوكمة والمخاطر والالتزام استعداداً لشهادة GRCP المهنية.", req: "استرداد رسوم الاختبار يخضع لشروط الجهة المانحة للشهادة"},
+  {name: "الدورة التأهيلية للشهادة المهنية GRCP - نساء", cat: "qual", gender: "f", duration: "5 أيام تدريبية", hours: "25", fees: "7300", mode: "حضوري",
+    note: "تأهيل مهني في الحوكمة والمخاطر والالتزام استعداداً لشهادة GRCP.", desc: "دورة تأهيلية في الحوكمة والمخاطر والالتزام استعداداً لشهادة GRCP المهنية.", req: "استرداد رسوم الاختبار يخضع لشروط الجهة المانحة للشهادة"},
+  {name: "اللغة الإنجليزية للجامعيين", cat: "dev", gender: "m", duration: "60 يوماً تدريبياً", fees: "999", mode: "حضوري",
+    note: "تطوير مهارات اللغة الإنجليزية لدى الجامعيين.", desc: "دورة تدريبية تطوّر مهارات الاستماع والتحدث والقراءة والكتابة، وتعزّز القواعد والمفردات بما يساعد المتدرب على استخدام اللغة بكفاءة في البيئة الأكاديمية والمهنية.", audience: "طلاب الجامعات"},
+  {name: "دورة إدخال البيانات ومعالجة النصوص - رجال", cat: "dev", gender: "m", duration: "128 يوماً تدريبياً", fees: "696", mode: "مدمج",
+    note: "المهارات الأساسية والمتقدمة في إدخال النصوص وتنسيقها ومعالجتها.", desc: "دورة تدريبية تكسب المتدربين المهارات الأساسية والمتقدمة في إدخال النصوص وتنسيقها ومعالجتها باستخدام برامج معالجة النصوص، مع التركيز على الدقة والسرعة وإعداد المستندات بطريقة احترافية.",
+    outline: "التعرف على برامج معالجة النصوص وواجهاتها\nإدخال النصوص وتحريرها بشكل صحيح\nتنسيق النصوص والفقرات والخطوط\nالتعامل مع الجداول والقوائم\nإدراج الصور والأشكال والعناصر\nإعداد المستندات الرسمية وتنسيقها\nأدوات البحث والاستبدال والتدقيق الإملائي\nتنظيم الملفات وحفظها وإدارتها\nتجهيز المستندات للطباعة والمشاركة الإلكترونية\nتطبيقات عملية: خطابات وتقارير ونماذج", audience: "الموظفون والطلاب والباحثون عن عمل والعاملون في الأعمال الإدارية والمكتبية"},
+  {name: "دورة إدخال البيانات ومعالجة النصوص - نساء", cat: "dev", gender: "f", duration: "128 يوماً تدريبياً", fees: "696", mode: "مدمج",
+    note: "المهارات الأساسية والمتقدمة في إدخال النصوص وتنسيقها ومعالجتها.", desc: "دورة تدريبية تكسب المتدربات المهارات الأساسية والمتقدمة في إدخال النصوص وتنسيقها ومعالجتها باستخدام برامج معالجة النصوص، مع التركيز على الدقة والسرعة وإعداد المستندات بطريقة احترافية.",
+    outline: "التعرف على برامج معالجة النصوص وواجهاتها\nإدخال النصوص وتحريرها بشكل صحيح\nتنسيق النصوص والفقرات والخطوط\nالتعامل مع الجداول والقوائم\nإدراج الصور والأشكال والعناصر\nإعداد المستندات الرسمية وتنسيقها\nأدوات البحث والاستبدال والتدقيق الإملائي\nتنظيم الملفات وحفظها وإدارتها\nتجهيز المستندات للطباعة والمشاركة الإلكترونية\nتطبيقات عملية: خطابات وتقارير ونماذج", audience: "الموظفات والطالبات والباحثات عن عمل والعاملات في الأعمال الإدارية والمكتبية"},
+  {name: "نظام التنفيذ الجديد", cat: "dev", gender: "mf", duration: "5 أيام تدريبية", hours: "21", fees: "499", mode: "عن بُعد",
+    note: "دورة متخصصة عن بُعد لفهم نظام التنفيذ الجديد وإجراءاته وتطبيقاته العملية.", desc: "دورة متخصصة عن بُعد بأسلوب عملي تفاعلي، مع شهادة معتمدة.",
+    outline: "ماهية نظام التنفيذ الجديد\nالاختصاص القضائي والنظامي\nالسندات التنفيذية\nجزاءات وعقوبات التنفيذ\nتطبيقات عملية"}];
+const APP_PF = [["desc", "الوصف الكامل", "ta"], ["duration", "المدة", ""], ["hours", "الساعات", ""], ["fees", "الرسوم (رقم بالريال، أو نص مثل: حسب فئة المتقدم)", ""], ["mode", "نمط التدريب", ""], ["audience", "الفئة المستهدفة", ""], ["outline", "المحاور (كل محور في سطر)", "ta"], ["req", "شروط خاصة بالبرنامج", ""], ["end", "نهاية الدفعة", "date"]];
 const admSees = () => S.role === "admin" && ["admission", "admin", "finance", "academic"].includes(S.adminRole);
 const appCan = k => S.adminRole === "admin" || S.adminRole === k;   // the general administration can do every step
 const appPill = s => `<span class="pill ${(APP_ST[s] || [])[1] || ""}">${esc((APP_ST[s] || [s])[0])}</span>`;
@@ -1046,7 +1090,7 @@ const appProgs = () => ((S.admPub || {}).programs || []).filter(p => p.name);
 const appLink = pid => ((S.admPub || {}).links || {})[pid] || {};
 const appProgOf = a => appProgs().find(p => p.id === a.program) || appProgs().find(p => p.name === a.programName) || null;
 const appTaken = p => (S.apps || []).filter(a => (a.program === p.id || (!a.program && a.programName === p.name)) && APP_SEAT.includes(a.status) && String(a.intake || "") === String(p.start || "")).length;
-const appReqDocs = () => ((S.admPub || {}).docs || []).filter(k => APP_DOC[k]);
+const appReqDocs = () => ((S.admPub || {}).docs || ["id", "cert"]).filter(k => APP_DOC[k]);
 const appMissing = a => appReqDocs().filter(k => !(a.files || []).some(f => f.kind === k));
 function watchApps(){
   if (S._appSub || !S.authUser || !admSees()) return; S._appSub = true; let ready = false;
@@ -1384,20 +1428,26 @@ function admStats(el){
       ...apps.map(a => [a.id, a.name, a.gender === "f" ? "أنثى" : "ذكر", a.nid, a.phone, a.email || "", a.birth || "", a.city || "", a.edu || "", a.major || "", a.job || "", a.programName || "", a.source || "", a.referral ? (parts.find(p => p.id === a.referral) || {}).name || a.referral : "", PLANS[(a.fin || {}).plan || a.plan] || "", (APP_ST[a.status] || [a.status])[0] + (a.wait && APP_OPEN.includes(a.status) ? " (انتظار)" : ""), appDay(a), a.num || a.notes || ""])]}]);
 }
 function admSettings(el){
-  const cur = S.admPub || {}, F = S._admS = S._admS || {open: !!cur.open, msg: cur.msg || "", programs: clone(cur.programs || []), docs: [...(cur.docs || ["id"])], pledge: cur.pledge || APP_PLEDGE};
+  const cur = S.admPub || {}, F = S._admS = S._admS || {open: !!cur.open, msg: cur.msg || "", programs: clone(cur.programs || []), docs: [...(cur.docs || ["id", "cert"])], pledge: cur.pledge || APP_PLEDGE};
   el.innerHTML = `<div class="card"><h2 style="margin-top:0">رابط التقديم</h2>
       <p class="muted" style="margin-top:0">انشر هذا الرابط في حسابات المعهد. المتقدم يعبّي النموذج ويرفع مستنداته، ويوصلك الطلب هنا مع إشعار، ويطلع له رقم طلب يتابع فيه حالته ويكمّل الناقص ويوقّع الإقرار.</p>
       <div class="row" style="gap:8px;flex-wrap:wrap"><input type="text" readonly dir="ltr" class="grow" value="${esc(applyUrl())}"><button class="btn sm" id="admCp">نسخ</button><a class="btn sm gold" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent("التقديم على " + INST_AR + ":\n" + applyUrl())}">مشاركة واتساب</a><a class="btn sm" target="_blank" rel="noopener" href="${esc(applyUrl())}">فتح النموذج</a></div>
       <p class="muted" style="margin:6px 0 0;font-size:13px">لكل شريك أو مسوّق رابط خاص يحسب له المتقدمين، تلقاه في المالية ← الشركاء والعمولات.</p>
       <label class="row" style="gap:6px;margin-top:12px;font-size:16px"><input type="checkbox" id="asOpen" ${F.open ? "checked" : ""}> <b>التقديم مفتوح</b></label>
       <label class="f" style="margin-top:8px">رسالة تظهر لما يكون التقديم مقفل<input type="text" id="asMsg" maxlength="200" value="${esc(F.msg)}" placeholder="مثل: التقديم يفتح بداية الفصل القادم، تابعونا"></label></div>
-    <div class="card"><h2 style="margin-top:0">البرامج المتاحة للتقديم</h2><p class="muted" style="margin-top:0">المقاعد: لما يوصل عدد المحوّلين للمالية والمسجّلين في الدفعة للعدد، يظهر البرنامج «مكتمل» ويدخل المتقدم الجديد قائمة الانتظار. اتركه فاضي = بدون حد. لما تبدأ دفعة جديدة غيّر تاريخ البداية وتبدأ المقاعد من الصفر.</p>
-      <div class="list">${F.programs.map((p, i) => `<div class="item" style="gap:8px;flex-wrap:wrap;align-items:flex-end"><label class="f grow">اسم البرنامج<input type="text" data-pn="${i}" value="${esc(p.name)}" maxlength="100"></label><label class="f grow">وصف قصير<input type="text" data-pt="${i}" value="${esc(p.note || "")}" placeholder="المدة، الرسوم…" maxlength="160"></label>
+    <div class="card"><h2 style="margin-top:0">البرامج</h2><p class="muted" style="margin-top:0">كل برنامج «يظهر» ينعرض في صفحة <a href="${esc(applyUrl())}" target="_blank" rel="noopener">البرامج والتسجيل</a> للاطلاع، والزر «قدّم» يطلع بس للي «التقديم متاح» فيه والتقديم مفتوح.</p><p class="muted" style="margin-top:0">المقاعد: لما يوصل عدد المحوّلين للمالية والمسجّلين في الدفعة للعدد، يظهر البرنامج «مكتمل» ويدخل المتقدم الجديد قائمة الانتظار. اتركه فاضي = بدون حد. لما تبدأ دفعة جديدة غيّر تاريخ البداية وتبدأ المقاعد من الصفر.</p>
+      <div class="list">${F.programs.map((p, i) => `<div class="item" style="display:block"><div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end"><label class="f grow" style="min-width:220px">اسم البرنامج<input type="text" data-pn="${i}" value="${esc(p.name)}" maxlength="100"></label>
+        <label class="f" style="width:150px">التصنيف<select data-pc="${i}">${Object.entries(APP_CAT).map(([k, v]) => `<option value="${k}" ${(p.cat || "dev") === k ? "selected" : ""}>${v[0]}</option>`).join("")}</select></label>
+        <label class="f" style="width:130px">الفئة<select data-pg="${i}">${Object.entries(APP_GEN).map(([k, v]) => `<option value="${k}" ${(p.gender || "mf") === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>
         <label class="f" style="width:90px">المقاعد<input type="number" min="0" data-ps="${i}" value="${esc(p.seats || "")}"></label><label class="f" style="width:150px">بداية الدفعة<input type="date" data-pd8="${i}" value="${esc(p.start || "")}"></label>
         <span class="muted" style="font-size:12px;align-self:center">${p.id && Number(p.seats) > 0 ? `محجوز ${appTaken(p)}` : ""}</span>
-        <label class="row" style="gap:4px;align-self:center"><input type="checkbox" data-po="${i}" ${p.open !== false ? "checked" : ""}> متاح</label><button class="btn sm danger" data-pd="${i}">حذف</button></div>`).join("") || `<div class="muted">ما فيه برامج.</div>`}</div>
-      <div class="row" style="gap:8px;margin-top:8px"><button class="btn sm" id="asAdd">+ برنامج</button></div></div>
-    <div class="card"><h2 style="margin-top:0">المستندات المطلوبة</h2><p class="muted" style="margin-top:0">اللي تختاره يصير إجباري في نموذج التقديم، وما يتحوّل الطلب للمالية إلا وهو مكتمل.</p>
+        <label class="row" style="gap:4px;align-self:center" title="يظهر في صفحة البرامج للاطلاع"><input type="checkbox" data-pv="${i}" ${p.show !== false ? "checked" : ""}> يظهر</label>
+        <label class="row" style="gap:4px;align-self:center" title="يقدر المتقدم يقدّم عليه"><input type="checkbox" data-po="${i}" ${p.open !== false ? "checked" : ""}> التقديم متاح</label><button class="btn sm danger" data-pd="${i}">حذف</button></div>
+        <label class="f" style="margin-top:6px">وصف قصير (يظهر في البطاقة)<input type="text" data-pt="${i}" value="${esc(p.note || "")}" maxlength="200"></label>
+        <details style="margin-top:6px"><summary class="muted" style="cursor:pointer">تفاصيل العرض (الوصف، المدة، الرسوم، المحاور…)</summary><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px">
+          ${APP_PF.map(([k, l, t]) => t === "ta" ? `<label class="f" style="flex-basis:100%">${l}<textarea data-pf="${i}:${k}" rows="3" maxlength="3000">${esc(p[k] || "")}</textarea></label>` : `<label class="f grow" style="min-width:180px">${l}<input type="${t === "date" ? "date" : "text"}" data-pf="${i}:${k}" value="${esc(p[k] || "")}" maxlength="200"></label>`).join("")}</div></details></div>`).join("") || `<div class="muted">ما فيه برامج.</div>`}</div>
+      <div class="row" style="gap:8px;margin-top:8px"><button class="btn sm" id="asAdd">+ برنامج</button>${APP_READY.some(r => !F.programs.some(p => norm(p.name) === norm(r.name))) ? `<button class="btn sm gold" id="asReady">إضافة برامج المعهد الجاهزة (${APP_READY.filter(r => !F.programs.some(p => norm(p.name) === norm(r.name))).length})</button>` : ""}</div></div>
+    <div class="card"><h2 style="margin-top:0">المستندات المطلوبة</h2><p class="muted" style="margin-top:0">متطلبات المؤسسة العامة للتدريب التقني والمهني: <b>الهوية الوطنية</b> و<b>شهادة الثانوية العامة معتمدة من نور</b>، ومختارة من البداية. اللي تختاره يصير إجباري في نموذج التقديم، وما يتحوّل الطلب للمالية إلا وهو مكتمل.</p>
       <div class="row" style="gap:14px;flex-wrap:wrap">${Object.entries(APP_DOC).map(([k, v]) => `<label class="row" style="gap:4px"><input type="checkbox" data-dq="${k}" ${F.docs.includes(k) ? "checked" : ""}> ${v}</label>`).join("")}</div></div>
     <div class="card"><h2 style="margin-top:0">نص الإقرار والتعهد</h2><p class="muted" style="margin-top:0">يقرأه المتقدم بعد الاعتماد المالي مع رسومه وخطة سداده ويوافق عليه باسمه الكامل، وينطبع في عقد التسجيل. <b>راجعه وعدّله حسب أنظمة المعهد وسياسة الاسترداد.</b></p>
       <textarea id="asPl" rows="9" maxlength="6000" style="width:100%">${esc(F.pledge)}</textarea></div>
@@ -1405,12 +1455,16 @@ function admSettings(el){
   const read = () => { F.open = $("#asOpen").checked; F.msg = $("#asMsg").value.trim(); F.pledge = $("#asPl").value;
     const v = (a, fn) => el.querySelectorAll(`[${a}]`).forEach(x => fn(F.programs[x.getAttribute(a)], x));
     v("data-pn", (p, x) => p.name = x.value.trim()); v("data-pt", (p, x) => p.note = x.value.trim()); v("data-ps", (p, x) => p.seats = Math.max(0, Number(x.value) || 0)); v("data-pd8", (p, x) => p.start = x.value); v("data-po", (p, x) => p.open = x.checked);
+    v("data-pc", (p, x) => p.cat = x.value); v("data-pg", (p, x) => p.gender = x.value); v("data-pv", (p, x) => p.show = x.checked);
+    el.querySelectorAll("[data-pf]").forEach(x => { const [i, k] = x.dataset.pf.split(":"); F.programs[i][k] = x.value.trim(); });
     F.docs = [...el.querySelectorAll("[data-dq]")].filter(x => x.checked).map(x => x.dataset.dq); };
   $("#admCp").onclick = () => navigator.clipboard.writeText(applyUrl()).then(() => toast("انتسخ الرابط")).catch(() => toast("المتصفح منع النسخ"));
-  $("#asAdd").onclick = () => { read(); F.programs.push({id: "p" + uid(), name: "", note: "", open: true}); render(); };
+  $("#asAdd").onclick = () => { read(); F.programs.push({id: "p" + uid(), name: "", note: "", open: true, show: true, cat: "dev", gender: "mf"}); render(); };
+  if ($("#asReady")) $("#asReady").onclick = () => { read(); APP_READY.filter(r => !F.programs.some(p => norm(p.name) === norm(r.name))).forEach(r => F.programs.push({id: "p" + uid(), open: true, show: true, ...r})); toast("انضافت. راجعها واضغط «حفظ الإعدادات»"); render(); };
   el.querySelectorAll("[data-pd]").forEach(b => b.onclick = () => { read(); F.programs.splice(Number(b.dataset.pd), 1); render(); });
   $("#asSave").onclick = async e => {
-    read(); const programs = F.programs.filter(p => p.name).map(p => ({id: p.id || "p" + uid(), name: p.name.slice(0, 100), note: (p.note || "").slice(0, 160), open: p.open !== false, seats: Number(p.seats) || 0, start: p.start || ""}));
+    read(); const programs = F.programs.filter(p => p.name).map(p => ({id: p.id || "p" + uid(), name: p.name.slice(0, 100), note: (p.note || "").slice(0, 200), open: p.open !== false, show: p.show !== false, seats: Number(p.seats) || 0, start: p.start || "",
+      cat: APP_CAT[p.cat] ? p.cat : "dev", gender: APP_GEN[p.gender] ? p.gender : "mf", ...Object.fromEntries(APP_PF.map(([k]) => [k, String(p[k] || "").slice(0, 3000)]))}));
     if (F.open && !programs.some(p => p.open)) return toast("أضف برنامج متاح واحد على الأقل قبل ما تفتح التقديم");
     e.target.disabled = true;
     const d = {open: F.open, msg: F.msg.slice(0, 200), programs, docs: F.docs, pledge: F.pledge.trim().slice(0, 6000), updatedAt: new Date().toISOString()};
@@ -1950,7 +2004,7 @@ function renderHome(app){
     <button class="portal pT rise" style="--d:2" id="goT">${ICON.trainer}<b>بوابة المدربين</b></button>
     <button class="portal pA rise" style="--d:3" id="goA">${ICON.admin}<b>بوابة الشؤون المالية والأكاديمية</b></button>
   </div>
-  ${(S.admPub || {}).open ? `<a class="card rise applyCta" style="--d:4" href="apply.html"><span style="font-size:30px">📝</span><span class="grow"><b>التقديم على المعهد مفتوح</b><span class="muted">قدّم طلب التحاقك أونلاين وارفع مستنداتك، وتابع حالة طلبك.</span></span><span class="btn pri">قدّم الآن</span></a>` : ""}
+  ${((S.admPub || {}).programs || []).some(p => p.show !== false) ? `<a class="card rise applyCta" style="--d:4" href="apply.html"><span style="font-size:30px">📚</span><span class="grow"><b>البرامج والتسجيل</b><span class="muted">${(S.admPub || {}).open ? "الدبلومات والبرامج التأهيلية والتطويرية: اطّلع على التفاصيل والرسوم، وقدّم أونلاين وتابع طلبك." : "اطّلع على الدبلومات والبرامج التأهيلية والتطويرية وتفاصيلها ورسومها."}</span></span><span class="btn pri">${(S.admPub || {}).open ? "تصفّح وسجّل" : "تصفّح البرامج"}</span></a>` : ""}
   ${counters.length ? `<section class="counters rise" style="--d:4">${counters.map(([k, l]) => `<div class="ctr"><b data-count="${Number(st[k])}">0</b><span>${l}</span></div>`).join("")}</section>` : ""}
   <div class="duo">
     <form class="card rise" style="--d:5" id="verF"><h2>${ICON.seal} تحقق من شهادة</h2>

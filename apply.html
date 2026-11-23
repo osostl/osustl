@@ -25,7 +25,7 @@ header{background:var(--green);color:#fff;padding:18px 16px;display:flex;align-i
 header img{width:48px;height:48px;border-radius:10px;background:#fff;padding:4px}
 header h1{font-family:var(--display);font-weight:600;font-size:20px;margin:0}
 header span{display:block;font-size:13px;opacity:.85}
-main{max-width:760px;margin:0 auto;padding:16px}
+main{max-width:1000px;margin:0 auto;padding:16px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:14px}
 h2{font-family:var(--display);color:var(--green);font-weight:600;margin:0 0 6px;font-size:21px}
 [data-theme=dark] h2{color:#7FC79F}
@@ -53,14 +53,44 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--gold);border-col
 .hp{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);opacity:0;pointer-events:none}
 .chk{display:flex;gap:8px;align-items:flex-start;font-size:14px}.chk input{width:auto;margin-top:6px}
 .files .f input{padding:8px}
+.steps3{display:flex;gap:8px;margin:0 0 14px;flex-wrap:wrap}
+.steps3 div{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px;font-weight:600;font-size:14.5px}
+@media(max-width:560px){.steps3 div{flex-direction:column;text-align:center;font-size:12.5px;padding:8px 6px;gap:4px}}
+.steps3 i{font-style:normal;width:28px;height:28px;border-radius:50%;background:var(--green);color:#fff;display:grid;place-items:center;font-size:14px;flex:none}
+.filt{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+.seg{display:inline-flex;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px;gap:2px}
+.seg button{font:inherit;font-weight:700;border:0;background:none;padding:8px 16px;border-radius:999px;cursor:pointer;color:var(--muted);white-space:nowrap}
+.seg button.on{background:var(--green);color:#fff}
+.sec{display:flex;align-items:center;gap:10px;margin:22px 0 10px}.sec h2{margin:0}.sec span{color:var(--muted);font-size:14px}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px}
+.pc{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;display:flex;gap:14px;align-items:flex-start;cursor:pointer;transition:border-color .15s,box-shadow .15s;text-align:right;font:inherit;color:inherit;width:100%}
+.pc:hover,.pc:focus-visible{border-color:var(--gold);box-shadow:0 6px 18px rgba(31,81,54,.08);outline:none}
+.ico{width:56px;height:56px;border-radius:16px;background:linear-gradient(145deg,#FFFBF0,#F6E6B8);border:1px solid #EAD59A;display:grid;place-items:center;flex:none}
+.ico svg{width:30px;height:30px;stroke:#1F5136;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ico svg .g{stroke:#B08A2E}
+[data-theme=dark] .ico{background:linear-gradient(145deg,#2A2516,#3A3014);border-color:#5A4A20}[data-theme=dark] .ico svg{stroke:#9ED6B4}
+.pc .bd{flex:1;min-width:0}.pc h3{margin:0 0 4px;font-size:16.5px;line-height:1.5}
+.meta{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:13.5px;color:var(--muted)}.meta b{color:var(--ink);font-weight:700}
+.gp{font-weight:700;font-size:12px;padding:2px 9px;border-radius:999px}.gp.m{color:#1F5136;background:#E8F3EC}.gp.f{color:#8A2D5C;background:#FBEAF2}.gp.mf{color:#7A5A12;background:#FBF0D6}
+.tag{font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;background:var(--abs-bg);color:var(--abs)}
+.go{color:var(--gold);font-size:22px;align-self:center;flex:none}
+.sheet{position:fixed;inset:0;background:rgba(10,20,15,.45);display:flex;align-items:flex-end;justify-content:center;z-index:9;padding:12px}
+.sheet .in{background:var(--card);border-radius:22px;max-width:620px;width:100%;max-height:88vh;overflow:auto;padding:20px}
+@media(min-width:700px){.sheet{align-items:center}}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:12px 0}
+.facts div{background:var(--bg);border-radius:12px;padding:9px 12px}.facts span{display:block;font-size:12px;color:var(--muted)}.facts b{font-size:15px}
+.sheet ul{margin:4px 0 10px;padding-inline-start:20px;line-height:1.9}
+.chosen{display:flex;gap:12px;align-items:center;border:1.5px solid var(--green);background:var(--ok-bg);border-radius:16px;padding:12px}
+.linkb{font:inherit;color:var(--green);font-weight:700;background:none;border:0;cursor:pointer;text-decoration:underline}
+.ghead{font-family:var(--display);color:var(--green);font-size:15px;margin:10px 0 4px}
 footer{text-align:center;padding:20px;color:var(--muted);font-size:13px}
 footer a{color:var(--green)}
 </style>
 </head>
 <body>
-<header><img src="logo-mark.png" alt=""><div><h1>معهد أسس التقنية والقانون العالي للتدريب</h1><span>التقديم والالتحاق</span></div></header>
+<header><img src="logo-mark.png" alt=""><div><h1>معهد أسس التقنية والقانون العالي للتدريب</h1><span>البرامج والتسجيل</span></div></header>
 <main>
-  <div class="tabs"><button class="tab on" data-t="apply">📝 تقديم طلب التحاق</button><button class="tab" data-t="track">🔎 متابعة طلبي</button></div>
+  <div class="tabs"><button class="tab on" data-t="programs">البرامج</button><button class="tab" data-t="apply">تقديم طلب</button><button class="tab" data-t="track">متابعة طلبي</button></div>
   <div id="view"><div class="card muted">جاري التحميل…</div></div>
 </main>
 <footer><a href="./">البوابة الإلكترونية للمعهد</a></footer>
@@ -71,9 +101,12 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const digits = s => String(s || "").replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).replace(/\D/g, "");
 const Q = new URLSearchParams(location.search);
-let API = "", CFG = null, TAB = Q.get("ref") || Q.has("track") ? "track" : "apply", T0 = Date.now();
+let API = "", CFG = null, TAB = Q.get("ref") || Q.has("track") ? "track" : Q.has("apply") ? "apply" : "programs", T0 = Date.now(), PRE = Q.get("p") || "", CAT = "all", GEN = "all", OPEN = {};
+const CATS = {diploma: ["الدبلومات", "🎓"], qual: ["البرامج التأهيلية", "🎯"], dev: ["البرامج التطويرية", "📈"]}, GENS = {m: "رجالي", f: "نسائي", mf: "رجالي ونسائي"};
+const money = v => /^\d+(\.\d+)?$/.test(String(v || "").trim()) ? Number(v).toLocaleString("en-US") + " ر.س" : String(v || "");
 let MREF = ""; try { MREF = (Q.get("m") || sessionStorage.getItem("asasM") || "").slice(0, 60); if (MREF) sessionStorage.setItem("asasM", MREF); } catch {}
-const DOCN = {id: "صورة الهوية / الإقامة", cert: "المؤهل الدراسي", photo: "صورة شخصية"};
+const DOCN = {id: "الهوية الوطنية", cert: "شهادة الثانوية العامة (معتمدة من نور)", photo: "صورة شخصية"};
+const DOCH = {id: "صورة واضحة للوجهين، أو PDF", cert: "اطبعها PDF من موقع نظام نور (noor.moe.gov.sa)", photo: ""};
 const ERR = {closed: "التقديم مقفل حالياً.", name: "اكتب اسمك الثلاثي أو الرباعي.", nid: "رقم الهوية لازم 10 أرقام ويبدأ بـ 1 أو 2.", phone: "رقم الجوال لازم يبدأ بـ 05 ويكون 10 أرقام.", email: "البريد الإلكتروني غير صحيح.",
   missing: "كمّل الخانات المطلوبة (*).", program: "اختر البرنامج.", filetype: "المرفقات لازم تكون صورة أو PDF.", filesize: "حجم المرفق كبير، الحد 5 ميجا للملف.", limit: "وصلت الحد اليومي من هذا الجهاز. حاول بكرة أو تواصل معنا.",
   upload: "تعذّر رفع المرفقات الحين. حاول بعد شوي.", docs: "ارفع المستندات المطلوبة (*).", pledgename: "اكتب اسمك الكامل مثل ما هو في طلبك بالضبط، وأشّر على الموافقة.", "bad request": "صار خطأ في الإرسال. حدّث الصفحة وحاول مرة ثانية.", missingRef: "ما لقينا طلب بهذا الرقم والهوية. تأكد من البيانات."};
@@ -89,17 +122,72 @@ async function boot(){
 }
 function draw(){
   document.querySelectorAll("[data-t]").forEach(b => { b.classList.toggle("on", b.dataset.t === TAB); b.onclick = () => { TAB = b.dataset.t; draw(); }; });
-  TAB === "track" ? drawTrack() : drawApply();
+  TAB === "track" ? drawTrack() : TAB === "apply" ? drawApply() : drawPrograms();
 }
-const fileIn = (k, req) => `<label class="f">${DOCN[k]}${req ? " *" : " <small>(اختياري)</small>"}<input type="file" data-k="${k}" accept="${k === "photo" ? "image/*" : "image/*,.pdf,application/pdf"}"></label>`;
+// line icons in the site's green and gold, picked from the program's name, then its category
+const SV = {
+  cap: '<path d="M3 9.5 12 5l9 4.5-9 4.5z"/><path class="g" d="M7 11.6V15c0 1.3 2.2 2.6 5 2.6s5-1.3 5-2.6v-3.4"/><path class="g" d="M21 9.5v5"/>',
+  law: '<path d="M12 4v15M8 19h8"/><path class="g" d="M5 7h14M7 7l-3 6h6zM17 7l-3 6h6z"/>',
+  media: '<rect x="3" y="7" width="13" height="10" rx="2"/><path class="g" d="m16 10.5 5-3v9l-5-3"/><circle class="g" cx="9.5" cy="12" r="2.2"/>',
+  shield: '<path d="M12 3.5 5 6.5v5c0 4.2 2.9 7.6 7 9 4.1-1.4 7-4.8 7-9v-5z"/><path class="g" d="m9 12 2.2 2.2L15.5 10"/>',
+  lang: '<path d="M4 5.5h7a2 2 0 0 1 2 2V19a2 2 0 0 0-2-2H4z"/><path d="M20 5.5h-5a2 2 0 0 0-2 2V19a2 2 0 0 1 2-2h5z"/><path class="g" d="M6.5 9h3M6.5 12h3M15.5 9h2M15.5 12h2"/>',
+  step: '<rect x="5" y="3.5" width="14" height="17" rx="2"/><path class="g" d="M8.5 8h7M8.5 11.5h7"/><path d="m9 16 1.8 1.6L15 14"/>',
+  mind: '<circle cx="12" cy="12" r="8"/><circle class="g" cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.2"/><path class="g" d="M18 6l3-3M18 3.5V6h2.5"/>',
+  cert: '<circle cx="12" cy="9.5" r="5"/><path class="g" d="m9.3 13.7-1.6 6.8 4.3-2.3 4.3 2.3-1.6-6.8"/><path d="m10.2 9.6 1.3 1.3 2.4-2.6"/>',
+  keys: '<rect x="2.5" y="6" width="19" height="12" rx="2"/><path class="g" d="M6 9.5h.01M9 9.5h.01M12 9.5h.01M15 9.5h.01M18 9.5h.01M6 12.5h.01M18 12.5h.01"/><path d="M8.5 15h7"/>',
+  gavel: '<path d="m13.5 5.5 5 5M11 8l5 5M9.6 9.4l4.9-4.9 5 5-4.9 4.9z"/><path class="g" d="M12.2 12 4.5 19.7M3.5 21h8"/>',
+  grow: '<path d="M4 19h16"/><path class="g" d="M6.5 15.5l4-4 3 3 5-6"/><path d="M15 8.5h3.5V12"/>'};
+const icoOf = p => { const n = p.name || "";
+  const k = /إعلام/.test(n) ? "media" : /قانون/.test(n) && p.cat === "diploma" ? "law" : /سيبر|سبر|أمن/.test(n) ? "shield" : /STEP/i.test(n) && /تأسيس/.test(n) ? "lang" : /STEP/i.test(n) ? "step"
+    : /قدرات/.test(n) ? "mind" : /GRCP|شهادة المهنية|حوكمة/i.test(n) ? "cert" : /إدخال|معالجة النصوص|بيانات/.test(n) ? "keys" : /تنفيذ|قضا|نظام/.test(n) ? "gavel" : /إنجليز|لغة/.test(n) ? "lang" : p.cat === "diploma" ? "cap" : p.cat === "qual" ? "cert" : "grow";
+  return `<div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24">${SV[k]}</svg></div>`; };
+function drawPrograms(){
+  const all = (CFG.programs || []).filter(p => GEN === "all" || p.gender === GEN || p.gender === "mf");
+  if (!(CFG.programs || []).length) { $("#view").innerHTML = `<div class="card"><h2>البرامج</h2><p class="muted">تُعلن البرامج قريباً.</p></div>`; return; }
+  $("#view").innerHTML = `${CFG.open ? `<div class="steps3"><div><i>1</i>اختر البرنامج</div><div><i>2</i>عبّي بياناتك</div><div><i>3</i>تابع طلبك برقم الطلب</div></div>` : `<div class="notice">${esc(CFG.msg || "التقديم مقفل حالياً، تقدر تطّلع على البرامج وتفاصيلها.")}</div>`}
+    <div class="filt"><div class="seg">${[["all", "الكل"], ["diploma", "الدبلومات"], ["qual", "التأهيلية"], ["dev", "التطويرية"]].filter(([k]) => k === "all" || (CFG.programs || []).some(p => p.cat === k)).map(([k, v]) => `<button class="${CAT === k ? "on" : ""}" data-c="${k}">${v}</button>`).join("")}</div>
+      <div class="seg">${[["all", "للجميع"], ["m", "رجال"], ["f", "نساء"]].map(([k, v]) => `<button class="${GEN === k ? "on" : ""}" data-g="${k}">${v}</button>`).join("")}</div></div>
+    ${Object.keys(CATS).filter(c => CAT === "all" || CAT === c).map(c => { const l = all.filter(p => p.cat === c); return l.length ? `<div class="sec"><h2>${CATS[c][0]}</h2><span>${l.length} ${l.length > 10 || l.length < 3 ? "برنامج" : "برامج"}</span></div><div class="pgrid">${l.map(card).join("")}</div>` : ""; }).join("") || `<div class="card muted">ما فيه برامج بهذا الاختيار.</div>`}
+    <div class="card" style="margin-top:18px;display:flex;gap:14px;align-items:flex-start"><div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10A.5.5 0 0 1 7 20z"/><path class="g" d="M14 3.5V8h4M9.5 12h6M9.5 15h6"/></svg></div>
+      <div><h2 style="margin:0 0 6px">متطلبات التسجيل</h2><div class="muted" style="margin-bottom:6px">حسب متطلبات المؤسسة العامة للتدريب التقني والمهني</div>
+      <ul style="margin:0;padding-inline-start:20px;line-height:2"><li><b>الهوية الوطنية</b> (صورة واضحة أو PDF)</li><li><b>شهادة الثانوية العامة معتمدة من نظام نور</b> (تطبعها PDF من موقع نور)</li><li>صورة شخصية عند الحاجة</li></ul></div></div>`;
+  document.querySelectorAll("[data-c]").forEach(b => b.onclick = () => { CAT = b.dataset.c; drawPrograms(); });
+  document.querySelectorAll("[data-g]").forEach(b => b.onclick = () => { GEN = b.dataset.g; drawPrograms(); });
+  document.querySelectorAll("[data-pid]").forEach(b => b.onclick = () => sheet(b.dataset.pid));
+}
+function card(p){
+  const tag = !p.apply ? `<span class="tag">التقديم مغلق</span>` : p.full ? `<span class="tag">قائمة انتظار</span>` : p.left !== null && p.left <= 10 ? `<span class="tag">باقي ${p.left} مقعد</span>` : "";
+  return `<button class="pc" data-pid="${esc(p.id)}">${icoOf(p)}<div class="bd"><h3>${esc(p.name)}</h3>
+    <div class="meta"><span class="gp ${p.gender}">${GENS[p.gender] || ""}</span>${p.duration ? `<span>⏱ <b>${esc(p.duration)}</b></span>` : ""}${p.fees ? `<span><b>${esc(money(p.fees))}</b></span>` : ""}${tag}</div></div><span class="go">‹</span></button>`;
+}
+function sheet(id){
+  const p = (CFG.programs || []).find(x => x.id === id); if (!p) return;
+  const out = String(p.outline || "").split("\n").map(x => x.trim()).filter(Boolean);
+  const facts = [["المدة", p.duration], ["الساعات", p.hours ? p.hours + (/^\d+(\.\d+)?$/.test(p.hours) ? " ساعة" : "") : ""], ["الرسوم", money(p.fees)], ["نمط التدريب", p.mode], ["تبدأ", p.start], ["الفئة", GENS[p.gender]]].filter(([, v]) => v);
+  const d = document.createElement("div"); d.className = "sheet";
+  d.innerHTML = `<div class="in" role="dialog" aria-modal="true"><div style="display:flex;gap:12px;align-items:center">${icoOf(p)}<h2 style="margin:0;flex:1">${esc(p.name)}</h2><button class="linkb" data-x style="text-decoration:none;font-size:22px">✕</button></div>
+    <p style="margin:12px 0 0">${esc(p.desc || p.note || "")}</p>
+    <div class="facts">${facts.map(([k, v]) => `<div><span>${k}</span><b dir="auto">${esc(v)}</b></div>`).join("")}</div>
+    ${p.audience ? `<p style="margin:0 0 8px"><b>لمن البرنامج؟</b> ${esc(p.audience)}</p>` : ""}
+    ${out.length ? `<div class="ghead">محاور البرنامج</div><ul>${out.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    ${p.req ? `<p class="muted" style="margin:0 0 8px">ملاحظة: ${esc(p.req)}</p>` : ""}
+    ${p.apply ? `${p.full ? `<div class="notice" style="margin:8px 0">المقاعد مكتملة، وتقدر تقدّم وتدخل قائمة الانتظار.</div>` : ""}<button class="btn" data-go style="margin-top:8px">قدّم على هذا البرنامج</button>` : `<div class="notice" style="margin:8px 0 0">التقديم على هذا البرنامج مغلق حالياً.</div>`}</div>`;
+  document.body.appendChild(d);
+  const close = () => d.remove();
+  d.onclick = e => { if (e.target === d) close(); }; d.querySelector("[data-x]").onclick = close;
+  const g = d.querySelector("[data-go]"); if (g) g.onclick = () => { close(); PRE = p.id; TAB = "apply"; draw(); window.scrollTo({top: 0, behavior: "smooth"}); };
+}
+const fileIn = (k, req) => `<label class="f">${DOCN[k]}${req ? " *" : " <small>(اختياري)</small>"}${DOCH[k] ? `<small>${DOCH[k]}</small>` : ""}<input type="file" data-k="${k}" accept="${k === "photo" ? "image/*" : "image/*,.pdf,application/pdf"}"></label>`;
 function drawApply(){
-  if (!CFG.open || !CFG.programs.length) { $("#view").innerHTML = `<div class="card"><h2>التقديم مقفل حالياً</h2><p>${esc(CFG.msg || "تابعونا على حسابات المعهد لمعرفة موعد فتح التقديم القادم.")}</p><p class="muted">قدّمت من قبل؟ تابع طلبك من «متابعة طلبي».</p></div>`; return; }
-  const opt = l => l.map(x => `<option>${esc(x)}</option>`).join(""), req = CFG.docs || [];
+  const ap = (CFG.programs || []).filter(p => p.apply);
+  if (!CFG.open || !ap.length) { $("#view").innerHTML = `<div class="card"><h2>التقديم مقفل حالياً</h2><p>${esc(CFG.msg || "تابعونا على حسابات المعهد لمعرفة موعد فتح التقديم القادم.")}</p><p class="muted">قدّمت من قبل؟ تابع طلبك من «متابعة طلبي».</p></div>`; return; }
+  const opt = l => l.map(x => `<option>${esc(x)}</option>`).join(""), req = CFG.docs || ["id", "cert"];
   $("#view").innerHTML = `<form id="F" novalidate>
     ${MREF ? `<div class="notice ok">🤝 تقدّم عن طريق أحد شركاء المعهد.</div>` : ""}
+    ${PRE && ap.some(p => p.id === PRE) ? (p => `<div class="card"><h2>البرنامج</h2><div class="chosen">${icoOf(p)}<div style="flex:1"><b>${esc(p.name)}</b><div class="meta"><span class="gp ${p.gender}">${GENS[p.gender] || ""}</span>${p.duration ? `<span>${esc(p.duration)}</span>` : ""}${p.fees ? `<span>${esc(money(p.fees))}</span>` : ""}</div></div><button type="button" class="linkb" id="chg">تغيير</button></div><input type="hidden" name="program" value="${esc(p.id)}"></div>`)(ap.find(p => p.id === PRE)) : `
     <div class="card"><h2>البرنامج</h2><p class="muted" style="margin-top:0">اختر البرنامج اللي تبي تلتحق فيه *</p>
-      <div class="prog">${CFG.programs.map(p => `<label><input type="radio" name="program" value="${esc(p.id)}" ${CFG.programs.length === 1 ? "checked" : ""}><span>${esc(p.name)}${p.note ? `<small>${esc(p.note)}</small>` : ""}${p.start ? `<small>بداية الدفعة: <span dir="ltr">${esc(p.start)}</span></small>` : ""}
-        ${p.full ? `<small style="color:var(--abs)">المقاعد مكتملة — تقدر تقدّم وتدخل قائمة الانتظار</small>` : p.left !== null && p.left <= 10 ? `<small style="color:var(--abs)">باقي ${p.left} مقعد فقط</small>` : ""}</span></label>`).join("")}</div></div>
+      <div class="prog">${Object.keys(CATS).filter(c => ap.some(p => p.cat === c)).map(c => `<div class="ghead">${CATS[c][1]} ${CATS[c][0]}</div>` + ap.filter(p => p.cat === c).map(p => `<label><input type="radio" name="program" value="${esc(p.id)}" ${ap.length === 1 || p.id === PRE ? "checked" : ""}><span>${esc(p.name)} <small style="display:inline">· ${GENS[p.gender] || ""}${p.fees ? " · " + esc(money(p.fees)) : ""}</small>${p.note ? `<small>${esc(p.note)}</small>` : ""}${p.start ? `<small>بداية الدفعة: <span dir="ltr">${esc(p.start)}</span></small>` : ""}
+        ${p.full ? `<small style="color:var(--abs)">المقاعد مكتملة — تقدر تقدّم وتدخل قائمة الانتظار</small>` : p.left !== null && p.left <= 10 ? `<small style="color:var(--abs)">باقي ${p.left} مقعد فقط</small>` : ""}</span></label>`).join("")).join("")}</div></div>`}
     <div class="card"><h2>بياناتك</h2><div class="grid">
       <label class="f" style="grid-column:1/-1">الاسم الرباعي (كما في الهوية) *<input name="name" maxlength="80" autocomplete="name" required></label>
       <label class="f">رقم الهوية / الإقامة *<input name="nid" inputmode="numeric" dir="ltr" maxlength="10" required></label>
@@ -115,12 +203,14 @@ function drawApply(){
       ${MREF ? "" : `<label class="f">اسم المسوّق أو الشريك <small>(إن وجد)</small><input name="referral" maxlength="60"></label>`}
       <label class="f" style="grid-column:1/-1">ملاحظات أو أسئلة<textarea name="notes" rows="3" maxlength="600"></textarea></label>
     </div></div>
-    <div class="card files"><h2>المستندات</h2><p class="muted" style="margin-top:0">صورة أو PDF، حتى 5 ميجا للملف.${req.length ? " اللي عليها * مطلوبة." : " تقدر تكملها لاحقاً من «متابعة طلبي»."}</p><div class="grid">${Object.keys(DOCN).map(k => fileIn(k, req.includes(k))).join("")}</div></div>
+    <div class="card files"><h2>المستندات</h2><div class="notice" style="margin:0 0 12px"><b>متطلبات المؤسسة العامة للتدريب التقني والمهني:</b> الهوية الوطنية، وشهادة الثانوية العامة معتمدة من نظام نور.</div><p class="muted" style="margin-top:0">صورة أو PDF، حتى 5 ميجا للملف.${req.length ? " اللي عليها * مطلوبة." : ""}</p><div class="grid">${Object.keys(DOCN).map(k => fileIn(k, req.includes(k))).join("")}</div></div>
     <div class="hp" aria-hidden="true"><label>الموقع<input name="website" tabindex="-1" autocomplete="off"></label></div>
     <div class="card"><label class="chk"><input type="checkbox" id="ok"> <span>أقرّ بأن البيانات صحيحة، وأوافق على تواصل المعهد معي بخصوص طلبي عبر الجوال والواتساب والبريد.</span></label>
       <div id="msg" style="margin-top:12px"></div><button class="btn" id="go" type="submit" style="margin-top:8px">إرسال الطلب</button></div>
   </form>`;
   $("#F").onsubmit = submit;
+  if ($("#chg")) $("#chg").onclick = () => { PRE = ""; TAB = "programs"; draw(); };
+  const pp = ap.find(p => p.id === PRE); if (pp && pp.gender !== "mf") $("[name=gender]").value = pp.gender;
 }
 function shrink(file){   // photos are resized so a phone picture stays small; a PDF goes as it is
   return new Promise((ok, no) => {
@@ -161,7 +251,8 @@ async function submit(e){
   if (!/^[12]\d{9}$/.test(form.nid)) return say(ERR.nid);
   if (!/^(05\d{8}|5\d{8}|9665\d{8})$/.test(form.phone)) return say(ERR.phone);
   if (!form.gender || !form.city || !form.edu) return say(ERR.missing);
-  const lack = (CFG.docs || []).filter(k => !($(`[data-k="${k}"]`).files || [])[0]); if (lack.length) return say("ارفع: " + lack.map(k => DOCN[k]).join("، "));
+  const pr = (CFG.programs || []).find(p => p.id === form.program); if (pr && pr.gender !== "mf" && pr.gender !== form.gender) return say(`هذا البرنامج ${pr.gender === "m" ? "للرجال" : "للنساء"} فقط. اختر البرنامج المناسب لك.`);
+  const lack = (CFG.docs || ["id", "cert"]).filter(k => !($(`[data-k="${k}"]`).files || [])[0]); if (lack.length) return say("ارفع: " + lack.map(k => DOCN[k]).join("، "));
   if (!$("#ok").checked) return say("لازم توافق على الإقرار قبل الإرسال.");
   const btn = $("#go"); btn.disabled = true; btn.textContent = "جاري الإرسال…"; say("");
   try {
