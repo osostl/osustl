@@ -8,7 +8,7 @@ const DOMAIN = "osostl.local";                       // login emails are interna
 const MAIL_STAFF = ["admission", "business", "hr"];      // accounts that only use their own mailbox
 const ROLE_EMAIL = {admin: "admin@" + DOMAIN, academic: "acadmic@" + DOMAIN, finance: "finance@" + DOMAIN, auditor: "audit@" + DOMAIN,
   ...Object.fromEntries(MAIL_STAFF.map(r => [r, `m-${r}@` + DOMAIN]))};
-const ROLES = {admin: "الإدارة", academic: "مسؤول الشؤون الأكاديمية", finance: "المالية", auditor: "المالك (الجهة الرقابية)",
+const ROLES = {admin: "الإدارة", academic: "مسؤول الشؤون الأكاديمية", finance: "المالية", auditor: "الجهة الرقابية",
   admission: "القبول والتسجيل وخدمة العملاء", business: "الشراكات وقطاع الشركات", hr: "الموارد البشرية"};
 const RO = () => S.adminRole === "auditor";
 const FIN = () => S.adminRole === "finance";
@@ -1573,14 +1573,14 @@ function hrMonth(m){
 function hrTab(el){
   hrSubs();
   const t = S.hrTab || "att";
-  el.innerHTML = `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${[["att", "الحضور والانصراف"], ["staff", "الموظفين"], ["rep", "التقرير الشهري"]].map(([k, v]) => `<button class="tab ${t === k ? "on" : ""}" data-hrt="${k}">${v}</button>`).join("")}</div></div><div id="hrb"></div>`;
+  el.innerHTML = `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${[["att", "الحضور والانصراف"], ["staff", "الموظفين"], ["rep", "التقرير الشهري"], ["bio", "جهاز البصمة"]].map(([k, v]) => `<button class="tab ${t === k ? "on" : ""}" data-hrt="${k}">${v}</button>`).join("")}</div></div><div id="hrb"></div>`;
   el.querySelectorAll("[data-hrt]").forEach(b => b.onclick = () => { S.hrTab = b.dataset.hrt; render(); });
-  ({att: hrAttView, staff: hrStaffView, rep: hrRepView})[t]($("#hrb"));
+  ({att: hrAttView, staff: hrStaffView, rep: hrRepView, bio: hrBioView})[t]($("#hrb"));
 }
 function hrAttView(el){
   const d = S.hrDate || today(); hrMonth(d.slice(0, 7));
   const staff = (S.hrStaff || []).filter(s => s.active !== false), day = (S.hrAtt || {})[d] || {rec: {}}, rec = day.rec || {};
-  const draft = S._hrDraft && S._hrDraft.d === d ? S._hrDraft.rec : (S._hrDraft = {d, rec: JSON.parse(JSON.stringify(rec))}).rec;
+  const draft = S._hrDraft && S._hrDraft.d === d && S._hrDraft.dirty ? S._hrDraft.rec : (S._hrDraft = {d, rec: JSON.parse(JSON.stringify(rec))}).rec;   // untouched: follows new punches from the clock
   const working = staff.filter(s => hrWorks(s, d));
   const cnt = {p: 0, l: 0, a: 0, v: 0, x: 0}; working.forEach(s => cnt[hrAuto(s, draft[s.id])]++);
   el.innerHTML = `<div class="card"><div class="row" style="align-items:end;gap:8px">
@@ -1588,9 +1588,10 @@ function hrAttView(el){
       <span class="muted">${WDAYS[new Date(d + "T12:00:00").getDay()]} · ${working.length} موظف دوامهم اليوم</span><span class="grow"></span>
       <button class="btn sm" id="hrTpl">نموذج Excel</button><label class="btn sm" for="hrX" style="cursor:pointer">استيراد من Excel</label><input type="file" id="hrX" accept=".xlsx,.xls,.csv" style="display:none">
     </div>
+    ${Object.keys(day.unk || {}).length ? `<div class="notice" style="margin-top:8px">بصمات وصلت اليوم من أرقام ما هي مربوطة بموظف: ${Object.entries(day.unk).map(([p, t]) => `<b>${esc(p)}</b> (${esc(t.join("، "))})`).join(" · ")}. اربطها من «الموظفين» ← رقم البصمة.</div>` : ""}
     <div class="stats" style="margin-top:10px">${["p", "l", "a", "v", "x"].map(k => `<div class="stat"><div class="n">${cnt[k]}</div><div class="l">${HR_ST[k]}</div></div>`).join("")}</div></div>
   ${!staff.length ? `<div class="card empty">ما فيه موظفين. أضفهم من تبويب «الموظفين».</div>` : `<div class="list">${working.map(s => { const r = draft[s.id] || {}, st = hrAuto(s, r), late = hrLateMin(s, r);
-    return `<div class="item" style="flex-wrap:wrap;gap:8px"><div class="grow" style="min-width:160px"><b>${esc(s.name)}</b><div class="muted">${esc(s.job || "")} · الدوام ${esc(s.from || "08:00")}–${esc(s.to || "16:00")}</div></div>
+    return `<div class="item" style="flex-wrap:wrap;gap:8px"><div class="grow" style="min-width:160px"><b>${esc(s.name)}</b>${r.src === "bio" ? ` <span title="من جهاز البصمة${(r.punches || []).length ? ": " + esc(r.punches.join("، ")) : ""}">🖐</span>` : ""}<div class="muted">${esc(s.job || "")} · الدوام ${esc(s.from || "08:00")}–${esc(s.to || "16:00")}</div></div>
       <label class="row" style="gap:4px">دخول<input type="time" data-hin="${s.id}" value="${esc(r.in || "")}" style="width:110px"></label>
       <label class="row" style="gap:4px">خروج<input type="time" data-hout="${s.id}" value="${esc(r.out || "")}" style="width:110px"></label>
       <select data-hst="${s.id}" style="width:auto"><option value="">تلقائي</option>${["v", "x"].map(k => `<option value="${k}" ${r.st === k ? "selected" : ""}>${HR_ST[k]}</option>`).join("")}</select>
@@ -1598,7 +1599,7 @@ function hrAttView(el){
       <input type="text" data-hnote="${s.id}" value="${esc(r.note || "")}" placeholder="ملاحظة" style="width:150px"></div>`; }).join("") || `<div class="card empty">ما فيه أحد دوامه هذا اليوم.</div>`}</div>
     <div class="row" style="margin:10px 0;gap:6px"><button class="btn pri" id="hrSave">حفظ اليوم</button><button class="btn sm" id="hrNow">سجّل دخول اللي ما سجّلوا بالوقت الحالي</button></div>`}`;
   $("#hrD").onchange = e => { S.hrDate = e.target.value || today(); S._hrDraft = null; render(); };
-  const upd = (id, k, v) => { (draft[id] = draft[id] || {})[k] = v; };
+  const upd = (id, k, v) => { (draft[id] = draft[id] || {})[k] = v; S._hrDraft.dirty = true; };
   el.querySelectorAll("[data-hin]").forEach(x => x.onchange = () => { upd(x.dataset.hin, "in", x.value); render(); });
   el.querySelectorAll("[data-hout]").forEach(x => x.onchange = () => { upd(x.dataset.hout, "out", x.value); });
   el.querySelectorAll("[data-hst]").forEach(x => x.onchange = () => { upd(x.dataset.hst, "st", x.value); render(); });
@@ -1606,7 +1607,7 @@ function hrAttView(el){
   if ($("#hrNow")) $("#hrNow").onclick = () => { const n = new Date(), t = hmStr(n.getHours() * 60 + n.getMinutes()); working.forEach(s => { const r = draft[s.id] || {}; if (!r.in && !r.st) upd(s.id, "in", t); }); render(); };
   if ($("#hrSave")) $("#hrSave").onclick = async () => {
     const out = {}; working.forEach(s => { const r = draft[s.id] || {}; out[s.id] = {in: r.in || "", out: r.out || "", st: hrAuto(s, r), note: r.note || "", late: hrLateMin(s, r)}; });
-    try { await setDoc(ref("hrAtt/" + d), {date: d, rec: out, by: S.adminRole, at: new Date().toISOString()}, {merge: true}); logAction("حضور الموظفين", d); toast("انحفظ حضور اليوم"); }
+    try { await setDoc(ref("hrAtt/" + d), {date: d, rec: out, by: S.adminRole, at: new Date().toISOString()}, {merge: true}); logAction("حضور الموظفين", d); S._hrDraft = null; toast("انحفظ حضور اليوم"); }
     catch (e) { handleWriteErr(e); }
   };
   $("#hrTpl").onclick = () => excelDownload("نموذج حضور الموظفين", [{title: "الحضور", rows: [["الرقم", "الاسم", "التاريخ", "الدخول", "الخروج", "ملاحظة"], ...staff.map(s => [s.id, s.name, today(), "08:00", "16:00", ""])], widths: [14, 26, 12, 9, 9, 20]}]);
@@ -1632,18 +1633,56 @@ async function hrImport(f){
     logAction("استيراد حضور الموظفين", `${n} سجل`); toast(`انضاف ${n} سجل`); S._hrDraft = null; }
   catch (x) { handleWriteErr(x); }
 }
+/* the fingerprint clock (ZKTeco, Cloud Server/ADMS): the device sends punches to the push service by itself */
+function hrBioView(el){
+  if (!S._bioSub) { S._bioSub = true; S.subs.push(onSnapshot(ref("hrCfg/bio"), snap => { S.bioCfg = snap.exists() ? snap.data() : {}; if (S.hrTab === "bio" && !busyEditing()) render(); }, e => console.error(e)), () => { S._bioSub = false; S.bioCfg = null; }); }
+  const c = S.bioCfg; if (!c) { el.innerHTML = `<div class="card"><p class="muted" style="margin:0">جاري التحميل…</p></div>`; return; }
+  const host = (() => { try { return new URL((S.site || {}).pushUrl || "").host; } catch { return ""; } })();
+  const sns = c.sns || [], seen = c.seen || {}, ago = t => { if (!t) return "ما اتصل"; const m = Math.round((Date.now() - Date.parse(t)) / 60000); return m < 2 ? "متصل الحين ✓" : m < 60 ? `قبل ${m} دقيقة` : m < 1440 ? `قبل ${Math.round(m / 60)} ساعة` : `قبل ${Math.round(m / 1440)} يوم`; };
+  const fresh = t => t && Date.now() - Date.parse(t) < 15 * 60000;
+  const pending = Object.keys(seen).filter(k => !sns.includes(k));
+  const staff = S.hrStaff || [], noPin = staff.filter(s => s.active !== false && !s.pin);
+  const unkAll = {}; Object.values(S.hrAtt || {}).forEach(d => Object.entries(d.unk || {}).forEach(([p, t]) => unkAll[p] = (unkAll[p] || 0) + t.length));
+  const cmd = c.cmd || {};
+  el.innerHTML = `<div class="card"><h2>جهاز البصمة</h2>
+      <p class="muted" style="margin-top:0">الجهاز يرسل البصمات للنظام بنفسه أول بأول، وتنحسب في «الحضور والانصراف»: أول بصمة باليوم دخول، وآخر بصمة خروج. لازم يكون لكل موظف «رقم البصمة» نفس رقمه في الجهاز.</p>
+      ${sns.length ? sns.map(k => `<div class="item"><div class="grow"><b>🖐 ${esc(k)}</b><div class="muted">آخر اتصال: ${esc(ago((seen[k] || {}).at))}${(seen[k] || {}).lastPunch ? ` · آخر بصمات وصلت: ${esc(ago(seen[k].lastPunch))}` : ""}</div></div><span class="pill ${fresh((seen[k] || {}).at) ? "p" : "a"}">${fresh((seen[k] || {}).at) ? "متصل" : "غير متصل"}</span><button class="btn sm danger" data-biorm="${esc(k)}">إلغاء</button></div>`).join("") : `<div class="notice">ما فيه جهاز معتمد للحين.</div>`}
+      ${pending.map(k => `<div class="notice" style="margin-top:8px">جهاز جديد يحاول يتصل: <b dir="ltr">${esc(k)}</b> (${esc(ago(seen[k].at))}). تأكد إن الرقم نفسه المكتوب ورا جهازك (SN). <button class="btn sm pri" data-bioadd="${esc(k)}">اعتماد</button></div>`).join("")}
+      <div class="row" style="margin-top:10px;gap:6px"><input type="text" id="bioSn" dir="ltr" placeholder="أو اكتب الرقم التسلسلي SN من ورا الجهاز" maxlength="40" class="grow"><button class="btn" id="bioAdd">اعتماد الرقم</button></div></div>
+    <div class="card"><h3 style="margin-top:0">إعداد الجهاز (مرة وحدة)</h3>
+      <ol style="margin:0;padding-inline-start:20px;line-height:2">
+        <li>في الجهاز: <b>M/OK</b> ← <b>COMM.</b> (الاتصال) ← <b>Cloud Server Setting</b>.</li>
+        <li><b>Server Mode</b>: ADMS · <b>Enable Domain Name</b>: ON</li>
+        <li><b>Server Address</b>: <code dir="ltr" style="user-select:all">${esc(host || "— اضبط رابط خدمة الإشعارات أول —")}</code></li>
+        <li><b>Server Port</b>: <code>443</code> و <b>HTTPS</b>: ON. لو ما فيه خيار HTTPS في جهازك: المنفذ <code>80</code>.</li>
+        <li>اطلع من القائمة وانتظر دقيقة. يطلع هنا «جهاز جديد يحاول يتصل»، اضغط «اعتماد».</li>
+      </ol></div>
+    <div class="card"><h3 style="margin-top:0">ربط الموظفين بأرقام البصمة</h3>
+      ${noPin.length ? `<div class="notice err">موظفين بدون رقم بصمة (بصماتهم ما تنحسب): ${noPin.map(s => esc(s.name)).join("، ")}. أضف الرقم من تبويب «الموظفين» ← تعديل.</div>` : `<p class="muted" style="margin:0">كل الموظفين مربوطين ✓</p>`}
+      ${Object.keys(unkAll).length ? `<div class="notice" style="margin-top:8px">أرقام بصمة وصلت من الجهاز هذا الشهر وما هي مربوطة بأي موظف: ${Object.entries(unkAll).map(([p, n]) => `<b>${esc(p)}</b> (${n})`).join("، ")}. اكتب الرقم عند الموظف الصحيح، وبصماته الجاية تنحسب له.</div>` : ""}</div>
+    <div class="card"><h3 style="margin-top:0">سحب سجلات قديمة من الجهاز</h3>
+      <p class="muted" style="margin-top:0">لو الجهاز كان فيه بصمات قبل الربط، أو انقطع النت فترة: اختر الفترة، والجهاز يرسلها في اتصاله الجاي.</p>
+      <div class="row" style="align-items:end;gap:8px"><label class="f" for="bioF" style="width:170px">من<input type="date" id="bioF" value="${esc(today().slice(0, 7) + "-01")}"></label><label class="f" for="bioT" style="width:170px">إلى<input type="date" id="bioT" value="${today()}" max="${today()}"></label><button class="btn" id="bioPull">اطلب السجلات</button></div>
+      ${cmd.id ? `<p class="muted" style="margin:8px 0 0">آخر طلب: ${esc(cmd.from)} → ${esc(cmd.to)} · ${cmd.sent === cmd.id ? "وصل للجهاز ✓" : "ينتظر اتصال الجهاز…"}</p>` : ""}</div>`;
+  const save = async (patch, msg) => { try { await setDoc(ref("hrCfg/bio"), patch, {merge: true}); logAction("جهاز البصمة", msg); toast("انحفظ"); } catch (x) { handleWriteErr(x); } };
+  const add = k => { k = String(k || "").trim().toUpperCase().replace(/[^\w-]/g, ""); if (k.length < 6) return toast("الرقم التسلسلي قصير، انسخه من الملصق ورا الجهاز"); if (sns.includes(k)) return toast("معتمد من قبل"); save({sns: [...sns, k]}, "اعتماد جهاز " + k); };
+  el.querySelectorAll("[data-bioadd]").forEach(b => b.onclick = () => add(b.dataset.bioadd));
+  el.querySelectorAll("[data-biorm]").forEach(b => b.onclick = () => { if (confirm("إلغاء اعتماد الجهاز؟ بصماته الجاية ما تنحسب لين تعتمده من جديد.")) save({sns: sns.filter(x => x !== b.dataset.biorm)}, "إلغاء جهاز " + b.dataset.biorm); });
+  $("#bioAdd").onclick = () => add($("#bioSn").value);
+  $("#bioPull").onclick = () => { const f = $("#bioF").value, t = $("#bioT").value; if (!f || !t || f > t) return toast("اختر فترة صحيحة"); save({cmd: {id: String(Math.floor(Date.now() / 1000) % 100000000), from: f, to: t, at: new Date().toISOString()}}, `سحب سجلات ${f} → ${t}`); };
+}
 function hrStaffView(el){
   const list = S.hrStaff || [], ed = S._hrEd;
   el.innerHTML = `<div class="card"><h2>${ed && ed.id ? "تعديل موظف" : "إضافة موظف"}</h2>
     <div class="row"><label class="f grow" for="hsN">الاسم<input type="text" id="hsN" value="${esc(ed ? ed.name : "")}"></label><label class="f grow" for="hsJ">الوظيفة<input type="text" id="hsJ" value="${esc(ed ? ed.job || "" : "")}" placeholder="مدرب، محاسب، استقبال…"></label><label class="f grow" for="hsDp">القسم<input type="text" id="hsDp" value="${esc(ed ? ed.dept || "" : "")}"></label></div>
-    <div class="row"><label class="f grow" for="hsP">الجوال<input type="tel" id="hsP" dir="ltr" value="${esc(ed ? ed.phone || "" : "")}" placeholder="05xxxxxxxx"></label><label class="f" for="hsF" style="width:120px">بداية الدوام<input type="time" id="hsF" value="${esc(ed ? ed.from || "08:00" : "08:00")}"></label><label class="f" for="hsT" style="width:120px">نهاية الدوام<input type="time" id="hsT" value="${esc(ed ? ed.to || "16:00" : "16:00")}"></label><label class="f" for="hsG" style="width:120px">سماح التأخير (د)<input type="number" id="hsG" min="0" max="120" value="${ed ? ed.grace ?? 15 : 15}"></label><label class="f" for="hsS" style="width:150px">تاريخ المباشرة<input type="date" id="hsS" value="${esc(ed ? ed.start || "" : "")}"></label></div>
+    <div class="row"><label class="f grow" for="hsP">الجوال<input type="tel" id="hsP" dir="ltr" value="${esc(ed ? ed.phone || "" : "")}" placeholder="05xxxxxxxx"></label><label class="f" for="hsF" style="width:120px">بداية الدوام<input type="time" id="hsF" value="${esc(ed ? ed.from || "08:00" : "08:00")}"></label><label class="f" for="hsT" style="width:120px">نهاية الدوام<input type="time" id="hsT" value="${esc(ed ? ed.to || "16:00" : "16:00")}"></label><label class="f" for="hsG" style="width:120px">سماح التأخير (د)<input type="number" id="hsG" min="0" max="120" value="${ed ? ed.grace ?? 15 : 15}"></label><label class="f" for="hsS" style="width:150px">تاريخ المباشرة<input type="date" id="hsS" value="${esc(ed ? ed.start || "" : "")}"></label><label class="f" for="hsPin" style="width:130px">رقم البصمة<input type="text" id="hsPin" dir="ltr" inputmode="numeric" maxlength="24" value="${esc(ed ? ed.pin || "" : "")}" placeholder="رقمه في الجهاز"></label></div>
     <div class="row" style="gap:10px;margin:6px 0">أيام الدوام: ${WDAYS.map((w, i) => `<label class="row" style="gap:3px"><input type="checkbox" data-hday="${i}" ${(ed ? ed.days || [0, 1, 2, 3, 4] : [0, 1, 2, 3, 4]).includes(i) ? "checked" : ""}>${w}</label>`).join("")}</div>
     <div class="row" style="gap:6px"><button class="btn pri" id="hsSave">${ed && ed.id ? "حفظ" : "+ إضافة"}</button>${ed ? `<button class="btn" id="hsCancel">إلغاء</button>` : ""}</div></div>
-  <div class="list">${list.map(s => `<div class="item"><div class="grow"><b>${esc(s.name)}</b> ${s.active === false ? `<span class="pill a">موقوف</span>` : ""}<div class="muted">${esc(s.job || "")}${s.dept ? " · " + esc(s.dept) : ""} · ${esc(s.from || "08:00")}–${esc(s.to || "16:00")} · ${(s.days || [0, 1, 2, 3, 4]).map(i => WDAYS[i]).join("، ")}</div></div>
+  <div class="list">${list.map(s => `<div class="item"><div class="grow"><b>${esc(s.name)}</b> ${s.active === false ? `<span class="pill a">موقوف</span>` : ""}<div class="muted">${esc(s.job || "")}${s.dept ? " · " + esc(s.dept) : ""} · ${esc(s.from || "08:00")}–${esc(s.to || "16:00")} · ${(s.days || [0, 1, 2, 3, 4]).map(i => WDAYS[i]).join("، ")}${s.pin ? ` · 🖐 بصمة ${esc(s.pin)}` : ` · <span style="color:var(--abs)">بدون رقم بصمة</span>`}</div></div>
     <button class="btn sm" data-hsed="${s.id}">تعديل</button><button class="btn sm" data-hsact="${s.id}">${s.active === false ? "تفعيل" : "إيقاف"}</button></div>`).join("") || `<div class="card empty">ما فيه موظفين للحين.</div>`}</div>`;
   $("#hsSave").onclick = async () => {
-    const d = {name: $("#hsN").value.trim().slice(0, 80), job: $("#hsJ").value.trim().slice(0, 60), dept: $("#hsDp").value.trim().slice(0, 60), phone: $("#hsP").value.trim() ? normPhone($("#hsP").value) : "", from: $("#hsF").value || "08:00", to: $("#hsT").value || "16:00", grace: Math.max(0, Math.min(120, Number($("#hsG").value) || 0)), start: $("#hsS").value || "", days: [...el.querySelectorAll("[data-hday]:checked")].map(x => Number(x.dataset.hday))};
-    if (!d.name) return toast("اكتب اسم الموظف"); if (!d.days.length) return toast("اختر أيام الدوام");
+    const d = {name: $("#hsN").value.trim().slice(0, 80), job: $("#hsJ").value.trim().slice(0, 60), dept: $("#hsDp").value.trim().slice(0, 60), phone: $("#hsP").value.trim() ? normPhone($("#hsP").value) : "", from: $("#hsF").value || "08:00", to: $("#hsT").value || "16:00", grace: Math.max(0, Math.min(120, Number($("#hsG").value) || 0)), start: $("#hsS").value || "", pin: $("#hsPin").value.trim().replace(/[^\w]/g, "").slice(0, 24), days: [...el.querySelectorAll("[data-hday]:checked")].map(x => Number(x.dataset.hday))};
+    if (!d.name) return toast("اكتب اسم الموظف"); if (d.pin && list.some(s => s.pin === d.pin && (!ed || s.id !== ed.id))) return toast("رقم البصمة هذا مستخدم لموظف ثاني"); if (!d.days.length) return toast("اختر أيام الدوام");
     const id = ed && ed.id ? ed.id : "e" + Date.now().toString(36);
     try { await setDoc(ref("hrStaff/" + id), {...d, active: ed && ed.id ? ed.active !== false : true}, {merge: true}); logAction("بيانات موظف", d.name); S._hrEd = null; toast("انحفظ"); render(); }
     catch (x) { handleWriteErr(x); }
@@ -2659,7 +2698,7 @@ function renderAdmin(app){
   if (RO()) {
     const tabsRO = [["tasks", "المهام" + taskBadge()], ["weekly", "التقرير الأسبوعي"], ["dash", "لوحة اليوم"], ["kpi", "المؤشرات"], ["follow", "المتابعة"], ["report", "التقارير"], ["finance", "المالية"], ["hr", "الموارد البشرية"], ["logs", "سجل الإدارات"], ["archive", "الأرشيف"]];
     if (!tabsRO.some(([k]) => k === S.aTab)) S.aTab = "tasks";
-    app.innerHTML = `<div class="notice">بوابة المالك: تطّلع على كل أعمال المعهد وتصدّرها، وترسل مهام للإدارات وتستلم تقاريرها. التعديل على البيانات يبقى عند الإدارات.</div><div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabsRO.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
+    app.innerHTML = `<div class="notice">بوابة الجهة الرقابية: تطّلع على كل أعمال المعهد وتصدّرها، وترسل مهام للإدارات وتستلم تقاريرها. التعديل على البيانات يبقى عند الإدارات.</div><div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabsRO.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
     app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
     ({tasks: tasksTab, weekly: weeklyTab, dash: adminDash, kpi: adminKpi, follow: adminFollow, report: adminReport, finance: adminFinance, hr: hrTab, logs: adminLogs, archive: adminArchive})[S.aTab]($("#ab"));
     if (["finance", "hr", "logs"].includes(S.aTab)) ownerReadOnly($("#ab"));
@@ -2670,13 +2709,13 @@ function renderAdmin(app){
     app.innerHTML = `<div id="ab"></div>`; adminFinance($("#ab")); return;
   }
   if (MAILONLY()) {
-    const mt = [...(S.adminRole === "hr" ? [["hr", "الموارد البشرية"]] : []), ["mail", "البريد" + mailBadge()], ["tasks", "مهام المالك" + taskBadge()]];
+    const mt = [...(S.adminRole === "hr" ? [["hr", "الموارد البشرية"]] : []), ["mail", "البريد" + mailBadge()], ["tasks", "مهام الجهة الرقابية" + taskBadge()]];
     if (!mt.some(([k]) => k === S.aTab)) S.aTab = mt[0][0];
     app.innerHTML = `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${mt.map(([k, v]) => `<button class="tab ${S.aTab === k ? "on" : ""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
     app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
     ({hr: hrTab, mail: mailTab, tasks: tasksTab})[S.aTab]($("#ab")); return;
   }
-  const tabs = [["dash","لوحة اليوم"],["kpi","المؤشرات"],["groups","المقررات والطلاب"],["students","الطلاب"],["msgs","الرسائل الجماعية"],["trainers","المدربين والرموز"],["grades","الدرجات"],["exams","الاختبارات"],["camp","المعسكر"],["follow","المتابعة"],["excuses","الأعذار"],["areqs","طلبات الطلاب" + ((S.aReqs || []).some(r => r.status === "new") ? ` (${S.aReqs.filter(r => r.status === "new").length})` : "")],["evals","التقييمات"],["report","التقارير"],["courses","الدورات والشهادات"],["sign","طلبات التوقيع"],["tasks","مهام المالك" + taskBadge()],["memos","المراسلات" + memoBadge()],["mail","البريد" + mailBadge()],...(MEET() ? [["live","المحاضرات والتسجيلات"]] : []),["system","النظام"],...(S.adminRole === "admin" ? [["hr","الموارد البشرية"]] : []),...(SEES_FIN() ? [["finance","المالية" + ((S.fReqs || []).some(r => r.status === "fin_signed") ? ` (${(S.fReqs || []).filter(r => r.status === "fin_signed").length})` : "")]] : []),["archive","الأرشيف"],...(S.adminRole === "admin" ? [["weekly","التقرير الأسبوعي"],["logs","السجل"]] : [])];
+  const tabs = [["dash","لوحة اليوم"],["kpi","المؤشرات"],["groups","المقررات والطلاب"],["students","الطلاب"],["msgs","الرسائل الجماعية"],["trainers","المدربين والرموز"],["grades","الدرجات"],["exams","الاختبارات"],["camp","المعسكر"],["follow","المتابعة"],["excuses","الأعذار"],["areqs","طلبات الطلاب" + ((S.aReqs || []).some(r => r.status === "new") ? ` (${S.aReqs.filter(r => r.status === "new").length})` : "")],["evals","التقييمات"],["report","التقارير"],["courses","الدورات والشهادات"],["sign","طلبات التوقيع"],["tasks","مهام الجهة الرقابية" + taskBadge()],["memos","المراسلات" + memoBadge()],["mail","البريد" + mailBadge()],...(MEET() ? [["live","المحاضرات والتسجيلات"]] : []),["system","النظام"],...(S.adminRole === "admin" ? [["hr","الموارد البشرية"]] : []),...(SEES_FIN() ? [["finance","المالية" + ((S.fReqs || []).some(r => r.status === "fin_signed") ? ` (${(S.fReqs || []).filter(r => r.status === "fin_signed").length})` : "")]] : []),["archive","الأرشيف"],...(S.adminRole === "admin" ? [["weekly","التقرير الأسبوعي"],["logs","السجل"]] : [])];
   if (!tabs.some(([k]) => k === S.aTab)) S.aTab = "dash";
   const waiting = Object.values(S.grades).filter(x => x.status === "submitted").length;
   app.innerHTML = `${backupNag()}${absNag()}${S.sys && S.sys.maintenance ? `<div class="notice err">وضع الصيانة شغّال: الموقع مقفل على الكل ما عدا الإدارة. تطفيه من تبويب "النظام".</div>` : ""}<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}${k === "grades" && waiting ? ` (${waiting})` : ""}${k === "follow" && S.allAtt && ["academic", "admin"].includes(S.adminRole) ? (n => n ? ` (${n})` : "")(absAlerts().alerts.filter(alertWaiting).length) : ""}${k === "excuses" && (S.excuses || []).filter(x => x.status === "pending").length ? ` (${S.excuses.filter(x => x.status === "pending").length})` : ""}</button>`).join("")}</div></div><div id="ab"></div>`;
@@ -4740,7 +4779,7 @@ function adminLogs(el){
    The owner (the oversight account) sends a task to one department. Only that department, the general administration
    and the owner see it. The department reports back (text + an optional file); the owner approves it or returns it. */
 const TASK_TO = {admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", admission: "القبول والتسجيل وخدمة العملاء", business: "الشراكات وقطاع الشركات", hr: "الموارد البشرية"};
-const TASK_ST = {new: "جديدة", seen: "قيد التنفيذ", done: "منجزة · بانتظار اعتماد المالك", returned: "معادة للاستكمال", closed: "معتمدة ✓"};
+const TASK_ST = {new: "جديدة", seen: "قيد التنفيذ", done: "منجزة · بانتظار اعتماد الجهة الرقابية", returned: "معادة للاستكمال", closed: "معتمدة ✓"};
 const TASK_PILL = {new: "l", seen: "", done: "l", returned: "a", closed: "p"};
 const TASK_MAX = 700 * 1024;
 function watchTasks(){
@@ -4772,10 +4811,10 @@ function taskCard(t, mode){   // mode: owner | dept | view
   return `<div class="card" style="margin-bottom:10px;${t.pri === "high" ? "border-inline-start:4px solid var(--abs)" : ""}">
     <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
       <div class="grow" style="min-width:200px"><b>${t.pri === "high" ? "🔴 " : ""}${esc(t.title)}</b>
-        <div class="muted">${mode === "dept" ? "من المالك" : "إلى " + esc(TASK_TO[t.to] || t.to)} · ${esc(fmtIso(t.at))}${t.due ? ` · التسليم <span style="${late ? "color:var(--abs);font-weight:600" : ""}">${esc(t.due)}${late ? " (متأخرة)" : ""}</span>` : ""}</div></div>
+        <div class="muted">${mode === "dept" ? "من الجهة الرقابية" : "إلى " + esc(TASK_TO[t.to] || t.to)} · ${esc(fmtIso(t.at))}${t.due ? ` · التسليم <span style="${late ? "color:var(--abs);font-weight:600" : ""}">${esc(t.due)}${late ? " (متأخرة)" : ""}</span>` : ""}</div></div>
       <span class="pill ${TASK_PILL[t.status] || ""}">${esc(TASK_ST[t.status] || t.status)}</span></div>
     ${t.body ? `<p style="white-space:pre-wrap;margin:8px 0">${esc(t.body)}</p>` : ""}${fileBtn("o", t.ofile)}
-    ${t.status === "returned" && t.note ? `<div class="notice err" style="margin-top:8px">ملاحظة المالك: ${esc(t.note)}</div>` : ""}
+    ${t.status === "returned" && t.note ? `<div class="notice err" style="margin-top:8px">ملاحظة الجهة الرقابية: ${esc(t.note)}</div>` : ""}
     ${t.report || t.rfile ? `<div style="margin-top:10px;padding:10px;border-radius:10px;background:var(--soft, #f4f6f4)"><b>تقرير الإدارة</b>${t.doneAt ? ` <span class="muted">· ${esc(fmtIso(t.doneAt))}${t.doneBy ? " · " + esc(t.doneBy) : ""}</span>` : ""}
       ${t.report ? `<p style="white-space:pre-wrap;margin:6px 0">${esc(t.report)}</p>` : ""}${fileBtn("r", t.rfile)}</div>` : ""}
     ${mode === "owner" ? `<div class="row" style="margin-top:10px;gap:6px;flex-wrap:wrap">
@@ -4808,7 +4847,7 @@ function bindTaskCards(el){
     try {
       const rfile = f ? await taskFilePut(id, "r", f) : (t.rfile || null);
       await setDoc(ref("tasks/" + id), {status: "done", report, rfile, doneAt: new Date().toISOString(), doneBy: (ROLES[S.adminRole] || S.adminRole)}, {merge: true});
-      logAction("تسليم مهمة من المالك", t.title); notify("task", id); toast("تسلّمت المهمة ✓ ووصلت للمالك");
+      logAction("تسليم مهمة من الجهة الرقابية", t.title); notify("task", id); toast("تسلّمت المهمة ✓ ووصلت للجهة الرقابية");
     } catch (e) { console.error(e); toast(e.message === "big" ? "الملف أكبر من 700 ك.ب — صغّره أو ارفعه PDF مضغوط" : "تعذّر التسليم"); b.disabled = false; }
   });
 }
@@ -4819,7 +4858,7 @@ function tasksTab(el){
   // opening the list tells the owner the department has seen its new tasks
   mine.filter(t => t.status === "new").forEach(t => setDoc(ref("tasks/" + t.id), {status: "seen", seenAt: new Date().toISOString()}, {merge: true}).catch(() => {}));
   const open = mine.filter(t => t.status !== "closed"), done = mine.filter(t => t.status === "closed");
-  el.innerHTML = `<div class="card"><h2>مهام المالك</h2><p class="muted" style="margin:0">المهام اللي يرسلها المالك لإدارتك. ما يشوفها غيرك وغير الإدارة العامة والمالك. لما تخلص المهمة اكتب التقرير وارفع الملف إن وجد واضغط «تسليم».</p></div>
+  el.innerHTML = `<div class="card"><h2>مهام الجهة الرقابية</h2><p class="muted" style="margin:0">المهام اللي ترسلها الجهة الرقابية لإدارتك. ما يشوفها غيرك وغير الإدارة العامة والجهة الرقابية. لما تخلص المهمة اكتب التقرير وارفع الملف إن وجد واضغط «تسليم».</p></div>
     ${open.map(t => taskCard(t, "dept")).join("") || `<div class="card empty">ما عندك مهام مفتوحة 👍</div>`}
     ${done.length ? `<details class="card"><summary><b>المعتمدة (${done.length})</b></summary><div style="margin-top:10px">${done.map(t => taskCard(t, "view")).join("")}</div></details>` : ""}
     ${S.adminRole === "admin" ? `<details class="card"><summary><b>كل مهام الإدارات (اطلاع) · ${(S.tasks || []).filter(t => t.to !== "admin").length}</b></summary><div style="margin-top:10px">${(S.tasks || []).filter(t => t.to !== "admin").map(t => taskCard(t, "view")).join("") || `<p class="muted">ما فيه.</p>`}</div></details>` : ""}`;
@@ -4891,7 +4930,7 @@ async function archCollect(days){
   const out = [];   // {kind, label, dept, date, path, fname, done}
   (S.tasks || []).forEach(t => ["o", "r"].forEach(side => { const f = side === "o" ? t.ofile : t.rfile; if (!f || f.archived) return;
     const date = f.at || (side === "r" ? t.doneAt : t.at) || t.at || ""; if (date >= cut) return;
-    out.push({kind: "مهمة", dept: TASK_TO[t.to] || t.to, label: `${t.title} — ${side === "o" ? "مرفق المالك" : "تقرير الإدارة"}`, date, path: `taskFiles/${t.id}_${side}`, fname: f.name, task: t.id, side}); }));
+    out.push({kind: "مهمة", dept: TASK_TO[t.to] || t.to, label: `${t.title} — ${side === "o" ? "مرفق الجهة الرقابية" : "تقرير الإدارة"}`, date, path: `taskFiles/${t.id}_${side}`, fname: f.name, task: t.id, side}); }));
   try {
     const snap = await getDocs(collection(db, "signReqs"));
     snap.docs.forEach(d => { const r = {id: d.id, ...d.data()}; if (r.filesArchived || r.status === "pending" || (r.at || "") >= cut) return;
@@ -5436,7 +5475,7 @@ const paysOf = num => (S.pays || []).filter(p => p.num === num);
 function adminFinance(el){
   let t = S.finTab || "sum";
   const nW = fReqWaiting();
-  const tabs = [["sum", "الملخص"], ["req", "طلبات الطلاب" + (nW ? ` (${nW})` : "")], ["acc", "حسابات الطلاب"], ["pay", "الدفعات"], ["rcpt", "الإيصالات"], ["late", "المتأخرين"], ["exp", "المصروفات"], ["sal", "رواتب المدربين"], ["part", "الشركاء والعمولات"], ["rep", "التقرير الشهري"], ...(FIN() ? [["tasks", "مهام المالك" + taskBadge()], ["sign", "طلبات التوقيع"], ["memo", "المراسلات" + memoBadge()], ["mail", "البريد" + mailBadge()]] : []), ...(RO() ? [] : [["set", "الإعدادات"]])];
+  const tabs = [["sum", "الملخص"], ["req", "طلبات الطلاب" + (nW ? ` (${nW})` : "")], ["acc", "حسابات الطلاب"], ["pay", "الدفعات"], ["rcpt", "الإيصالات"], ["late", "المتأخرين"], ["exp", "المصروفات"], ["sal", "رواتب المدربين"], ["part", "الشركاء والعمولات"], ["rep", "التقرير الشهري"], ...(FIN() ? [["tasks", "مهام الجهة الرقابية" + taskBadge()], ["sign", "طلبات التوقيع"], ["memo", "المراسلات" + memoBadge()], ["mail", "البريد" + mailBadge()]] : []), ...(RO() ? [] : [["set", "الإعدادات"]])];
   if (RO()) { const keep = ["sum", "acc", "pay", "rcpt", "late", "exp", "sal", "part", "rep"]; for (let i = tabs.length - 1; i >= 0; i--) if (!keep.includes(tabs[i][0])) tabs.splice(i, 1); if (!keep.includes(S.finTab || "sum")) S.finTab = "sum"; t = S.finTab || "sum"; }
   el.innerHTML = `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k, v]) => `<button class="tab ${t === k ? "on" : ""}" data-ft="${k}">${v}</button>`).join("")}</div></div><div id="fb"></div>`;
   el.querySelectorAll("[data-ft]").forEach(b => b.onclick = () => { S.finTab = b.dataset.ft; render(); });
