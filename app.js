@@ -1448,17 +1448,17 @@ const CORR_BODY = {circ: "السلام عليكم ورحمة الله وبركا
 const CORR_ACT = ["للاطلاع", "لاتخاذ اللازم", "للإفادة", "للدراسة والرأي", "للحفظ"];
 const corrYear = d => String(d || today()).slice(0, 4);
 const corrTitle = c => c.kind === "circ" ? `تعميم داخلي رقم: ( ${c.no} ) لعام ${c.year}م` : c.kind === "out" ? `صادر رقم: ${c.no} / ${c.year}` : `وارد رقم: ${c.no} / ${c.year}`;
-const corrToN = r => CORR_TO[r] || MEET_N[r] || r;
+const corrToN = r => CORR_TO[r] || MEET_N[r] || (/^t-/.test(r) && S.trainers && S.trainers[r] ? trainerTitle(S.trainers[r]) : r);
 // a circular's addressee line in words: "جميع منسوبي المعهد من موظفين ومدربين ومدربات", or the departments by name
 function corrAud(to){
-  const st = to.includes("staff"), tr = to.includes("trainers"), su = to.includes("students"), ds = to.filter(r => MEET_DEPTS.includes(r)).map(r => MEET_N[r]);
+  const st = to.includes("staff"), tr = to.includes("trainers"), su = to.includes("students"), ds = to.filter(r => MEET_DEPTS.includes(r)).map(r => MEET_N[r]), ts = to.filter(r => /^t-/.test(r)).map(corrToN);
   if (st && tr && su) return "جميع منسوبي المعهد ومتدربيه";
   if (st && tr) return "جميع منسوبي المعهد من موظفين ومدربين ومدربات";
-  return [st ? "جميع الإدارات" : "", ...ds, tr ? "جميع المدربين والمدربات" : "", su ? "جميع المتدربين والمتدربات" : ""].filter(Boolean).join("، ");
+  return [st ? "جميع الإدارات" : "", ...ds, tr ? "جميع المدربين والمدربات" : "", ...ts, su ? "جميع المتدربين والمتدربات" : ""].filter(Boolean).join("، ");
 }
 const corrKey = () => S.role === "student" ? "st-" + S.myNum : S.role === "trainer" ? S.me : S.adminRole;
 const corrStaff = () => S.role === "admin" && !!S.adminRole;
-const corrMine = c => { if (S.role === "student") return (c.to || []).includes("students"); if (S.role === "trainer") return (c.to || []).includes("trainers");
+const corrMine = c => { if (S.role === "student") return (c.to || []).includes("students"); if (S.role === "trainer") return (c.to || []).includes("trainers") || (c.to || []).includes(S.me);
   return c.by !== S.adminRole && ((c.to || []).includes("staff") || (c.to || []).includes(S.adminRole)); };
 const corrUnread = () => (S.corr || []).filter(c => c.kind !== "out" && corrMine(c) && !(c.seen || {})[corrKey()]);
 const corrBadge = () => { const n = corrUnread().length; return n ? ` (${n})` : ""; };
@@ -1466,7 +1466,7 @@ function watchCorr(){
   if (S._corrSub || !S.authUser || (S.role === "trainer" && !S.me)) return; S._corrSub = true;
   const all = S.role === "admin" && ["admin", "auditor"].includes(S.adminRole);
   const qs = all ? {a: collection(db, "corr")} : S.role === "student" ? {s: query(collection(db, "corr"), where("to", "array-contains", "students"))}
-    : S.role === "trainer" ? {t: query(collection(db, "corr"), where("to", "array-contains", "trainers"))}
+    : S.role === "trainer" ? {t: query(collection(db, "corr"), where("to", "array-contains", "trainers")), u: query(collection(db, "corr"), where("to", "array-contains", S.me))}
     : {m: query(collection(db, "corr"), where("to", "array-contains", S.adminRole)), g: query(collection(db, "corr"), where("to", "array-contains", "staff")), b: query(collection(db, "corr"), where("by", "==", S.adminRole))};
   const parts = {}, seenQ = {}; let ready = false;
   Object.entries(qs).forEach(([k, q]) => S.subs.push(onSnapshot(q, snap => {
@@ -1529,7 +1529,7 @@ function corrForm(el, kind){
   const F = S._corrF = S._corrF && S._corrF.kind === kind ? S._corrF : {kind, date: today(), subject: "", body: CORR_BODY[kind] || "", to: kind === "circ" ? ["staff", "trainers"] : [], party: "", cc: "", theirNo: "", theirDate: "", action: CORR_ACT[0], signer: S.adminRole === "admin" ? "إدارة المعهد" : MEET_N[S.adminRole] || "", signerName: S.adminRole === "admin" ? "خالد الحسيني" : "", sign: S.adminRole === "admin" ? {director: okImg((S.sigs || {}).director), stamp: okImg(S.stamp)} : {}, open: false};
   const year = corrYear(F.date), boss = S.adminRole === "admin";
   if (!F.open) { el.innerHTML = `<div class="card" style="padding:10px"><button class="btn pri" id="crOpen">+ ${kind === "in" ? "تسجيل وارد جديد" : kind === "out" ? "صادر جديد" : "تعميم جديد"}</button> <span class="muted">الرقم يتولّد تلقائياً</span></div>`; $("#crOpen").onclick = () => { F.open = true; render(); }; return; }
-  const tos = kind === "circ" ? [["staff", "كل الإدارات"], ...MEET_DEPTS.filter(r => r !== "admin").map(r => [r, MEET_N[r]]), ["trainers", "المدربين والمدربات"], ["students", "المتدربين والمتدربات"]]
+  const tos = kind === "circ" ? [["staff", "كل الإدارات"], ...MEET_DEPTS.filter(r => r !== "admin").map(r => [r, MEET_N[r]]), ["students", "المتدربين والمتدربات"]]
     : [["staff", "كل الإدارات"], ...MEET_DEPTS.filter(r => r !== S.adminRole).map(r => [r, MEET_N[r]])];
   el.innerHTML = `<div class="card"><h2 style="margin-top:0">${CORR_K[kind][2]} ${kind === "in" ? "تسجيل وارد" : kind === "out" ? "صادر جديد" : "تعميم جديد"} <span class="muted" style="font-size:14px">· الرقم يتولّد عند الحفظ</span></h2>
     <div class="row" style="gap:8px;flex-wrap:wrap"><label class="f" style="width:170px">التاريخ<input type="date" id="crD" value="${esc(F.date)}"></label><label class="f grow">الموضوع *<input type="text" id="crS" maxlength="200" value="${esc(F.subject)}"></label></div>
@@ -1537,18 +1537,26 @@ function corrForm(el, kind){
       : kind === "out" ? `<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px"><label class="f grow">إلى (الجهة) *<input type="text" id="crP" maxlength="160" value="${esc(F.party)}" placeholder="مثل: سعادة مدير فرع المؤسسة العامة للتدريب التقني والمهني بمنطقة حائل"></label><label class="f grow">نسخة إلى (اختياري)<input type="text" id="crCC" maxlength="160" value="${esc(F.cc)}"></label></div>` : ""}
     <label class="f" style="margin-top:6px">${kind === "in" ? "ملخص الخطاب" : "نص " + CORR_K[kind][0]} ${kind === "in" ? "" : "*"}<textarea id="crBody" rows="${kind === "in" ? 3 : 8}" maxlength="8000" placeholder="${kind === "circ" ? "السلام عليكم ورحمة الله وبركاته،\n\n…\n\nشاكرين لكم تعاونكم والتزامكم." : ""}">${esc(F.body)}</textarea></label>
     <div style="margin-top:8px"><b>${kind === "circ" ? "يوجَّه إلى" : kind === "in" ? "إحالة إلى (اختياري)" : "يوصل نسخة داخلية إلى (اختياري)"}:</b><div class="row" style="gap:12px;flex-wrap:wrap;margin-top:6px">${tos.map(([k, v]) => `<label class="row" style="gap:4px"><input type="checkbox" data-cto="${k}" ${F.to.includes(k) ? "checked" : ""}> ${esc(v)}</label>`).join("")}</div></div>
+    ${kind === "circ" ? (() => { const trs = Object.values(S.trainers || {}).sort((x, y) => trainerTitle(x).localeCompare(trainerTitle(y), "ar")), pick = F.to.filter(x => /^t-/.test(x));
+      return `<div style="margin-top:8px;padding:8px 10px;border:1px dashed var(--line);border-radius:10px"><b>المدربين:</b> <label class="row" style="gap:4px;display:inline-flex;margin-inline-start:8px"><input type="radio" name="crTr" value="all" ${F.to.includes("trainers") ? "checked" : ""}> الكل</label>
+        <label class="row" style="gap:4px;display:inline-flex;margin-inline-start:8px"><input type="radio" name="crTr" value="some" ${!F.to.includes("trainers") && (pick.length || F.trSome) ? "checked" : ""}> مدربين محددين</label><label class="row" style="gap:4px;display:inline-flex;margin-inline-start:8px"><input type="radio" name="crTr" value="none" ${!F.to.includes("trainers") && !pick.length && !F.trSome ? "checked" : ""}> بدون</label>
+        ${!F.to.includes("trainers") && (pick.length || F.trSome) ? `<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:6px">${trs.map(t => `<label class="row" style="gap:4px"><input type="checkbox" data-ctr="${esc(t.id)}" ${pick.includes(t.id) ? "checked" : ""}> ${esc(trainerTitle(t))}</label>`).join("") || `<span class="muted">ما فيه مدربين</span>`}</div>` : ""}</div>`; })() : ""}
     ${kind === "in" ? `<label class="f" style="margin-top:6px;max-width:260px">التوجيه<select id="crA">${CORR_ACT.map(a => `<option ${F.action === a ? "selected" : ""}>${a}</option>`).join("")}</select></label>` : ""}
     <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px;align-items:flex-end"><label class="f grow">${kind === "in" ? "صورة الخطاب الوارد" : "مرفقات"} (اختياري، حتى 20 ميجا)<input type="file" id="crF" multiple accept="image/*,application/pdf,.pdf,.doc,.docx,.xlsx"></label>
       ${kind !== "in" ? `<label class="f" style="min-width:180px">جهة التوقيع<input type="text" id="crSg" maxlength="80" value="${esc(F.signer)}"></label><label class="f" style="min-width:160px">الاسم<input type="text" id="crSgN" maxlength="80" value="${esc(F.signerName || "")}"></label>${boss ? `<label class="row" style="gap:4px" title="${okImg((S.sigs || {}).director) ? "" : "ارفعه أول من النظام ← توقيع مدير المعهد"}"><input type="checkbox" id="crSd" ${F.sign.director ? "checked" : ""} ${okImg((S.sigs || {}).director) ? "" : "disabled"}> التوقيع</label><label class="row" style="gap:4px" title="${okImg(S.stamp) ? "" : "ارفعه أول من النظام ← الختم الإلكتروني"}"><input type="checkbox" id="crSt" ${F.sign.stamp ? "checked" : ""} ${okImg(S.stamp) ? "" : "disabled"}> الختم</label>` : ""}` : ""}</div>
     <div class="row" style="gap:8px;margin-top:10px"><button class="btn pri" id="crSave">${kind === "in" ? "تسجيل الوارد" : "حفظ وإصدار"}${kind !== "in" ? " وطباعة" : ""}</button><button class="btn" id="crCancel">إلغاء</button></div></div>`;
   const read = () => { F.date = $("#crD").value || today(); F.subject = $("#crS").value.trim(); F.body = $("#crBody").value; F.party = $("#crP") ? $("#crP").value.trim() : ""; F.cc = $("#crCC") ? $("#crCC").value.trim() : "";
     F.theirNo = $("#crTN") ? $("#crTN").value.trim() : ""; F.theirDate = $("#crTD") ? $("#crTD").value : ""; F.action = $("#crA") ? $("#crA").value : ""; F.signer = $("#crSg") ? $("#crSg").value.trim() : F.signer; F.signerName = $("#crSgN") ? $("#crSgN").value.trim() : F.signerName || "";
-    F.sign = {director: !!($("#crSd") && $("#crSd").checked), stamp: !!($("#crSt") && $("#crSt").checked)}; F.to = [...el.querySelectorAll("[data-cto]")].filter(x => x.checked).map(x => x.dataset.cto); };
+    F.sign = {director: !!($("#crSd") && $("#crSd").checked), stamp: !!($("#crSt") && $("#crSt").checked)}; F.to = [...el.querySelectorAll("[data-cto]")].filter(x => x.checked).map(x => x.dataset.cto);
+    const tr = (el.querySelector("[name=crTr]:checked") || {}).value;
+    if (tr === "all") F.to.push("trainers"); else if (tr === "some") F.to.push(...[...el.querySelectorAll("[data-ctr]")].filter(x => x.checked).map(x => x.dataset.ctr)); };
+  el.querySelectorAll("[name=crTr]").forEach(x => x.addEventListener("change", () => { read(); F.trSome = x.value === "some"; render(); }));
   el.querySelectorAll("input:not([type=file]),textarea,select").forEach(x => x.addEventListener("change", read));
   $("#crCancel").onclick = () => { S._corrF = null; render(); };
   $("#crSave").onclick = async e => {
     read();
     if (!F.subject) return toast("اكتب الموضوع"); if (kind !== "in" && !F.body.trim()) return toast("اكتب النص"); if (kind !== "circ" && !F.party) return toast(kind === "in" ? "اكتب الجهة المرسلة" : "اكتب الجهة المرسل لها");
+    if (kind === "circ" && F.trSome && !F.to.some(x => /^t-/.test(x)) && !F.to.includes("trainers")) return toast("اختر المدربين");
     if (kind === "circ" && !F.to.length) return toast("اختر لمن يوجَّه التعميم");
     if (F.to.includes("staff")) F.to = F.to.filter(x => x === "staff" || !MEET_DEPTS.includes(x));
     const files = [...($("#crF").files || [])]; if (files.some(f => f.size > 20 * 1024 ** 2)) return toast("ملف أكبر من 20 ميجا");
@@ -1581,7 +1589,7 @@ function corrModal(){
     corrList($("#crML"), l, "ما وصلك شي للحين."); return;
   }
   const mine = corrMine(c), key = corrKey(), seen = c.seen || {}, reps = c.replies || {}, owner = c.by === S.adminRole || ["admin", "auditor"].includes(S.adminRole);
-  const audience = c.kind === "circ" || c.kind === "in" ? (c.to || []).flatMap(r => r === "staff" ? MEET_DEPTS.filter(x => x !== c.by) : MEET_DEPTS.includes(r) ? [r] : []) : [];
+  const audience = c.kind === "circ" || c.kind === "in" ? (c.to || []).flatMap(r => r === "staff" ? MEET_DEPTS.filter(x => x !== c.by) : MEET_DEPTS.includes(r) || /^t-/.test(r) ? [r] : []) : [];
   $("#modalBox").innerHTML = `<div class="row" style="justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0">${CORR_K[c.kind][2]} ${esc(corrTitle(c))}</h2><div class="row" style="gap:6px"><button class="btn sm gold" id="crPr">🖨️ طباعة</button><button class="btn sm" id="crBack">رجوع</button></div></div>
     <div class="card" style="background:var(--bg);margin-top:8px"><div><b>الموضوع:</b> ${esc(c.subject)}</div><div class="muted">التاريخ ${esc(c.date)} · من ${esc(MEET_N[c.by] || c.by)}${c.party ? ` · ${c.kind === "in" ? "الجهة المرسلة" : "إلى"}: ${esc(c.party)}` : ""}${c.theirNo ? ` · رقم خطابهم ${esc(c.theirNo)}${c.theirDate ? " بتاريخ " + esc(c.theirDate) : ""}` : ""}</div>
       ${(c.to || []).length ? `<div class="muted">${c.kind === "in" ? "محال إلى" : "إلى"}: ${esc((c.to || []).map(corrToN).join("، "))}${c.action ? " · " + esc(c.action) : ""}</div>` : ""}</div>
@@ -1589,7 +1597,7 @@ function corrModal(){
     ${(c.files || []).length ? `<div><b>المرفقات:</b> ${c.files.map((f, i) => `<button class="btn sm" data-crf="${i}">📎 ${esc(f.name)}</button>`).join(" ")}</div>` : ""}
     ${mine && c.kind !== "out" ? `<div class="card" style="padding:10px;margin-top:10px">${seen[key] ? `<div class="notice ok" style="margin:0">✓ اطّلعت عليه ${esc(String(seen[key]).slice(0, 16).replace("T", " "))}</div>` : `<button class="btn pri" id="crSeen">✓ اطّلعت</button>`}
       ${c.kind === "in" && S.role === "admin" ? `<label class="f" style="margin-top:8px">ردّكم / الإفادة (يشوفها من أحاله)<textarea id="crRep" rows="2" maxlength="1500">${esc(reps[key] || "")}</textarea></label><button class="btn sm" id="crRepS" style="margin-top:6px">حفظ الإفادة</button>` : ""}</div>` : ""}
-    ${owner && audience.length ? `<div class="card" style="padding:10px;margin-top:10px"><b>الاطلاع:</b> ${audience.map(r => `<span class="pill ${seen[r] ? "p" : ""}" style="margin:2px">${seen[r] ? "✓ " : ""}${esc(MEET_N[r])}</span>`).join("")}
+    ${owner && audience.length ? `<div class="card" style="padding:10px;margin-top:10px"><b>الاطلاع:</b> ${audience.map(r => `<span class="pill ${seen[r] ? "p" : ""}" style="margin:2px">${seen[r] ? "✓ " : ""}${esc(corrToN(r))}</span>`).join("")}
       ${(c.to || []).some(r => ["trainers", "students"].includes(r)) ? `<div class="muted" style="margin-top:6px">${(c.to || []).includes("trainers") ? `المدربين اللي اطّلعوا: ${Object.keys(seen).filter(k => /^t-/.test(k)).length} من ${Object.keys(S.trainers || {}).length || "—"}` : ""}${(c.to || []).includes("students") ? ` · المتدربين: ${Object.keys(seen).filter(k => /^st-/.test(k)).length}` : ""}</div>` : ""}
       ${Object.keys(reps).length ? `<div style="margin-top:8px">${Object.entries(reps).map(([k, v]) => `<div class="item" style="padding:6px 10px"><b>${esc(MEET_N[k] || k)}:</b> <span style="white-space:pre-wrap">${esc(v)}</span></div>`).join("")}</div>` : ""}</div>` : ""}
     ${S.adminRole === "admin" ? `<div class="row" style="margin-top:10px"><button class="btn sm danger" id="crDel">حذف</button><span class="muted" style="font-size:12px">الحذف ما يرجّع الرقم للتسلسل</span></div>` : ""}`;
