@@ -45,7 +45,7 @@ const isTeams = u => /teams\.(microsoft|live)\.com/i.test(String(u || ""));
 const meetLabel = u => isTeams(u) ? "على Teams" : "";
 const addMin = (hm, m) => { const [h, mm] = hm.split(":").map(Number); const t = Math.max(0, h * 60 + mm + m); return String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0"); };
 const todayDay = () => ({Sun: "الأحد", Mon: "الاثنين", Tue: "الثلاثاء", Wed: "الأربعاء", Thu: "الخميس"})[new Date().toLocaleDateString("en-US", {timeZone: "Asia/Riyadh", weekday: "short"})] || "";
-function toast(msg){ const t = $("#toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("on"), 3000); }
+function toast(msg, long){ const t = $("#toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("on"), long ? 9000 : 3000); }
 
 /* ---------- firebase ---------- */
 const configured = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).includes("PASTE");
@@ -208,6 +208,7 @@ async function startLecture(g, btn){
     let why = "", tok = null;
     try { await loadJitsi(d); } catch { why = "قاعة المعهد ما تستجيب الحين"; }
     if (!why && await meetLoad(d) >= (Number(site.meetMax) || 180)) why = "قاعة المعهد عليها ضغط الحين";
+    if (!why) { const h = await srvHealth(); if (h && !h.down && (srvNetPct(h) >= 80 || (h.cpu || 0) >= 90)) why = "إنترنت سيرفر القاعة عليه ضغط الحين"; }
     if (!why) { try { tok = await meetToken(g.id); } catch (e) { console.error(e); why = "تعذّر فتح قاعة المعهد"; } }
     if (why) { await setLive(g, "teams"); return teamsPrompt(g, why); }
     if (await setLive(g, "osos")) openRoom(g, tok);
@@ -223,9 +224,19 @@ async function joinLecture(g, btn){
     if (!liveOn(l)) return toast("المحاضرة ما بدأت للحين. أول ما يبدأها المدرب يوصلك إشعار");
     if (l.mode === "teams") { recordJoin(g); return teamsPrompt(g); }
     try { await loadJitsi(d); } catch { recordJoin(g); return teamsPrompt(g, "قاعة المعهد ما تستجيب الحين"); }
+    await srvHealth().catch(() => null);
     let tok; try { tok = await meetToken(g.id); } catch (e) { return toast(e.code === "not live" ? "المحاضرة ما بدأت للحين" : "تعذّر الدخول للقاعة، حاول مرة ثانية"); }
     recordJoin(g); openRoom(g, tok);
   } finally { if (btn) btn.disabled = false; }
+}
+/* lighter video so more people fit on the server's internet: the trainer sends up to 720p, students' cameras 360p,
+   and each person receives only a few cameras (the speaker plus the last ones who talked). Under load it shrinks further. */
+function roomVideoCfg(mod){
+  const site = S.site || {}; if (site.meetLite === false) return {};
+  const x = S._srv && Date.now() - S._srv.at < 120000 ? S._srv : null, busy = x && !x.down && srvNetPct(x) >= 65;
+  const h = mod ? 720 : busy ? 180 : 360, lastN = mod ? (busy ? 4 : 6) : (busy ? 1 : 3);
+  return {resolution: h, constraints: {video: {height: {ideal: h, max: h, min: 180}}}, channelLastN: lastN, disableSimulcast: false, enableLayerSuspension: true,
+    maxFullResolutionParticipants: 1, ...(mod ? {} : {disableSelfViewSettings: false})};
 }
 function openRoom(g, tok){
   closeRoom();
@@ -235,7 +246,7 @@ function openRoom(g, tok){
   const api = new window.JitsiMeetExternalAPI(tok.domain, {
     roomName: tok.room, jwt: tok.jwt, parentNode: w.querySelector("#roomBox"), width: "100%", height: "100%", lang: "ar",
     userInfo: {displayName: tok.name},
-    configOverwrite: {prejoinConfig: {enabled: false}, startWithAudioMuted: !mod, startWithVideoMuted: !mod, disableDeepLinking: true, subject: g.course || "",
+    configOverwrite: {prejoinConfig: {enabled: false}, startWithAudioMuted: !mod, startWithVideoMuted: !mod, disableDeepLinking: true, subject: g.course || "", ...roomVideoCfg(mod),
       localRecording: {disable: !mod || !!tok.observer, notifyAllParticipants: true}},
     interfaceConfigOverwrite: {MOBILE_APP_PROMO: false, SHOW_JITSI_WATERMARK: false}
   });
@@ -348,7 +359,7 @@ async function staffSec(body){
   const call = async () => { const r = await fetch(url + "/staff-security", {method: "POST", headers: {"content-type": "application/json", authorization: "Bearer " + await S.authUser.getIdToken(true)}, body: JSON.stringify(body)}); return [r, await r.json().catch(() => ({}))]; };
   let [r, j] = await call();
   if (r.status === 401 && j.error === "reauth") { if (!await reauthAdmin()) throw new Error("cancel"); [r, j] = await call(); }
-  if (!r.ok) throw new Error(j.error || "failed");
+  if (!r.ok) throw Object.assign(new Error(j.error || "failed"), {detail: j.detail || "", status: r.status});
   return j;
 }
 function showCode(role, code, self){
@@ -367,7 +378,7 @@ async function reloginAdmin(code){
 }
 function secCard(){
   const st = S._secSt, fmt = ms => ms ? new Date(ms).toLocaleString("ar-SA-u-ca-gregory", {day: "numeric", month: "short", hour: "numeric", minute: "2-digit"}) : "—";
-  const rows = st ? Object.entries(st.roles).map(([r, x]) => `<div class="item" style="flex-wrap:wrap"><div class="grow" style="min-width:180px"><div class="t">${esc(ROLES[r])}</div><div class="muted">${!x.exists ? "الحساب مو موجود" : `آخر دخول: ${esc(fmt(x.lastLogin))}${x.lockedAt ? ` · آخر تغيير أمان: ${esc(fmt(x.lockedAt * 1000))}` : ""}`}</div></div>
+  const rows = st && st.roles ? Object.entries(st.roles).map(([r, x]) => `<div class="item" style="flex-wrap:wrap"><div class="grow" style="min-width:180px"><div class="t">${esc(ROLES[r])}</div><div class="muted">${!x.exists ? "الحساب مو موجود" : `آخر دخول: ${esc(fmt(x.lastLogin))}${x.lockedAt ? ` · آخر تغيير أمان: ${esc(fmt(x.lockedAt * 1000))}` : ""}`}</div></div>
     ${x.exists ? `<span class="pill ${x.disabled ? "a" : "p"}">${x.disabled ? "موقوف" : "مفعّل"}</span><button class="btn sm" data-snew="${r}">رمز جديد</button>${r === "admin" ? "" : x.disabled ? `<button class="btn sm" data-sen="${r}">تفعيل</button>` : `<button class="btn sm danger" data-sdis="${r}">إيقاف</button>`}` : MAIL_STAFF.includes(r) ? `<button class="btn sm pri" data-snew="${r}">إنشاء الحساب</button>` : ""}</div>`).join("") : `<div class="muted">جاري التحميل…</div>`;
   return `<div class="card" id="secCard"><h2>أمان حسابات الإدارات</h2>
     <p class="muted" style="margin-top:0">لو شكّيت إن أحد دخل حساب إدارة بدون إذن، اضغط «رمز جديد» أو «إيقاف». الرمز القديم يوقف، وكل من كان داخل بالحساب يطلع فوراً من كل الأجهزة.</p>
@@ -386,7 +397,7 @@ function bindSecCard(el){
     if (!btn.dataset.sure) { btn.dataset.sure = 1; btn.textContent = "متأكد؟"; return; }
     btn.disabled = true;
     try { const j = await staffSec(body); logAction("أمان الحسابات: " + label, ROLES[body.role] || "الكل"); await after(j); reload(); }
-    catch (e) { if (e.message !== "cancel") toast("ما تم التنفيذ: " + (e.message === "cannot stop own account" ? "ما تقدر توقف حساب الإدارة العامة" : "حاول مرة ثانية")); btn.disabled = false; }
+    catch (e) { if (e.message !== "cancel") toast("ما تم التنفيذ: " + (e.message === "cannot stop own account" ? "ما تقدر توقف حساب الإدارة العامة" : e.message === "not allowed" ? "الجلسة قديمة، اطلع وادخل من جديد بحساب الإدارة" : e.message === "no service" ? "رابط خدمة الإشعارات غير مضبوط" : e.detail ? e.detail : `حاول مرة ثانية (${e.status || "شبكة"} · ${e.message})`), 1); btn.disabled = false; }
   };
   el.querySelectorAll("[data-snew]").forEach(b => b.onclick = () => { const r = b.dataset.snew; act(b, {action: "newcode", role: r}, "رمز جديد", async j => { if (r === "admin") { await reloginAdmin(j.code); showCode(r, j.code, true); } else showCode(r, j.code); }); });
   el.querySelectorAll("[data-sdis]").forEach(b => b.onclick = () => act(b, {action: "disable", role: b.dataset.sdis}, "إيقاف حساب", async () => toast("انوقف الحساب، وطلع كل من كان داخل فيه")));
@@ -442,10 +453,13 @@ async function srvHealth(){
   return S._srv;
 }
 const srvMax = () => Number((S.site || {}).meetMax) || 180;
+/* the server's internet capacity: what the director typed in, else the network card's speed, else 500 Mbit/s */
+const srvCap = x => Number((S.site || {}).meetMbps) || (x && x.linkMbps > 0 && x.linkMbps <= 10000 ? x.linkMbps : 500);
+const srvNetPct = x => x && x.netOut != null ? Math.round(x.netOut / srvCap(x) * 100) : 0;
 function srvLevel(x){   // 0 fine, 1 watch, 2 act now
   if (!x) return 0; if (x.down) return 2;
   const p = (x.participants || 0) / srvMax() * 100;
-  const worst = Math.max(p, x.cpu || 0, x.mem || 0, x.disk || 0);
+  const worst = Math.max(p, x.cpu || 0, x.mem || 0, x.disk || 0, srvNetPct(x) * 85 / 80);   // internet: red from 80%
   return worst >= 85 ? 2 : worst >= 65 ? 1 : 0;
 }
 const SRV_COL = ["#1F7A4D", "#C98A00", "#C0392B"];
@@ -460,11 +474,12 @@ function srvCard(){
   return `<div class="card" id="srvCard" style="border-color:${SRV_COL[lv]}"><div class="row" style="justify-content:space-between"><h2 style="margin:0">حالة سيرفر القاعة</h2><span class="muted" style="font-size:13px">${x ? "آخر قراءة " + esc(new Date(x.at).toLocaleTimeString("ar-SA-u-nu-latn", {hour: "numeric", minute: "2-digit", second: "2-digit"})) : ""} <a href="#" id="srvRe">تحديث</a></span></div>
     <div style="margin-top:8px">${head}</div>
     ${x && !x.down ? bar("الموجودين في القاعة الحين", pp, `${x.participants || 0} من ${srvMax()}${x.conferences ? ` · ${x.conferences} محاضرة` : ""}`)
+      + (x.netOut != null ? bar("الإنترنت الطالع (أول شي ينضغط)", srvNetPct(x) * 85 / 80, `${x.netOut} من ${srvCap(x)} ميغابت · ${srvNetPct(x)}%`) + `<div class="muted" style="font-size:12.5px;margin-top:-4px">الداخل: ${x.netIn ?? 0} ميغابت</div>` : `<div class="muted" style="font-size:12.5px">الإنترنت: يظهر بعد تحديث سكربت السيرفر (meet-rec.sh)</div>`)
       + (x.cpu != null ? bar("المعالج", x.cpu, x.cpu + "%") : "") + (x.mem != null ? bar("الذاكرة", x.mem, x.mem + "%") : "")
       + (x.disk != null ? bar("التخزين (التسجيلات والمرفقات)", x.disk, `${x.disk}% · باقي ${x.diskFreeGB} من ${x.diskGB} جيجا`) : "") : ""}
     ${RO() ? "" : `<div class="row" style="margin-top:10px;gap:6px">${nOsos ? `<button class="btn sm ${lv === 2 ? "danger" : ""}" id="srvAll">نقل كل المحاضرات الشغالة لـ Teams (${nOsos})</button>` : ""}
       <button class="btn sm ${force ? "pri" : ""}" id="srvForce">${force ? "✓ القاعة موقفة: المحاضرات الجديدة على Teams (اضغط للتشغيل)" : "إيقاف القاعة مؤقتاً: المحاضرات الجديدة تفتح على Teams"}</button></div>`}
-    <p class="muted" style="margin:8px 0 0;font-size:13px">أخضر مرتاح، برتقالي قرّب من الحد (65%)، أحمر انقل لـ Teams (85%). الحد الأعلى للحاضرين تعدّله من «النظام» ← القاعة الافتراضية.</p></div>`;
+    <p class="muted" style="margin:8px 0 0;font-size:13px">أخضر مرتاح، برتقالي قرّب من الحد (65%)، أحمر انقل لـ Teams (85%، والإنترنت من 80%). المحاضرات الجديدة تتحول لـ Teams لحالها إذا الإنترنت وصل 80% أو المعالج 90%. الحد الأعلى للحاضرين تعدّله من «النظام» ← القاعة الافتراضية.</p></div>`;
 }
 function bindSrvCard(el){
   if (!S._srvTimer) S._srvTimer = setInterval(() => { if (S.view !== "admin" || S.aTab !== "live") { clearInterval(S._srvTimer); S._srvTimer = null; return; } srvHealth().then(() => { const c = $("#srvCard"); if (c && !busyEditing()) render(); }); }, 20000);
@@ -2967,7 +2982,7 @@ function renderAdmin(app){
   const tabs = [["dash","لوحة اليوم"],["kpi","المؤشرات"],["groups","المقررات والطلاب"],["students","الطلاب"],["msgs","الرسائل الجماعية"],["trainers","المدربين والرموز"],["grades","الدرجات"],["exams","الاختبارات"],["camp","المعسكر"],["follow","المتابعة"],["excuses","الأعذار"],["areqs","طلبات الطلاب" + ((S.aReqs || []).some(r => r.status === "new") ? ` (${S.aReqs.filter(r => r.status === "new").length})` : "")],["evals","التقييمات"],["report","التقارير"],["courses","الدورات والشهادات"],["sign","طلبات التوقيع"],["tasks","مهام الجهة الرقابية" + taskBadge()],["trmsgs","رسائل المدربين" + trmBadge()],["sreq","طلبات الإجازة" + srBadge()],["memos","المراسلات" + memoBadge()],["mail","البريد" + mailBadge()],...(MEET() ? [["live","المحاضرات والتسجيلات"]] : []),["system","النظام"],...(S.adminRole === "admin" ? [["hr","الموارد البشرية"]] : []),...(SEES_FIN() ? [["finance","المالية" + ((S.fReqs || []).some(r => r.status === "fin_signed") ? ` (${(S.fReqs || []).filter(r => r.status === "fin_signed").length})` : "")]] : []),["archive","الأرشيف"],...(S.adminRole === "admin" ? [["weekly","التقرير الأسبوعي"],["logs","السجل"]] : [])];
   if (!tabs.some(([k]) => k === S.aTab)) S.aTab = "dash";
   const waiting = Object.values(S.grades).filter(x => x.status === "submitted").length;
-  app.innerHTML = `${backupNag()}${absNag()}${S.sys && S.sys.maintenance ? `<div class="notice err">وضع الصيانة شغّال: الموقع مقفل على الكل ما عدا الإدارة. تطفيه من تبويب "النظام".</div>` : ""}<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}${k === "grades" && waiting ? ` (${waiting})` : ""}${k === "follow" && S.allAtt && ["academic", "admin"].includes(S.adminRole) ? (n => n ? ` (${n})` : "")(absAlerts().alerts.filter(alertWaiting).length) : ""}${k === "excuses" && (S.excuses || []).filter(x => x.status === "pending").length ? ` (${S.excuses.filter(x => x.status === "pending").length})` : ""}</button>`).join("")}</div></div><div id="ab"></div>`;
+  app.innerHTML = `${backupNag()}${quotaNag()}${absNag()}${S.sys && S.sys.maintenance ? `<div class="notice err">وضع الصيانة شغّال: الموقع مقفل على الكل ما عدا الإدارة. تطفيه من تبويب "النظام".</div>` : ""}<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}${k === "grades" && waiting ? ` (${waiting})` : ""}${k === "follow" && S.allAtt && ["academic", "admin"].includes(S.adminRole) ? (n => n ? ` (${n})` : "")(absAlerts().alerts.filter(alertWaiting).length) : ""}${k === "excuses" && (S.excuses || []).filter(x => x.status === "pending").length ? ` (${S.excuses.filter(x => x.status === "pending").length})` : ""}</button>`).join("")}</div></div><div id="ab"></div>`;
   app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
   if ($("#nagAbs")) $("#nagAbs").onclick = () => { S.aTab = "follow"; render(); };
   if ($("#nagBk")) $("#nagBk").onclick = async e => { e.target.disabled = true; try { await backupAll(); toast("نزلت النسخة الاحتياطية"); render(); } catch (x) { console.error(x); toast("تعذّر أخذ النسخة"); e.target.disabled = false; } };
@@ -3763,11 +3778,12 @@ async function saveSite(patch, label){
 function adminSystem(el){
   const sys = S.sys || {};
   const annRows = k => liveAnnAll(k).map((a, i) => `<div class="item" style="padding:8px 12px"><span class="grow">${esc(a.text)}<div class="muted">${AUD[k]}${a.expires ? " · ينتهي " + esc(a.expires) : " · بدون انتهاء"}</div></span><button class="btn sm danger" data-adel="${k}:${i}">حذف</button></div>`).join("");
-  el.innerHTML = `${usageCard()}
+  el.innerHTML = `${quotaCard()}${usageCard()}
   <div class="card"><h2>نسخة احتياطية</h2>
     <p class="muted" style="margin-top:0">ينزّل ملف فيه كل بيانات البوابة: المدربين، والطلاب، والرموز، والجوالات، والحضور، والدرجات، والسجل. احفظه في مكان آمن لأن فيه بيانات حساسة.</p>
     <button class="btn pri" id="bkB">تنزيل نسخة احتياطية الآن</button>
-    ${S.adminRole === "admin" ? `<h3 style="margin-top:18px">استعادة من نسخة احتياطية</h3><p class="muted" style="margin-top:0">ارفع ملف نسخة احتياطية (asas-backup-….json) عشان ترجع البيانات مثل ما كانت وقتها.</p><input type="file" id="rsF" accept=".json,application/json"><div id="rsOut"></div>` : ""}
+    ${S.adminRole === "admin" ? autoBkHTML() : ""}
+    ${S.adminRole === "admin" ? `<h3 style="margin-top:18px">استعادة من نسخة احتياطية</h3><p class="muted" style="margin-top:0">ارفع ملف نسخة احتياطية (asas-backup-….json أو ‎.json.gz من النسخ التلقائية) عشان ترجع البيانات مثل ما كانت وقتها.</p><input type="file" id="rsF" accept=".json,application/json"><div id="rsOut"></div>` : ""}
   </div>
   <div class="card"><h2>أرشفة الفصل وبدء فصل جديد</h2>
     <p class="muted" style="margin-top:0">ينزّل نسخة احتياطية، ويحفظ ملخص الفصل (حضور ودرجات كل متدرب) في "الأرشيف"، وبعدها يمسح الحضور والدرجات والأعذار والإنذارات والتقييمات. المدربين والطلاب وحساباتهم والشهادات الصادرة تبقى.</p>
@@ -3822,6 +3838,8 @@ function adminSystem(el){
     <p class="muted" style="margin-top:0">محاضرات عن بُعد داخل البوابة على سيرفر المعهد. لو القاعة ما ردّت أو كان عليها ضغط، المحاضرة تنفتح على رابط Teams حق المقرر.</p>
     <label class="f" for="mtD">عنوان القاعة<input type="text" id="mtD" dir="ltr" value="${esc((S.site || {}).meetDomain || "")}" placeholder="meet.osustl.com"></label>
     <label class="f" for="mtM" style="margin-top:8px">أقصى عدد مشاركين بنفس الوقت قبل التحويل لـ Teams<input type="number" id="mtM" min="20" max="2000" value="${esc(String((S.site || {}).meetMax || 180))}"></label>
+    <label class="f" for="mtB" style="margin-top:8px">سرعة إنترنت سيرفر القاعة (ميغابت) <span class="muted">— من شركة السيرفر. فاضي = تلقائي</span><input type="number" id="mtB" min="50" max="10000" value="${esc(String((S.site || {}).meetMbps || ""))}" placeholder="مثال: 1000"></label>
+    <label class="row" for="mtL" style="gap:8px;cursor:pointer;margin-top:8px"><input type="checkbox" id="mtL" ${(S.site || {}).meetLite === false ? "" : "checked"}> توفير الإنترنت في القاعة (كاميرات الطلاب 360p، وكل طالب يشوف المدرب + 3 كاميرات، ويخفّ أكثر لحاله وقت الضغط)</label>
     <label class="row" for="mtT" style="gap:8px;cursor:pointer;margin-top:8px"><input type="checkbox" id="mtT" ${(S.site || {}).meetForceTeams ? "checked" : ""}> كل المحاضرات على Teams (للطوارئ أو صيانة السيرفر)</label>
     <label class="f" for="mtE" style="margin-top:8px">نهاية الفصل التدريبي الحالي (تسجيلاته تنحذف تلقائياً بعد شهر منه)<input type="date" id="mtE" value="${esc((S.site || {}).recEnd || "")}"></label>
     ${(S.site || {}).recPurged ? `<p class="muted" style="margin:6px 0 0">آخر حذف تلقائي: تسجيلات الفصل اللي انتهى ${esc((S.site || {}).recPurged)}.</p>` : ""}
@@ -3874,6 +3892,7 @@ function adminSystem(el){
     <div class="list" style="margin-top:12px">${annRows("all")}${annRows("trainers")}${annRows("students")}</div>
   </div>`;
   if ($("#rsF")) $("#rsF").onchange = e => { const f = e.target.files[0]; if (f) restoreRead(f); };
+  bindAutoBk(el);
   $("#bkB").onclick = async () => { $("#bkB").disabled = true; try { await backupAll(); toast("نزلت النسخة الاحتياطية"); } catch (e) { console.error(e); toast("تعذّر أخذ النسخة"); } $("#bkB").disabled = false; };
   $("#arB").onclick = async () => {
     const term = $("#arName").value.trim();
@@ -3905,7 +3924,7 @@ function adminSystem(el){
   if ($("#mtSave")) $("#mtSave").onclick = () => {
     const d = $("#mtD").value.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
     if (d && !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(d)) return toast("العنوان غير صحيح، مثال: meet.osustl.com");
-    saveSite({meetDomain: d, meetMax: Math.max(20, Math.round(Number($("#mtM").value) || 180)), meetForceTeams: $("#mtT").checked, recEnd: $("#mtE").value || ""}, "إعدادات القاعة الافتراضية");
+    saveSite({meetDomain: d, meetMax: Math.max(20, Math.round(Number($("#mtM").value) || 180)), meetForceTeams: $("#mtT").checked, meetMbps: Math.round(Number($("#mtB").value) || 0) || null, meetLite: $("#mtL").checked, recEnd: $("#mtE").value || ""}, "إعدادات القاعة الافتراضية");
   };
   if ($("#vapSave")) $("#vapSave").onclick = () => { const v = $("#vapK").value.trim(); if (v && !/^[A-Za-z0-9_-]{60,120}$/.test(v)) return toast("المفتاح غير صحيح، انسخه كامل"); const u = $("#pushU").value.trim().replace(/\/+$/, ""); if (u && !/^https:\/\/[\w.-]+(\/[\w./-]*)?$/.test(u)) return toast("الرابط غير صحيح، لازم يبدأ بـ https://"); saveSite({vapid: v, pushUrl: u, portalUrl: SITE()}, "إعدادات الإشعارات"); };
   if ($("#pushTest")) $("#pushTest").onclick = async () => { if (!pushOn()) { await enablePush(false); if (!pushOn()) return; } if (!(S.site || {}).pushUrl) return toast("حط رابط خدمة الإشعارات أول واحفظه"); try { const r = await notifyNow("test", "me"); toast(r && r.sent ? "انرسل، المفروض يوصلك خلال ثواني" : r ? "الخدمة شغّالة بس ما لقت جهاز مفعّل باسمك. فعّل الإشعارات من الزر فوق" : "ما قدرت أوصل لخدمة الإشعارات. تأكد من الرابط"); } catch { toast("ما قدرت أوصل لخدمة الإشعارات. تأكد من الرابط"); } };
@@ -5488,8 +5507,11 @@ async function setDisabled(coll, id, on, name){
 }
 
 /* ---------- backup ---------- */
-const ALL_COLLS = ["public", "ann", "trainers", "groups", "students", "secrets", "studentSecrets", "att", "grades", "results", "joins", "excuses", "warnings", "evals", "certs", "idcards", "archives", "logs", "surveys", "fin", "finAccounts", "payments", "salaryPays", "expenses", "commPays", "finClear", "receipts", "courses", "finReqs", "sigs", "signReqs", "signFiles", "waivers", "acReqs", "memos", "live"];
-const NO_RESTORE = ["logs"];
+const ALL_COLLS = ["public", "ann", "trainers", "groups", "students", "secrets", "studentSecrets", "att", "grades", "results", "joins", "excuses", "warnings", "evals", "certs", "idcards", "archives", "logs", "surveys", "fin", "finAccounts", "payments", "salaryPays", "expenses", "commPays", "finClear", "receipts", "courses", "finReqs", "sigs", "signReqs", "signFiles", "waivers", "acReqs", "memos", "live",
+  "exams", "examQs", "examKeys", "examSubs", "msgs", "msgReads", "tasks", "taskFiles", "weekly", "trMsgs", "staffReqs", "staffReqFiles", "camp", "campLab", "labCfg", "studentDocs",
+  "hrStaff", "hrAtt", "hrLeaves", "hrNotices", "hrCfg", "hrPayroll", "coffeePub", "coffeeReqs"];
+// kept in the backup for the record, but brought back only by the people who wrote them (their own security rules)
+const NO_RESTORE = ["logs", "weekly", "msgReads", "tasks", "taskFiles", "trMsgs", "staffReqs", "staffReqFiles", "examSubs", "coffeeReqs"];
 const APPEND_ONLY = ["payments", "expenses", "commPays"];   // money records are never deleted or rewritten: a restore only brings back missing ones
 const canon = v => JSON.stringify(v, (k, x) => x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(key => [key, x[key]])) : x);   // the audit log is append-only; a restore never rewrites it
 const toPlain = v => v && typeof v.toDate === "function" && "seconds" in v ? {__ts: v.toDate().toISOString()} : Array.isArray(v) ? v.map(toPlain) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, toPlain(x)])) : v;
@@ -5509,11 +5531,57 @@ function loadUsage(){
   getDoc(ref("public/usage")).then(x => { if (x.exists()) S.usage = x.data(); if (S.view === "admin" && !busyEditing()) render(); }).catch(() => {});
 }
 /* general administration gets a reminder when the last full backup is more than a week old */
+/* automatic weekly backups (made by the push service every Friday, stored on the classroom server) */
+function loadAutoBk(force){
+  if (S.adminRole !== "admin" || (S._autoBkLoading && !force) || (S.autoBk && !force)) return;
+  S._autoBkLoading = true;
+  getDocs(collection(db, "backups")).then(sn => { S.autoBk = sn.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => String(b.at).localeCompare(String(a.at))); if (S.view === "admin" && !busyEditing()) render(); })
+    .catch(() => { S.autoBk = []; }).finally(() => { S._autoBkLoading = false; });
+}
+const pushApi = async (path, body) => { const url = ((S.site || {}).pushUrl || "").replace(/\/+$/, ""); if (!url) throw new Error("no service");
+  const r = await fetch(url + path, {method: "POST", headers: {"content-type": "application/json", authorization: "Bearer " + await S.authUser.getIdToken()}, body: JSON.stringify(body || {})});
+  const j = await r.json().catch(() => ({})); if (!r.ok) throw Object.assign(new Error(j.error || "failed"), {status: r.status, detail: j.detail || ""}); return j; };
+function autoBkHTML(){
+  loadAutoBk(); const L = S.autoBk || [];
+  return `<h3 style="margin-top:18px">النسخ التلقائية</h3><p class="muted" style="margin-top:0">كل <b>جمعة الساعة 9 الصبح</b> تنحفظ نسخة كاملة لحالها على سيرفر القاعة (بدون صور الإيصالات والمرفقات)، وتبقى آخر 8 نسخ. لو فشلت يوصلك إشعار. نزّل نسخة كاملة يدوية (الزر فوق) مرة في الشهر بعد.</p>
+    <div class="list">${L.slice(0, 8).map(b => `<div class="item"><span class="grow">${esc(fmtIso(b.at))} <span class="muted">· ${b.docs || 0} سجل · ${fmtSize(b.size) || Math.max(1, Math.round((b.size || 0) / 1024)) + " ك.ب"}${b.by && b.by !== "auto" ? " · يدوية" : ""}</span></span><button class="btn sm" data-abk="${esc(b.rid)}">تنزيل</button></div>`).join("") || `<div class="empty">للحين ما انعملت نسخة تلقائية.</div>`}</div>
+    <button class="btn sm" id="abkNow" style="margin-top:8px">احفظ نسخة على السيرفر الحين</button>`;
+}
+function bindAutoBk(el){
+  el.querySelectorAll("[data-abk]").forEach(b => b.onclick = async () => { b.disabled = true;
+    try { const j = await pushApi("/backup", {action: "get", rid: b.dataset.abk}); const a = document.createElement("a"); a.href = j.url; a.target = "_blank"; a.rel = "noopener"; document.body.appendChild(a); a.click(); a.remove(); }
+    catch (e) { toast(e.status === 404 ? "حدّث worker في Cloudflare لآخر نسخة" : "تعذّر التنزيل"); } b.disabled = false; });
+  if ($("#abkNow")) $("#abkNow").onclick = async e => { e.target.disabled = true; toast("جاري حفظ النسخة… (دقيقة تقريباً)");
+    try { await pushApi("/backup", {action: "now"}); loadAutoBk(true); toast("انحفظت النسخة على السيرفر ✓"); logAction("نسخة احتياطية على السيرفر", ""); }
+    catch (x) { toast(x.status === 404 ? "حدّث worker في Cloudflare لآخر نسخة" : x.status === 503 ? "مفتاح سيرفر القاعة ناقص في Cloudflare" : "تعذّر الحفظ: " + (x.detail || x.message), 1); e.target.disabled = false; } };
+}
+/* Firebase free daily quota (reads 50k, writes 20k): read from Google's monitoring by the push service */
+function loadQuota(force){
+  if (!["admin", "academic", "auditor"].includes(S.adminRole) || !(S.site || {}).pushUrl) return;
+  if (!force && S._quota && Date.now() - S._quota.t < 15 * 60000) return;
+  if (S._quotaBusy) return; S._quotaBusy = true;
+  pushApi("/usage").then(j => { S._quota = {t: Date.now(), ...j}; }).catch(e => { S._quota = {t: Date.now(), error: e.status === 404 ? "old" : "failed"}; })
+    .finally(() => { S._quotaBusy = false; if (S.view === "admin" && !busyEditing()) render(); });
+}
+function quotaCard(){
+  loadQuota(); const q = S._quota; if (!q) return "";
+  if (q.error) return `<div class="card"><h2>حد Firebase اليومي</h2><p class="muted" style="margin:0">${q.error === "permission" ? `لقراءة الاستخدام: ادخل <b>console.cloud.google.com</b> ← مشروع <b>osostl-attendance</b> ← <b>IAM</b> ← حساب الخدمة اللي ينتهي بـ <span dir="ltr">firebase-adminsdk…</span> ← ✏️ ← <b>Add role</b> ← <b>Monitoring Viewer</b> ← Save. بعدها حدّث الصفحة.` : q.error === "old" ? "حدّث worker في Cloudflare لآخر نسخة عشان يظهر الاستخدام." : "تعذّر قراءة الاستخدام الحين."}</p></div>`;
+  const col = v => v >= 85 ? "#c0392b" : v >= 65 ? "#d68910" : "#1e8449";
+  const bar = (label, n, max, pct) => `<div style="margin:8px 0"><div class="row" style="justify-content:space-between"><span>${label}</span><b style="color:${col(pct)}">${Number(n || 0).toLocaleString("en-US")} من ${max.toLocaleString("en-US")} · ${pct}%</b></div><div style="height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:4px"><div style="width:${Math.min(100, Math.max(1, pct))}%;height:100%;background:${col(pct)}"></div></div></div>`;
+  const reset = new Date(q.resetAt).toLocaleTimeString("ar-SA-u-nu-latn", {timeZone: TZ, hour: "numeric", minute: "2-digit"});
+  return `<div class="card"><h2>حد Firebase اليومي (المجاني)</h2>
+    ${Math.max(q.readPct, q.writePct) >= 80 ? `<div class="notice err">قرّب الحد يخلص اليوم. لو خلص توقف البوابة لين يتجدد الساعة ${esc(reset)}. خفّف فتح الصفحات الثقيلة (التقارير والكشوف) لين يتجدد.</div>` : ""}
+    ${bar("القراءة", q.read, 50000, q.readPct)}${bar("الكتابة", q.write, 20000, q.writePct)}${bar("الحذف", q["delete"], 20000, q.deletePct)}
+    <p class="muted" style="margin:6px 0 0">يتجدد كل يوم الساعة ${esc(reset)} (منتصف الليل بتوقيت جوجل). إذا وصل 80% يوصل الإدارة العامة إشعار. الأرقام تتأخر دقائق.</p></div>`;
+}
+function quotaNag(){ if (S.adminRole !== "admin") return ""; loadQuota(); const q = S._quota; return q && !q.error && Math.max(q.readPct, q.writePct) >= 80 ? `<div class="notice err">⚠️ حد Firebase اليومي وصل ${Math.max(q.readPct, q.writePct)}%. شوف «النظام».</div>` : ""; }
 function backupNag(){
   if (S.adminRole !== "admin") return "";
   loadUsage();
   if (S.usage === null && !S._usageTried) { S._usageTried = true; return ""; }   // first paint: wait for the read
-  const at = S.usage && S.usage.at ? new Date(S.usage.at) : null, days = at ? Math.floor((Date.now() - at) / 864e5) : null;
+  loadAutoBk();
+  const lastAuto = ((S.autoBk || [])[0] || {}).at, lastMan = S.usage && S.usage.at;
+  const at = lastAuto || lastMan ? new Date([lastAuto, lastMan].filter(Boolean).sort().pop()) : null, days = at ? Math.floor((Date.now() - at) / 864e5) : null;
   if (at && days < 7) return "";
   return `<div class="notice err" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="grow">${at ? `آخر نسخة احتياطية قبل ${days} يوم.` : "ما فيه نسخة احتياطية مسجّلة."} نزّل نسخة الحين واحفظها في مكان آمن.</span><button class="btn sm pri" id="nagBk">تنزيل نسخة احتياطية</button></div>`;
 }
@@ -5553,7 +5621,7 @@ async function backupAll(note){
 /* ---------- restore: make the portal match a backup file exactly (general administration only) ---------- */
 async function restoreRead(f){
   const out = $("#rsOut"); out.innerHTML = `<p class="muted">جاري قراءة الملف…</p>`;
-  let bk; try { bk = JSON.parse(await f.text()); } catch { out.innerHTML = ""; return toast("الملف مو نسخة احتياطية صحيحة"); }
+  let bk; try { const txt = /\.gz$/i.test(f.name) ? await new Response(f.stream().pipeThrough(new DecompressionStream("gzip"))).text() : await f.text(); bk = JSON.parse(txt); } catch { out.innerHTML = ""; return toast("الملف مو نسخة احتياطية صحيحة"); }
   if (!bk || bk.kind !== "asas-backup-v1" || !bk.data) { out.innerHTML = ""; return toast("الملف مو نسخة احتياطية من البوابة"); }
   const colls = Object.keys(bk.data).filter(c => ALL_COLLS.includes(c) && !NO_RESTORE.includes(c));
   const n = c => Object.keys(bk.data[c] || {}).length;
