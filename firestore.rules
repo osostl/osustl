@@ -6,8 +6,31 @@ service cloud.firestore {
     // login emails look like: t-badr.v1@osostl.local / st-20260001.v1@osostl.local
     function localPart() { return request.auth.token.email.split('@')[0].split('[.]')[0]; }
 
+    // emergency lock: public/staffLock holds, per staff role, a time (seconds); any session that signed in
+    // before it is refused everywhere. Only the server (Cloudflare service) writes it, after a new code / stop.
+    function staffRole() {
+      return {'admin@osostl.local': 'admin', 'acadmic@osostl.local': 'academic', 'finance@osostl.local': 'finance', 'audit@osostl.local': 'auditor',
+        'm-admission@osostl.local': 'admission', 'm-business@osostl.local': 'business', 'm-hr@osostl.local': 'hr'}.get(request.auth.token.email, '');
+    }
+    // mailbox-only staff: the account must be the one the push service created (public/mailStaff), not a self-registered copy
+    function isMailStaff() {
+      let ms = /databases/$(database)/documents/public/mailStaff;
+      return signedIn() && staffRole() in ['admission', 'business', 'hr']
+        && exists(ms) && get(ms).data.get(staffRole(), '') == request.auth.uid && notLocked();
+    }
+    function notLocked() {
+      let lk = /databases/$(database)/documents/public/staffLock;
+      return !exists(lk) || get(lk).data.get(staffRole(), 0) < request.auth.token.auth_time;
+    }
+    // كوفي دوفي: the café device has its own account; only the uid saved in public/coffeeStaff (by the general administration) is accepted
+    function isCoffee() {
+      let c = /databases/$(database)/documents/public/coffeeStaff;
+      return signedIn() && request.auth.token.email.matches('coffee-[a-z0-9]+@osostl[.]local')
+        && exists(c) && get(c).data.uid == request.auth.uid;
+    }
+    function isOwner() { return signedIn() && request.auth.token.email == 'admin@osostl.local' && notLocked(); }
     function isAdmin() {
-      return signedIn() && request.auth.token.email in ['admin@osostl.local', 'acadmic@osostl.local'];
+      return signedIn() && request.auth.token.email in ['admin@osostl.local', 'acadmic@osostl.local'] && notLocked();
     }
     // a trainer is only who their trainers/{id} document says
     function isTrainer() {
@@ -26,11 +49,11 @@ service cloud.firestore {
     }
     function isStaff() { return isAdmin() || isTrainer(); }
     // read-only account for a supervising body: reads attendance, groups, grades; writes nothing
-    function isAuditor() { return signedIn() && request.auth.token.email == 'audit@osostl.local'; }
+    function isAuditor() { return signedIn() && request.auth.token.email == 'audit@osostl.local' && notLocked(); }
     function canView() { return isStaff() || isAuditor(); }
     // finance employee (and the general administration) manage fees, payments and salaries
-    function isFinance() { return signedIn() && request.auth.token.email == 'finance@osostl.local'; }
-    function finAccess() { return isFinance() || (signedIn() && request.auth.token.email == 'admin@osostl.local'); }
+    function isFinance() { return signedIn() && request.auth.token.email == 'finance@osostl.local' && notLocked(); }
+    function finAccess() { return isFinance() || (signedIn() && request.auth.token.email == 'admin@osostl.local' && notLocked()); }
     function ownsGroup(groupId, trainerId) {
       return isTrainer() && localPart() == trainerId
         && get(/databases/$(database)/documents/groups/$(groupId)).data.trainerId == trainerId;
@@ -53,7 +76,7 @@ service cloud.firestore {
     // login screens and system settings: public read, admin write
     match /public/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if (isAdmin() && !(docId in ['staffLock', 'mailStaff', 'coffeeStaff'])) || (docId == 'coffeeStaff' && isOwner());
     }
     // announcements: ann/all for everyone, ann/trainers for staff, ann/students for students
     match /ann/{aud} {
@@ -62,8 +85,9 @@ service cloud.firestore {
     }
     // audit log: staff append their own entries with the server time; nobody edits or deletes
     match /logs/{id} {
-      allow read: if isAdmin();
-      allow create: if (isStaff() || isFinance())
+      // the audit log: the general administration and the owner's oversight account
+      allow read: if signedIn() && (request.auth.token.email == 'admin@osostl.local' && notLocked()) || isAuditor();
+      allow create: if (isStaff() || isFinance() || isMailStaff())
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.at == request.time
         && request.resource.data.keys().hasOnly(['at', 'uid', 'role', 'who', 'action', 'details']);
@@ -115,6 +139,13 @@ service cloud.firestore {
       );
     }
     // a student pressed "join lecture": one record per student per course per day
+    // a running lecture: where it is (osos room | teams) and since when; started by the course's trainer or the administration
+    match /live/{gid} {
+      allow read: if signedIn();
+      allow create, update: if (isAdmin() || (isTrainer() && get(/databases/$(database)/documents/groups/$(gid)).data.trainerId == localPart()))
+        && request.resource.data.keys().hasOnly(['gid', 'on', 'mode', 'at', 'by', 'course', 'endedAt'])
+        && request.resource.data.gid == gid && request.resource.data.mode in ['osos', 'teams'] && request.resource.data.on is bool;
+    }
     match /joins/{id} {
       allow read: if isStaff() || (isStudent() && resource.data.num == myNum());
       allow create: if isStudent() && notMaint()
@@ -138,7 +169,7 @@ service cloud.firestore {
 
     // absence excuses: the student files one per absence (image compressed inside the document)
     match /excuses/{id} {
-      allow read: if isAdmin() || (isStudent() && resource.data.num == myNum());
+      allow read: if isAdmin() || isAuditor() || (isStudent() && resource.data.num == myNum());
       allow create: if isStudent() && notMaint()
         && request.resource.data.num == myNum()
         && id == myNum() + '_' + request.resource.data.groupId + '_' + request.resource.data.date
@@ -154,9 +185,18 @@ service cloud.firestore {
       allow read: if isAdmin() || isAuditor() || (isStudent() && resource.data.num == myNum());
       allow write: if isAdmin();
     }
+    // academic affairs chose not to issue a warning for this student/course/level: no more alerts for it
+    match /waivers/{id} {
+      allow read: if isAdmin() || isAuditor();
+      allow write: if isAdmin();
+    }
+    // the Cloudflare push worker's record of what was already sent (service account only)
+    match /pushLog/{id} {
+      allow read, write: if false;
+    }
     // course evaluations: one per student per course, only while open; trainers never read them
     match /evals/{id} {
-      allow read: if isAdmin() || (isStudent() && resource.data.num == myNum());
+      allow read: if isAdmin() || isAuditor() || (isStudent() && resource.data.num == myNum());
       allow create: if isStudent() && notMaint()
         && request.resource.data.num == myNum()
         && id == request.resource.data.groupId + '_' + myNum()
@@ -166,6 +206,89 @@ service cloud.firestore {
     }
 
     // attendance certificates: anyone with the code can verify one; listing is admin or the student's own
+    // signature images: the certificate ones are public (anyone verifying a certificate prints it),
+    // the finance one only for signed-in users; each is uploaded by its own role
+    match /sigs/{id} {
+      allow get: if id in ['director', 'academic'] || isStaff() || isFinance() || isAuditor();
+      allow write: if (id == 'director' && signedIn() && (request.auth.token.email == 'admin@osostl.local' && notLocked()))
+        || (id == 'academic' && signedIn() && (request.auth.token.email in ['acadmic@osostl.local', 'admin@osostl.local'] && notLocked()))
+        || (id == 'finance' && finAccess());
+    }
+    // signature requests: academic affairs / finance send a document; only the administration signs it
+    match /signReqs/{id} {
+      allow read: if signedIn() && ((request.auth.token.email == 'admin@osostl.local' && notLocked()) || resource.data.byEmail == request.auth.token.email);
+      allow create: if (isAdmin() || isFinance()) && request.resource.data.byEmail == request.auth.token.email && request.resource.data.status == 'pending';
+      allow update: if signedIn() && (request.auth.token.email == 'admin@osostl.local' && notLocked());
+      allow delete: if signedIn() && ((request.auth.token.email == 'admin@osostl.local' && notLocked()) || (resource.data.byEmail == request.auth.token.email && resource.data.status != 'signed'));
+    }
+    match /signFiles/{id} {
+      allow read: if signedIn() && ((request.auth.token.email == 'admin@osostl.local' && notLocked())
+        || get(/databases/$(database)/documents/signReqs/$(resource.data.reqId)).data.byEmail == request.auth.token.email);
+      allow create: if (isAdmin() || isFinance()) && ((request.auth.token.email == 'admin@osostl.local' && notLocked()) || !id.matches('.*_signed'));
+      allow update: if signedIn() && (request.auth.token.email == 'admin@osostl.local' && notLocked());
+      allow delete: if signedIn() && ((request.auth.token.email == 'admin@osostl.local' && notLocked())
+        || get(/databases/$(database)/documents/signReqs/$(resource.data.reqId)).data.byEmail == request.auth.token.email);
+    }
+    // devices that turned notifications on; only Cloud Functions read them
+    // a device can only subscribe as who it really is: the student number, trainer id and role are checked
+    function tokenOk(d) {
+      return signedIn() && d.email == request.auth.token.email
+        && (d.get('num', '') == '' || (isStudent() && d.num == myNum()))
+        && (d.get('tid', '') == '' || (isTrainer() && d.tid == localPart()))
+        && (d.get('role', '') == 'student' ? isStudent()
+          : d.get('role', '') == 'trainer' ? isTrainer()
+          : d.get('role', '') == 'admin' ? (request.auth.token.email == 'admin@osostl.local' && notLocked())
+          : (isAdmin() || isFinance() || isAuditor() || (isMailStaff() && d.get('role', '') == staffRole())));
+    }
+    match /pushTokens/{id} {
+      allow create, update: if tokenOk(request.resource.data);
+      allow delete: if signedIn() && resource.data.email == request.auth.token.email;
+    }
+    match /pushTest/{id} {
+      allow create: if (isAdmin() || isFinance()) && request.resource.data.email == request.auth.token.email;
+    }
+    // targeted portal messages: only their recipients read them; the general administration / academic affairs send them
+    match /msgs/{id} {
+      allow read: if isAdmin() || isAuditor()
+        || (isStudent() && myNum() in resource.data.get('nums', []))
+        || (isTrainer() && localPart() in resource.data.get('tids', []))
+        || (signedIn() && staffRole() != '' && notLocked() && staffRole() in resource.data.get('roles', []));
+      allow create, update, delete: if isAdmin();
+    }
+    // read receipts: each person writes only their own
+    match /msgReads/{id} {
+      allow read: if isAdmin() || isAuditor() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid && id == request.resource.data.msg + '_' + request.auth.uid
+        && request.resource.data.keys().hasOnly(['msg', 'uid', 'who', 'name', 'at']);
+    }
+    // كوفي دوفي — sales backup (device writes, owner reads) · public menu & offers (signed-in users read) · trainee pre-orders
+    match /coffee/{rest=**} {
+      allow read: if isCoffee() || isOwner() || isAuditor();
+      allow write: if isCoffee();
+    }
+    match /coffeePub/{d} {
+      allow read: if signedIn();
+      allow write: if (isCoffee() && d == 'menu') || (isOwner() && d == 'offers');
+    }
+    match /coffeeReqs/{id} {
+      allow read: if isCoffee() || isOwner() || (isStudent() && resource.data.num == myNum());
+      allow create: if isStudent() && request.resource.data.num == myNum() && request.resource.data.status == 'new'
+        && request.resource.data.keys().hasOnly(['num', 'name', 'items', 'note', 'pickup', 'total', 'status', 'at'])
+        && request.resource.data.items is list && request.resource.data.items.size() > 0 && request.resource.data.items.size() <= 10
+        && request.resource.data.note is string && request.resource.data.note.size() <= 200
+        && request.resource.data.pickup is string && request.resource.data.pickup.size() <= 40;
+      allow update: if isCoffee()
+        || (isStudent() && resource.data.num == myNum() && resource.data.status == 'new' && request.resource.data.status == 'cancelled'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']));
+    }
+    // short courses and their participants (certificates live in certs)
+    match /courses/{id} { allow read, write: if isAdmin(); }
+    // trainee ID cards: the token is the doc id; anyone holding the QR can check validity
+    match /idcards/{tok} {
+      allow get: if true;
+      allow list: if isAdmin() || isAuditor() || (isStudent() && resource.data.num == myNum());
+      allow write: if isAdmin();
+    }
     match /certs/{code} {
       allow get: if true;
       allow list: if isAdmin() || isAuditor() || (isStudent() && resource.data.num == myNum());
@@ -173,38 +296,242 @@ service cloud.firestore {
     }
 
     // ---- finance ----
-    match /fin/{doc} { allow read, write: if finAccess(); }
+    match /fin/{doc} { allow read: if finAccess() || isAuditor(); allow write: if finAccess(); }
     match /finAccounts/{num} {
-      allow read: if finAccess() || (isStudent() && num == myNum());
+      allow read: if finAccess() || isAuditor() || (isStudent() && num == myNum());
       allow write: if finAccess();
     }
     // payments are never deleted: a wrong one is voided with a reason
+    // student finance requests: final invoice and inquiries
+    match /finReqs/{id} {
+      allow read: if finAccess() || isAuditor() || (isStudent() && resource.data.num == myNum());
+      allow create: if isStudent() && request.resource.data.num == myNum() && request.resource.data.status == 'new'
+        && request.resource.data.type in ['invoice', 'inquiry'] && request.resource.data.get('text', '').size() <= 800
+        && request.resource.data.keys().hasOnly(['num', 'name', 'status', 'at', 'type', 'text', 'phone']);
+      allow update: if finAccess() || (isStudent() && resource.data.num == myNum() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seen']));
+      allow delete: if finAccess();
+    }
+    // internal messages between general administration, academic affairs and finance
+    function memoRoleOk(r) {
+      return notLocked() && ((r == 'admin' && (request.auth.token.email == 'admin@osostl.local' && notLocked()))
+        || (r == 'academic' && request.auth.token.email == 'acadmic@osostl.local')
+        || (r == 'finance' && request.auth.token.email == 'finance@osostl.local'));
+    }
+    // institute mail (@osustl.com): written only by the push service; each department reads its own box, the general administration reads all
+    function mailOk(r) {
+      return signedIn() && r in ['admin', 'academic', 'finance', 'admission', 'business', 'hr']
+        && ((staffRole() == 'admin' && notLocked()) || (staffRole() in ['academic', 'finance'] && staffRole() == r && notLocked()) || (staffRole() == r && isMailStaff()));
+    }
+    // a trainer reads only their own mailbox (tr{number}@osustl.com, kept under their trainer id)
+    function trMailOk(r) { return r.matches('t-.+') && isTrainer() && localPart() == r; }
+    match /mbox/{r}/m/{id} {
+      allow read: if mailOk(r) || trMailOk(r);
+      allow update: if (mailOk(r) || trMailOk(r)) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'trash', 'star']);
+    }
+    match /mbox/{r}/b/{id} {
+      allow read: if mailOk(r) || trMailOk(r);
+    }
+    match /memos/{id} {
+      allow read: if isAdmin() || isFinance() || isAuditor();
+      allow create: if (isAdmin() || isFinance()) && memoRoleOk(request.resource.data.from)
+        && request.resource.data.to in ['admin', 'academic', 'finance'] && request.resource.data.to != request.resource.data.from
+        && request.resource.data.text is string && request.resource.data.text.size() <= 1000
+        && request.resource.data.keys().hasOnly(['from', 'to', 'text', 'at', 'replyTo']);
+      allow update: if signedIn() && memoRoleOk(resource.data.to) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt']);
+    }
+    // ---- exams: settings (exams), questions (examQs), answer keys (examKeys), students' attempts (examSubs) ----
+    function grpOf(g) { return get(/databases/$(database)/documents/groups/$(g)).data; }
+    function exDoc(id) { return get(/databases/$(database)/documents/exams/$(id)).data; }
+    function exWriter(d) { return notMaint() && (isAdmin() || (isTrainer() && d.tid == localPart() && grpOf(d.gid).trainerId == localPart())); }
+    match /exams/{id} {
+      allow read: if canView() || (isStudent() && myNum() in resource.data.get('memberNums', []));
+      allow create: if exWriter(request.resource.data);
+      allow update: if exWriter(request.resource.data) && request.resource.data.gid == resource.data.gid;
+      allow delete: if isAdmin() || (isTrainer() && resource.data.tid == localPart());
+    }
+    match /examQs/{id} {
+      allow read: if canView() || (isStudent() && exDoc(id).status == 'open' && myNum() in exDoc(id).get('memberNums', []) && request.time >= exDoc(id).start);
+      allow create, update: if exWriter(request.resource.data);
+      allow delete: if isAdmin() || (isTrainer() && resource.data.tid == localPart());
+    }
+    match /examKeys/{id} {
+      allow read, delete: if isAdmin() || (isTrainer() && resource.data.tid == localPart());
+      allow create, update: if exWriter(request.resource.data);
+    }
+    match /examSubs/{id} {
+      function ex() { return exDoc(id.split('_')[0]); }
+      // a student the trainer reopened the exam for has a personal closing time in exams.extra[num]
+      function myEnd() { return ex().get('extra', {}).get(myNum(), ex().end); }
+      allow read: if isAdmin() || isAuditor() || (isTrainer() && resource.data.tid == localPart()) || (isStudent() && resource.data.num == myNum());
+      allow create: if notMaint() && isStudent() && id == request.resource.data.eid + '_' + myNum() && request.resource.data.num == myNum()
+        && request.resource.data.keys().hasOnly(['eid', 'gid', 'tid', 'num', 'startedAt', 'ans', 'done', 'away'])
+        && request.resource.data.startedAt == request.time && request.resource.data.done == false && request.resource.data.away == 0
+        && ex().status == 'open' && myNum() in ex().get('memberNums', [])
+        && request.resource.data.gid == ex().gid && request.resource.data.tid == ex().tid
+        && request.time >= ex().start && (request.time < ex().end || request.time < myEnd());
+      allow update: if (isStudent() && resource.data.num == myNum() && resource.data.done == false
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ans', 'done', 'doneAt', 'away'])
+          && request.resource.data.ans.size() <= 200
+          && request.time < resource.data.startedAt + duration.value(ex().mins * 60 + 120, 's')
+          && (request.time < ex().end + duration.value(120, 's') || request.time < myEnd() + duration.value(120, 's')))
+        || ((isAdmin() || (isTrainer() && resource.data.tid == localPart()))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['auto', 'es', 'score', 'graded', 'gradedAt']));
+      // the trainer of the exam may wipe an attempt so the student can take it again
+      allow delete: if isAdmin() || (notMaint() && isTrainer() && resource.data.tid == localPart());
+    }
+    // ---- cybersecurity bootcamp: config readable by all signed-in, edited by the administration ----
+    match /camp/{doc} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+    // ---- cyber lab progress: one doc per student (doc id = training number) ----
+    match /campLab/{num} {
+      allow read: if canView() || (isStudent() && num == myNum());
+      allow write: if isAdmin() || (isStudent() && num == myNum());
+    }
+    // ---- cyber lab settings (e.g. help button on/off): admins & trainers control ----
+    match /labCfg/{doc} {
+      allow read: if signedIn();
+      allow write: if isAdmin() || isTrainer();
+    }
+    // ---- cyber lab leaderboard: each student writes only their own short name and points ----
+    match /labBoard/{num} {
+      allow read: if signedIn();
+      allow write: if isStudent() && num == myNum()
+        && request.resource.data.keys().hasOnly(['name', 'xp', 'at'])
+        && request.resource.data.name is string && request.resource.data.name.size() <= 40
+        && request.resource.data.xp is map;
+    }
+    // ---- the student's documents (ID, certificates): the list only; the files sit on the institute server ----
+    match /studentDocs/{num} { allow read, write: if isAdmin(); }
+    // ---- human resources: employees and their daily attendance ----
+    function hrOk() { return (staffRole() == 'hr' && isMailStaff()) || (staffRole() == 'admin' && notLocked()); }
+    match /hrStaff/{id} { allow read: if hrOk() || isAuditor(); allow write: if hrOk(); }
+    // the fingerprint clock: approved serial numbers and a command to pull older records (the push service writes "seen")
+    match /hrCfg/{d} { allow read: if hrOk() || isAuditor(); allow write: if hrOk(); }
+    // leaves, notices to employees, payroll sheets sent to finance
+    match /hrLeaves/{id} { allow read: if hrOk() || isAuditor(); allow write: if hrOk(); }
+    match /hrNotices/{id} { allow read: if hrOk() || isAuditor(); allow write: if hrOk(); }
+    match /hrPayroll/{m} {
+      allow read: if hrOk() || finAccess() || isAuditor();
+      allow create, delete: if hrOk();
+      allow update: if hrOk() || (finAccess() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'paidAt', 'paidBy']) && request.resource.data.status == 'paid');
+    }
+    match /hrAtt/{d} {
+      allow read: if hrOk() || isAuditor();
+      allow write: if hrOk() && d.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}');
+    }
+    // students' requests and questions to academic affairs
+    match /acReqs/{id} {
+      allow read: if isAdmin() || isAuditor() || (isStudent() && resource.data.num == myNum());
+      allow create: if isStudent() && request.resource.data.num == myNum() && request.resource.data.status == 'new'
+        && request.resource.data.get('text', '').size() <= 800 && request.resource.data.get('cat', '').size() <= 40
+        && request.resource.data.keys().hasOnly(['num', 'name', 'status', 'at', 'cat', 'text', 'phone']);
+      allow update: if isAdmin() || (isStudent() && resource.data.num == myNum() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seen']));
+      allow delete: if isAdmin();
+    }
     match /payments/{id} {
-      allow read: if finAccess() || (isStudent() && resource.data.num == myNum());
+      allow read: if finAccess() || isAuditor() || (isStudent() && resource.data.num == myNum());
       allow create: if finAccess() && request.resource.data.void == false && request.resource.data.amount > 0;
-      allow update: if finAccess()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['void', 'voidReason', 'voidBy', 'voidAt'])
-        && request.resource.data.void == true;
+      // either voided with a reason, or a receipt image attached afterwards
+      allow update: if finAccess() && (
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['void', 'voidReason', 'voidBy', 'voidAt'])
+          && request.resource.data.void == true)
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hasImg', 'ref']));
       allow delete: if false;
     }
-    match /salaryPays/{id} { allow read, write: if finAccess(); }
+    match /salaryPays/{id} { allow read: if finAccess() || isAuditor(); allow write: if finAccess(); }
+    // receipt and invoice images for payments and expenses (one compressed image per record, under 1 MB)
+    match /receipts/{id} { allow read: if finAccess() || isAuditor(); allow write: if finAccess(); }
     // expenses and partner commission payouts: voided with a reason, never deleted
     match /expenses/{id} {
-      allow read: if finAccess();
+      allow read: if finAccess() || isAuditor();
       allow create: if finAccess() && request.resource.data.void == false && request.resource.data.amount > 0;
-      allow update: if finAccess() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['void', 'voidReason', 'voidBy', 'voidAt']);
+      allow update: if finAccess() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['void', 'voidReason', 'voidBy', 'voidAt', 'hasImg', 'ref']);
     }
     match /commPays/{id} {
-      allow read: if finAccess();
+      allow read: if finAccess() || isAuditor();
       allow create: if finAccess() && request.resource.data.void == false && request.resource.data.amount > 0;
       allow update: if finAccess() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['void', 'voidReason', 'voidBy', 'voidAt']);
     }
     // remaining balance per student, kept in sync by finance; academic affairs reads it for certificates
     match /finClear/{num} {
-      allow read: if isAdmin() || isFinance();
+      allow read: if isAdmin() || isFinance() || isAuditor();
       allow write: if finAccess();
     }
 
+
+    // ---- trainers <-> academic affairs: one conversation per trainer; a trainer reads only his own ----
+    match /trMsgs/{id} {
+      allow read: if isAdmin() || isAuditor() || (isTrainer() && resource.data.tid == localPart());
+      allow create: if request.resource.data.keys().hasOnly(['tid', 'from', 'text', 'at'])
+        && request.resource.data.text is string && request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 2000
+        && ((isTrainer() && request.resource.data.tid == localPart() && request.resource.data.from == 'trainer')
+          || (isAdmin() && ((request.auth.token.email == 'admin@osostl.local' && request.resource.data.from == 'admin') || (request.auth.token.email == 'acadmic@osostl.local' && request.resource.data.from == 'academic'))));
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])
+        && ((isAdmin() && resource.data.from == 'trainer') || (isTrainer() && resource.data.tid == localPart() && resource.data.from != 'trainer'));
+    }
+
+    // ---- leave requests and medical excuses, approved in order along roles[] ----
+    function srOwner(d) { return signedIn() && d.byEmail == request.auth.token.email; }
+    function srTurn(d) { return deptActive() && d.status == 'pending' && d.roles[d.cur] == staffRole(); }
+    match /staffReqs/{id} {
+      allow read: if srOwner(resource.data) || isAuditor() || (deptActive() && staffRole() in resource.data.roles);
+      allow create: if srOwner(request.resource.data) && request.resource.data.status == 'pending' && request.resource.data.cur == 0
+        && request.resource.data.reason.size() <= 800
+        && ((request.resource.data.byRole == 'trainer' && isTrainer() && request.resource.data.tid == localPart() && request.resource.data.roles == ['academic', 'hr', 'admin'])
+          || (request.resource.data.byRole == 'hr' && staffRole() == 'hr' && deptActive() && request.resource.data.roles == ['admin'])
+          || (request.resource.data.byRole in ['academic', 'finance', 'admission', 'business'] && staffRole() == request.resource.data.byRole && deptActive() && request.resource.data.roles == ['hr', 'admin']));
+      allow update: if (srTurn(resource.data) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['steps', 'cur', 'status', 'doneAt', 'staffId'])
+            && request.resource.data.roles == resource.data.roles && request.resource.data.byEmail == resource.data.byEmail
+            && (request.resource.data.cur == resource.data.cur + 1 || request.resource.data.status in ['approved', 'rejected']))
+        || (srOwner(resource.data) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seen']))
+        || (srOwner(resource.data) && resource.data.status == 'pending' && resource.data.cur == 0 && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) && request.resource.data.status == 'cancelled');
+    }
+    function srDoc(id) { return get(/databases/$(database)/documents/staffReqs/$(id)).data; }
+    match /staffReqFiles/{id} {
+      allow read: if signedIn() && (srDoc(id).byEmail == request.auth.token.email || isAuditor() || (deptActive() && staffRole() in srDoc(id).roles));
+      allow create: if signedIn() && srDoc(id).byEmail == request.auth.token.email && request.resource.data.data is string && request.resource.data.data.size() < 1045000;
+    }
+
+    // ---- the owner's tasks to the departments ----
+    // only the owner (oversight account), the department it was sent to, and the general administration ever see a task
+    function deptActive() {
+      return (staffRole() in ['admin', 'academic', 'finance'] && notLocked()) || (staffRole() in ['admission', 'business', 'hr'] && isMailStaff());
+    }
+    function taskSees(t) { return isAuditor() || isOwner() || (deptActive() && staffRole() == t.to); }
+    function taskDoc(id) { return get(/databases/$(database)/documents/tasks/$(id)).data; }
+    match /tasks/{id} {
+      allow read: if signedIn() && taskSees(resource.data);
+      allow create: if isAuditor() && request.resource.data.status == 'new'
+        && request.resource.data.to in ['admin', 'academic', 'finance', 'admission', 'business', 'hr']
+        && request.resource.data.title is string && request.resource.data.title.size() <= 150
+        && request.resource.data.get('body', '').size() <= 3000;
+      // the owner approves, returns or edits; the department marks it started or done with its report
+      allow update: if (isAuditor() && request.resource.data.to == resource.data.to)
+        || (isOwner() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ofile', 'rfile']))
+        || (deptActive() && staffRole() == resource.data.to
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'seenAt', 'doneAt', 'report', 'rfile', 'doneBy'])
+          && resource.data.status in ['new', 'seen', 'returned', 'done'] && request.resource.data.status in ['seen', 'done']
+          && request.resource.data.get('report', '').size() <= 5000);
+      allow delete: if isAuditor();
+    }
+    // one attached file per side: the owner's (o) when sending, the department's report (r)
+    match /taskFiles/{id} {
+      allow read: if signedIn() && taskSees(taskDoc(resource.data.tid));
+      allow create, update: if signedIn() && id == request.resource.data.tid + '_' + request.resource.data.side
+        && request.resource.data.data is string && request.resource.data.data.size() < 1045000
+        && ((isAuditor() && request.resource.data.side == 'o')
+          || (request.resource.data.side == 'r' && deptActive() && staffRole() == taskDoc(request.resource.data.tid).to && taskDoc(request.resource.data.tid).status != 'closed'));
+      allow delete: if isAuditor() || isOwner();   // the director archives old attachments (after downloading them)
+    }
+    // automatic weekly backups: the list only (files are on the classroom server); written by the push service
+    match /backups/{id} { allow read: if isOwner(); allow write: if false; }
+    // weekly digest of every department's work, written by the push service every Thursday evening
+    match /weekly/{id} {
+      allow read: if isAuditor() || isOwner();
+      allow write: if false;
+    }
 
     // term archives: summaries kept after a term is closed
     match /archives/{id} {
