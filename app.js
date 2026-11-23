@@ -8,7 +8,7 @@ const DOMAIN = "osostl.local";                       // login emails are interna
 const MAIL_STAFF = ["admission", "business", "hr"];      // accounts that only use their own mailbox
 const ROLE_EMAIL = {admin: "admin@" + DOMAIN, academic: "acadmic@" + DOMAIN, finance: "finance@" + DOMAIN, auditor: "audit@" + DOMAIN,
   ...Object.fromEntries(MAIL_STAFF.map(r => [r, `m-${r}@` + DOMAIN]))};
-const ROLES = {admin: "الإدارة", academic: "مسؤول الشؤون الأكاديمية", finance: "المالية", auditor: "جهة رقابية (قراءة فقط)",
+const ROLES = {admin: "الإدارة", academic: "مسؤول الشؤون الأكاديمية", finance: "المالية", auditor: "المالك (الجهة الرقابية)",
   admission: "القبول والتسجيل وخدمة العملاء", business: "الشراكات وقطاع الشركات", hr: "الموارد البشرية"};
 const RO = () => S.adminRole === "auditor";
 const FIN = () => S.adminRole === "finance";
@@ -120,7 +120,8 @@ async function startPay(body, btn){
   if (btn) { btn.disabled = true; btn.textContent = "⏳ جاري فتح صفحة الدفع…"; }
   try { const j = await payApi("/pay/create", {...body, back: location.origin + location.pathname}); location.href = j.url; }
   catch (e) { if (btn) { btn.disabled = false; btn.textContent = "💳 ادفع إلكترونياً"; }
-    toast(e.status === 503 ? "الدفع الإلكتروني مو مفعّل للحين" : e.message === "amount" ? `المبلغ لازم يكون بين 1 و${(e.info || {}).remaining ?? ""} ر.س` : e.message === "closed" ? "الدفع الإلكتروني مقفول حالياً" : e.message === "already paid" ? "الطلب مدفوع من قبل" : "تعذّر فتح صفحة الدفع، جرّب بعد شوي"); }
+    const t = (e.info || {}).tap || {};
+    toast(e.message === "NOURL" ? "رابط خدمة الإشعارات غير مضبوط في النظام" : e.status === 503 ? "الدفع الإلكتروني مو مفعّل للحين — مفتاح Tap ما انحط في Cloudflare" : e.status === 404 && e.message === "not found" ? "خدمة الدفع ما انرفعت — حدّث worker في Cloudflare لآخر نسخة" : e.message === "amount" ? `المبلغ لازم يكون بين 1 و${(e.info || {}).remaining ?? ""} ر.س` : e.message === "closed" ? "الدفع الإلكتروني مقفول حالياً" : e.message === "already paid" ? "الطلب مدفوع من قبل" : e.message === "tap" ? `Tap رفضت الطلب (${t.status || ""}${t.code ? " · " + t.code : ""}): ${t.msg || "تأكد من المفتاح"}` : e.message === "no account" ? "ما فيه حساب مالي لهذا الطالب" : `تعذّر فتح صفحة الدفع (${e.status || "شبكة"}${(e.info || {}).detail ? " · " + e.info.detail : ""})`, 1); }
 }
 async function checkPayReturn(){   // back from Tap's page: ?pay=pi…
   const pi = new URLSearchParams(location.search).get("pay"); if (!pi || S._payChecked === pi || S.role !== "student" || !(S.site || {}).pushUrl) return;
@@ -596,7 +597,7 @@ if (!configured) {
     if (!user) { if (["trainer","admin","student"].includes(S.view)) S.view = "home"; render(); return; }
     const local = (user.email || "").split("@")[0];
     const role = Object.keys(ROLE_EMAIL).find(k => ROLE_EMAIL[k] === user.email);
-    if (role) { S.role = "admin"; S.adminRole = role; S.view = "admin"; }
+    if (role) { S.role = "admin"; S.adminRole = role; S.view = "admin"; if (role === "auditor") S.aTab = "tasks"; }
     else if (local.startsWith("st-")) { S.role = "student"; S.myNum = local.split(".")[0].slice(3); S.view = "student"; }
     else { S.role = "trainer"; S.view = "trainer"; }
     if (S.role !== "admin") {
@@ -665,7 +666,7 @@ function startData(){
   if (S.role === "admin") {
     S.subs.push(onSnapshot(ref("public/disabled"), snap => { S.disabled = (snap.exists() && snap.data().list) || {}; afterData(); }, () => {}));
     // emergency lock: a session that signed in before its role's lock time leaves at once
-    watchStaffLock(); watchMsgs();
+    watchStaffLock(); watchMsgs(); watchTasks();
     if (!RO()) { S.mail = null; mailSubs(); }
     if (!RO()) S.subs.push(onSnapshot(collection(db, "memos"), snap => { S.memos = snap.docs.map(d => ({id: d.id, ...d.data()})); afterData(); }, () => {}));
     if (!FIN()) S.subs.push(onSnapshot(collection(db, "acReqs"), snap => { S.aReqs = snap.docs.map(d => ({id: d.id, ...d.data()})); afterData(); }, () => {}));
@@ -677,6 +678,7 @@ function startData(){
       return;
     }
     if (RO()) {
+      startFinance();
       S.subs.push(onSnapshot(collection(db, "students"), snap => { S.students = {}; snap.docs.forEach(d => S.students[d.id] = d.data()); afterData(); }, () => {}));
       S.subs.push(onSnapshot(collection(db, "warnings"), snap => { S.warnings = {}; snap.docs.forEach(d => S.warnings[d.id] = d.data()); afterData(); }, () => {}));
       S.subs.push(onSnapshot(collection(db, "certs"), snap => { S.certs = {}; snap.docs.forEach(d => { const c = d.data(); S.certs[c.key] = c; }); afterData(); }, () => {}));
@@ -2655,11 +2657,12 @@ function writeGroup(gid, d){
 
 function renderAdmin(app){
   if (RO()) {
-    const tabsRO = [["dash", "لوحة اليوم"], ["kpi", "المؤشرات"], ["follow", "المتابعة"], ["report", "التقارير"], ["archive", "الأرشيف"]];
-    if (!tabsRO.some(([k]) => k === S.aTab)) S.aTab = "dash";
-    app.innerHTML = `<div class="notice">حساب قراءة فقط: تقدر تشوف وتطبع وتصدّر، وما تقدر تعدّل شي.</div><div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabsRO.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
+    const tabsRO = [["tasks", "المهام" + taskBadge()], ["weekly", "التقرير الأسبوعي"], ["dash", "لوحة اليوم"], ["kpi", "المؤشرات"], ["follow", "المتابعة"], ["report", "التقارير"], ["finance", "المالية"], ["hr", "الموارد البشرية"], ["logs", "سجل الإدارات"], ["archive", "الأرشيف"]];
+    if (!tabsRO.some(([k]) => k === S.aTab)) S.aTab = "tasks";
+    app.innerHTML = `<div class="notice">بوابة المالك: تطّلع على كل أعمال المعهد وتصدّرها، وترسل مهام للإدارات وتستلم تقاريرها. التعديل على البيانات يبقى عند الإدارات.</div><div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabsRO.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
     app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
-    ({dash: adminDash, kpi: adminKpi, follow: adminFollow, report: adminReport, archive: adminArchive})[S.aTab]($("#ab"));
+    ({tasks: tasksTab, weekly: weeklyTab, dash: adminDash, kpi: adminKpi, follow: adminFollow, report: adminReport, finance: adminFinance, hr: hrTab, logs: adminLogs, archive: adminArchive})[S.aTab]($("#ab"));
+    if (["finance", "hr", "logs"].includes(S.aTab)) ownerReadOnly($("#ab"));
     if (RO()) app.querySelectorAll("#ab [data-issue], #issueAll, #cIssue, [data-rc], [data-twa], [data-wabs], [data-warn]").forEach(x => x.remove());
     return;
   }
@@ -2667,20 +2670,20 @@ function renderAdmin(app){
     app.innerHTML = `<div id="ab"></div>`; adminFinance($("#ab")); return;
   }
   if (MAILONLY()) {
-    if (S.adminRole !== "hr") { app.innerHTML = `<div id="ab"></div>`; mailTab($("#ab")); return; }
-    if (!["mail", "hr"].includes(S.aTab)) S.aTab = "hr";
-    app.innerHTML = `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${[["hr", "الموارد البشرية"], ["mail", "البريد" + mailBadge()]].map(([k, v]) => `<button class="tab ${S.aTab === k ? "on" : ""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
+    const mt = [...(S.adminRole === "hr" ? [["hr", "الموارد البشرية"]] : []), ["mail", "البريد" + mailBadge()], ["tasks", "مهام المالك" + taskBadge()]];
+    if (!mt.some(([k]) => k === S.aTab)) S.aTab = mt[0][0];
+    app.innerHTML = `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${mt.map(([k, v]) => `<button class="tab ${S.aTab === k ? "on" : ""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
     app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
-    (S.aTab === "hr" ? hrTab : mailTab)($("#ab")); return;
+    ({hr: hrTab, mail: mailTab, tasks: tasksTab})[S.aTab]($("#ab")); return;
   }
-  const tabs = [["dash","لوحة اليوم"],["kpi","المؤشرات"],["groups","المقررات والطلاب"],["students","الطلاب"],["msgs","الرسائل الجماعية"],["trainers","المدربين والرموز"],["grades","الدرجات"],["exams","الاختبارات"],["camp","المعسكر"],["follow","المتابعة"],["excuses","الأعذار"],["areqs","طلبات الطلاب" + ((S.aReqs || []).some(r => r.status === "new") ? ` (${S.aReqs.filter(r => r.status === "new").length})` : "")],["evals","التقييمات"],["report","التقارير"],["courses","الدورات والشهادات"],["sign","طلبات التوقيع"],["memos","المراسلات" + memoBadge()],["mail","البريد" + mailBadge()],...(MEET() ? [["live","المحاضرات والتسجيلات"]] : []),["system","النظام"],...(S.adminRole === "admin" ? [["hr","الموارد البشرية"]] : []),...(SEES_FIN() ? [["finance","المالية" + ((S.fReqs || []).some(r => r.status === "fin_signed") ? ` (${(S.fReqs || []).filter(r => r.status === "fin_signed").length})` : "")]] : []),["archive","الأرشيف"],...(S.adminRole === "admin" ? [["logs","السجل"]] : [])];
+  const tabs = [["dash","لوحة اليوم"],["kpi","المؤشرات"],["groups","المقررات والطلاب"],["students","الطلاب"],["msgs","الرسائل الجماعية"],["trainers","المدربين والرموز"],["grades","الدرجات"],["exams","الاختبارات"],["camp","المعسكر"],["follow","المتابعة"],["excuses","الأعذار"],["areqs","طلبات الطلاب" + ((S.aReqs || []).some(r => r.status === "new") ? ` (${S.aReqs.filter(r => r.status === "new").length})` : "")],["evals","التقييمات"],["report","التقارير"],["courses","الدورات والشهادات"],["sign","طلبات التوقيع"],["tasks","مهام المالك" + taskBadge()],["memos","المراسلات" + memoBadge()],["mail","البريد" + mailBadge()],...(MEET() ? [["live","المحاضرات والتسجيلات"]] : []),["system","النظام"],...(S.adminRole === "admin" ? [["hr","الموارد البشرية"]] : []),...(SEES_FIN() ? [["finance","المالية" + ((S.fReqs || []).some(r => r.status === "fin_signed") ? ` (${(S.fReqs || []).filter(r => r.status === "fin_signed").length})` : "")]] : []),["archive","الأرشيف"],...(S.adminRole === "admin" ? [["weekly","التقرير الأسبوعي"],["logs","السجل"]] : [])];
   if (!tabs.some(([k]) => k === S.aTab)) S.aTab = "dash";
   const waiting = Object.values(S.grades).filter(x => x.status === "submitted").length;
   app.innerHTML = `${backupNag()}${absNag()}${S.sys && S.sys.maintenance ? `<div class="notice err">وضع الصيانة شغّال: الموقع مقفل على الكل ما عدا الإدارة. تطفيه من تبويب "النظام".</div>` : ""}<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}${k === "grades" && waiting ? ` (${waiting})` : ""}${k === "follow" && S.allAtt && ["academic", "admin"].includes(S.adminRole) ? (n => n ? ` (${n})` : "")(absAlerts().alerts.filter(alertWaiting).length) : ""}${k === "excuses" && (S.excuses || []).filter(x => x.status === "pending").length ? ` (${S.excuses.filter(x => x.status === "pending").length})` : ""}</button>`).join("")}</div></div><div id="ab"></div>`;
   app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
   if ($("#nagAbs")) $("#nagAbs").onclick = () => { S.aTab = "follow"; render(); };
   if ($("#nagBk")) $("#nagBk").onclick = async e => { e.target.disabled = true; try { await backupAll(); toast("نزلت النسخة الاحتياطية"); render(); } catch (x) { console.error(x); toast("تعذّر أخذ النسخة"); e.target.disabled = false; } };
-  ({dash: adminDash, kpi: adminKpi, groups: adminGroups, students: adminStudents, msgs: adminMessages, trainers: adminTrainers, grades: adminGrades, exams: adminExams, camp: campTab, hr: hrTab, follow: adminFollow, excuses: adminExcuses, areqs: adminAcReqs, evals: adminEvals, report: adminReport, courses: adminCourses, sign: signRequests, memos: memosTab, mail: mailTab, live: liveTab, system: adminSystem, archive: adminArchive, finance: adminFinance, logs: adminLogs})[S.aTab]($("#ab"));
+  ({dash: adminDash, kpi: adminKpi, groups: adminGroups, students: adminStudents, msgs: adminMessages, trainers: adminTrainers, grades: adminGrades, exams: adminExams, camp: campTab, hr: hrTab, follow: adminFollow, excuses: adminExcuses, areqs: adminAcReqs, evals: adminEvals, report: adminReport, courses: adminCourses, sign: signRequests, tasks: tasksTab, weekly: weeklyTab, memos: memosTab, mail: mailTab, live: liveTab, system: el => { adminSystem(el); attArchiveCard(el); }, archive: adminArchive, finance: adminFinance, logs: adminLogs})[S.aTab]($("#ab"));
 }
 
 function adminDash(el){
@@ -4562,7 +4565,7 @@ function signRequests(el){
   el.innerHTML = `${admin ? "" : `<div class="card"><h2>إرسال مستند للتوقيع والختم</h2>
     <p class="muted" style="margin-top:0">خطاب أو عقد أو أي مستند يحتاج توقيع مدير المعهد والختم. ترفقه هنا، وتقدر تحط توقيعك عليه أول، ويوصل لبوابة الإدارة. لما توقّعه الإدارة وتختمه يرجع لك هنا جاهز للتنزيل.</p>
     <div class="row"><input type="text" id="srT" class="grow" placeholder="عنوان المستند، مثل: خطاب تعريف للمتدربة لجين" maxlength="120"></div>
-    <div class="row" style="margin-top:8px"><label class="f grow" for="srF">المستند (صورة أو PDF، أقل من 600 كيلوبايت)<input type="file" id="srF" accept="image/*,application/pdf"></label></div>
+    <div class="row" style="margin-top:8px"><label class="f grow" for="srF">المستند (صورة أو PDF، أقل من 600 كيلوبايت)<input type="file" id="srF" accept="image/*,application/pdf"></label></div>${ATT_NOTE}
     <label class="f" for="srN" style="margin-top:8px">ملاحظة للإدارة (اختياري)<input type="text" id="srN" maxlength="300"></label>
     <div class="row" style="margin-top:8px"><button class="btn gold" id="srSend">التالي: أحط توقيعي وأرسل</button><button class="btn sm" id="srSend2">أرسل بدون توقيعي</button></div></div>`}
   <div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${[["pending", "بانتظار الإدارة"], ["signed", "موقّعة"], ["rejected", "مرفوضة"], ["all", "الكل"]].map(([k, v]) => `<button class="tab ${f === k ? "on" : ""}" data-srf="${k}">${v} (${k === "all" ? S.signReqs.length : S.signReqs.filter(r => r.status === k).length})</button>`).join("")}</div></div>
@@ -4575,8 +4578,8 @@ function signRequests(el){
   el.querySelectorAll("[data-srf]").forEach(b => b.onclick = () => { S.srF = b.dataset.srf; render(); });
   const getFile = async id => { const x = await getDoc(ref("signFiles/" + id)); return x.exists() ? x.data().data : null; };
   const ext = d => /^data:application\/pdf/.test(d) ? "pdf" : "jpg";
-  el.querySelectorAll("[data-srv]").forEach(b => b.onclick = async () => { const r = S.signReqs.find(x => x.id === b.dataset.srv); try { const d = await getFile(r.id); if (d) openData(d, `${r.title}.${ext(d)}`); else toast("الملف غير موجود"); } catch (e) { handleWriteErr(e); } });
-  el.querySelectorAll("[data-srd]").forEach(b => b.onclick = async () => { const r = S.signReqs.find(x => x.id === b.dataset.srd); try { const d = await getFile(r.id + "_signed"); if (d) openData(d, `${r.title} - موقّع.${ext(d)}`); else toast("الملف غير موجود"); } catch (e) { handleWriteErr(e); } });
+  el.querySelectorAll("[data-srv]").forEach(b => b.onclick = async () => { const r = S.signReqs.find(x => x.id === b.dataset.srv); try { const d = await getFile(r.id); if (d) openData(d, `${r.title}.${ext(d)}`); else toast(r.filesArchived ? "الملف مؤرشف — موجود في نسخة المرفقات عند الإدارة العامة" : "الملف غير موجود"); } catch (e) { handleWriteErr(e); } });
+  el.querySelectorAll("[data-srd]").forEach(b => b.onclick = async () => { const r = S.signReqs.find(x => x.id === b.dataset.srd); try { const d = await getFile(r.id + "_signed"); if (d) openData(d, `${r.title} - موقّع.${ext(d)}`); else toast(r.filesArchived ? "الملف مؤرشف — موجود في نسخة المرفقات عند الإدارة العامة" : "الملف غير موجود"); } catch (e) { handleWriteErr(e); } });
   el.querySelectorAll("[data-srx]").forEach(b => b.onclick = async () => { if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟"; return; } const bt = writeBatch(db); bt.delete(ref("signReqs/" + b.dataset.srx)); bt.delete(ref("signFiles/" + b.dataset.srx)); try { await bt.commit(); } catch (e) { handleWriteErr(e); } });
   el.querySelectorAll("[data-srr]").forEach(b => b.onclick = async () => {
     if (!b.dataset.sure) { b.dataset.sure = 1; b.insertAdjacentHTML("beforebegin", `<input type="text" id="srRR" placeholder="سبب الرفض" style="width:160px">`); b.textContent = "تأكيد الرفض"; return; }
@@ -4731,6 +4734,271 @@ function adminLogs(el){
     } catch (x) { console.error(x); toast("تعذّر تنزيل السجل"); }
     e.target.disabled = false;
   };
+}
+
+/* ---------- owner's portal: tasks to the departments and the weekly report ----------
+   The owner (the oversight account) sends a task to one department. Only that department, the general administration
+   and the owner see it. The department reports back (text + an optional file); the owner approves it or returns it. */
+const TASK_TO = {admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", admission: "القبول والتسجيل وخدمة العملاء", business: "الشراكات وقطاع الشركات", hr: "الموارد البشرية"};
+const TASK_ST = {new: "جديدة", seen: "قيد التنفيذ", done: "منجزة · بانتظار اعتماد المالك", returned: "معادة للاستكمال", closed: "معتمدة ✓"};
+const TASK_PILL = {new: "l", seen: "", done: "l", returned: "a", closed: "p"};
+const TASK_MAX = 700 * 1024;
+function watchTasks(){
+  if (S._taskSub || !S.authUser || S.role !== "admin" || !S.adminRole) return; S._taskSub = true;
+  const q = RO() || S.adminRole === "admin" ? collection(db, "tasks") : query(collection(db, "tasks"), where("to", "==", S.adminRole));
+  S.subs.push(onSnapshot(q, snap => { S.tasks = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => String(b.at || "").localeCompare(String(a.at || ""))); if (!busyEditing()) render(); }, e => console.error(e)));
+  S.subs.push(() => { S._taskSub = false; S.tasks = null; S.weeks = null; });
+}
+const taskLate = t => t.due && t.due < today() && !["done", "closed"].includes(t.status);
+const myTasks = () => (S.tasks || []).filter(t => t.to === S.adminRole);
+const taskBadge = () => { const n = RO() ? (S.tasks || []).filter(t => t.status === "done").length : myTasks().filter(t => ["new", "returned"].includes(t.status)).length; return n ? ` (${n})` : ""; };
+const fmtIso = s => { try { return s ? new Date(s).toLocaleString("ar-SA-u-ca-gregory-nu-latn", {timeZone: TZ, day: "numeric", month: "short", hour: "numeric", minute: "2-digit"}) : ""; } catch { return ""; } };
+async function taskFilePut(tid, side, f){
+  if (!f) return null;
+  if (f.size > TASK_MAX) throw new Error("big");
+  const data = await fileToDataURL(f), meta = {name: f.name.slice(0, 120), type: f.type || "application/octet-stream", size: f.size, at: new Date().toISOString()};
+  await setDoc(ref(`taskFiles/${tid}_${side}`), {tid, side, ...meta, data, at: new Date().toISOString()});
+  return meta;
+}
+async function taskFileOpen(tid, side){
+  try {
+    const s = await getDoc(ref(`taskFiles/${tid}_${side}`)); if (!s.exists()) return toast("الملف مو موجود");
+    const x = s.data(), a = document.createElement("a"); a.href = x.data; a.download = x.name || "file"; document.body.appendChild(a); a.click(); a.remove();
+  } catch (e) { console.error(e); toast("تعذّر فتح الملف"); }
+}
+function taskCard(t, mode){   // mode: owner | dept | view
+  const late = taskLate(t), fileBtn = (side, f) => f && f.archived ? `<span class="pill" title="انحذف من النظام وهو محفوظ في نسخة المرفقات عند الإدارة">📦 ${esc(f.name)} · مؤرشف</span>` : f ? `<button class="btn sm" data-tfile="${esc(t.id)}|${side}">📎 ${esc(f.name)}${f.size ? ` <span class="muted">(${Math.max(1, Math.round(f.size / 1024))} ك.ب)</span>` : ""}</button>` : "";
+  const canWork = mode === "dept" && t.status !== "closed";
+  return `<div class="card" style="margin-bottom:10px;${t.pri === "high" ? "border-inline-start:4px solid var(--abs)" : ""}">
+    <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+      <div class="grow" style="min-width:200px"><b>${t.pri === "high" ? "🔴 " : ""}${esc(t.title)}</b>
+        <div class="muted">${mode === "dept" ? "من المالك" : "إلى " + esc(TASK_TO[t.to] || t.to)} · ${esc(fmtIso(t.at))}${t.due ? ` · التسليم <span style="${late ? "color:var(--abs);font-weight:600" : ""}">${esc(t.due)}${late ? " (متأخرة)" : ""}</span>` : ""}</div></div>
+      <span class="pill ${TASK_PILL[t.status] || ""}">${esc(TASK_ST[t.status] || t.status)}</span></div>
+    ${t.body ? `<p style="white-space:pre-wrap;margin:8px 0">${esc(t.body)}</p>` : ""}${fileBtn("o", t.ofile)}
+    ${t.status === "returned" && t.note ? `<div class="notice err" style="margin-top:8px">ملاحظة المالك: ${esc(t.note)}</div>` : ""}
+    ${t.report || t.rfile ? `<div style="margin-top:10px;padding:10px;border-radius:10px;background:var(--soft, #f4f6f4)"><b>تقرير الإدارة</b>${t.doneAt ? ` <span class="muted">· ${esc(fmtIso(t.doneAt))}${t.doneBy ? " · " + esc(t.doneBy) : ""}</span>` : ""}
+      ${t.report ? `<p style="white-space:pre-wrap;margin:6px 0">${esc(t.report)}</p>` : ""}${fileBtn("r", t.rfile)}</div>` : ""}
+    ${mode === "owner" ? `<div class="row" style="margin-top:10px;gap:6px;flex-wrap:wrap">
+      ${t.status === "done" ? `<button class="btn sm pri" data-tok="${esc(t.id)}">اعتماد</button><button class="btn sm" data-tret="${esc(t.id)}">إعادة للاستكمال</button>` : ""}
+      ${t.status === "closed" ? `<button class="btn sm" data-tret="${esc(t.id)}">إعادة فتحها</button>` : ""}
+      <span class="grow"></span><button class="btn sm danger" data-tdel="${esc(t.id)}">حذف</button></div>` : ""}
+    ${canWork ? `<div style="margin-top:10px"><label class="f" for="trp-${esc(t.id)}">${t.status === "done" ? "تعديل التقرير" : "تقرير الإنجاز"}<textarea id="trp-${esc(t.id)}" rows="3" maxlength="5000" placeholder="وش سويتوا، والنتيجة…">${esc(t.report || "")}</textarea></label>
+      <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center"><input type="file" id="trf-${esc(t.id)}" style="max-width:260px"><span class="muted">ملف اختياري (PDF أو صورة أو Excel) حتى 700 ك.ب</span><span class="grow"></span>
+      <button class="btn pri" data-tdone="${esc(t.id)}">${t.status === "done" ? "تحديث التقرير" : "تسليم: المهمة خلصت"}</button></div>${ATT_NOTE}</div>` : ""}
+  </div>`;
+}
+function bindTaskCards(el){
+  el.querySelectorAll("[data-tfile]").forEach(b => b.onclick = () => { const [id, side] = b.dataset.tfile.split("|"); taskFileOpen(id, side); });
+  el.querySelectorAll("[data-tok]").forEach(b => b.onclick = async () => {
+    b.disabled = true; try { await setDoc(ref("tasks/" + b.dataset.tok), {status: "closed", closedAt: new Date().toISOString()}, {merge: true}); notify("task", b.dataset.tok); toast("اعتمدت المهمة"); } catch (e) { console.error(e); toast("تعذّر الحفظ"); b.disabled = false; }
+  });
+  el.querySelectorAll("[data-tret]").forEach(b => b.onclick = async () => {
+    const note = prompt("وش الناقص؟ (يظهر للإدارة)"); if (note === null) return;
+    try { await setDoc(ref("tasks/" + b.dataset.tret), {status: "returned", note: note.trim().slice(0, 600), returnedAt: new Date().toISOString()}, {merge: true}); notify("task", b.dataset.tret); toast("رجعت المهمة للإدارة"); } catch (e) { console.error(e); toast("تعذّر الحفظ"); }
+  });
+  el.querySelectorAll("[data-tdel]").forEach(b => b.onclick = async () => {
+    if (!confirm("حذف المهمة نهائياً؟")) return;
+    try { await deleteDoc(ref("tasks/" + b.dataset.tdel)); deleteDoc(ref(`taskFiles/${b.dataset.tdel}_o`)).catch(() => {}); deleteDoc(ref(`taskFiles/${b.dataset.tdel}_r`)).catch(() => {}); toast("انحذفت"); } catch (e) { console.error(e); toast("تعذّر الحذف"); }
+  });
+  el.querySelectorAll("[data-tdone]").forEach(b => b.onclick = async () => {
+    const id = b.dataset.tdone, t = (S.tasks || []).find(x => x.id === id); if (!t) return;
+    const report = $("#trp-" + id).value.trim(), f = $("#trf-" + id).files[0];
+    if (!report && !f && !t.rfile) return toast("اكتب التقرير أو ارفع ملف");
+    b.disabled = true;
+    try {
+      const rfile = f ? await taskFilePut(id, "r", f) : (t.rfile || null);
+      await setDoc(ref("tasks/" + id), {status: "done", report, rfile, doneAt: new Date().toISOString(), doneBy: (ROLES[S.adminRole] || S.adminRole)}, {merge: true});
+      logAction("تسليم مهمة من المالك", t.title); notify("task", id); toast("تسلّمت المهمة ✓ ووصلت للمالك");
+    } catch (e) { console.error(e); toast(e.message === "big" ? "الملف أكبر من 700 ك.ب — صغّره أو ارفعه PDF مضغوط" : "تعذّر التسليم"); b.disabled = false; }
+  });
+}
+function tasksTab(el){
+  if (!S.tasks) { el.innerHTML = `<div class="card"><p class="muted" style="margin:0">جاري التحميل…</p></div>`; return; }
+  if (RO()) return ownerTasks(el);
+  const mine = myTasks();
+  // opening the list tells the owner the department has seen its new tasks
+  mine.filter(t => t.status === "new").forEach(t => setDoc(ref("tasks/" + t.id), {status: "seen", seenAt: new Date().toISOString()}, {merge: true}).catch(() => {}));
+  const open = mine.filter(t => t.status !== "closed"), done = mine.filter(t => t.status === "closed");
+  el.innerHTML = `<div class="card"><h2>مهام المالك</h2><p class="muted" style="margin:0">المهام اللي يرسلها المالك لإدارتك. ما يشوفها غيرك وغير الإدارة العامة والمالك. لما تخلص المهمة اكتب التقرير وارفع الملف إن وجد واضغط «تسليم».</p></div>
+    ${open.map(t => taskCard(t, "dept")).join("") || `<div class="card empty">ما عندك مهام مفتوحة 👍</div>`}
+    ${done.length ? `<details class="card"><summary><b>المعتمدة (${done.length})</b></summary><div style="margin-top:10px">${done.map(t => taskCard(t, "view")).join("")}</div></details>` : ""}
+    ${S.adminRole === "admin" ? `<details class="card"><summary><b>كل مهام الإدارات (اطلاع) · ${(S.tasks || []).filter(t => t.to !== "admin").length}</b></summary><div style="margin-top:10px">${(S.tasks || []).filter(t => t.to !== "admin").map(t => taskCard(t, "view")).join("") || `<p class="muted">ما فيه.</p>`}</div></details>` : ""}`;
+  bindTaskCards(el);
+}
+function ownerTasks(el){
+  const all = S.tasks || [], fD = S.tkD || "", fS = S.tkS || "open";
+  const list = all.filter(t => (!fD || t.to === fD) && (fS === "all" || (fS === "open" ? !["closed"].includes(t.status) : fS === "late" ? taskLate(t) : t.status === fS)));
+  const cnt = k => all.filter(t => t.status === k).length;
+  el.innerHTML = `<div class="card"><h2>مهمة جديدة لإدارة</h2>
+      <p class="muted" style="margin-top:0">توصل للإدارة المختارة بس (والإدارة العامة تطّلع). تجيها إشعار، وترد عليك بتقرير وملف.</p>
+      <div class="row"><label class="f grow" for="tkTo">الإدارة<select id="tkTo">${Object.entries(TASK_TO).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></label>
+        <label class="f" for="tkDue" style="width:170px">موعد التسليم<input type="date" id="tkDue" min="${today()}"></label>
+        <label class="f" for="tkPri" style="width:130px">الأولوية<select id="tkPri"><option value="normal">عادية</option><option value="high">عاجلة</option></select></label></div>
+      <label class="f" for="tkT">عنوان المهمة<input type="text" id="tkT" maxlength="150" placeholder="مثال: تقرير بالطلاب المتأخرين في السداد"></label>
+      <label class="f" for="tkB">التفاصيل<textarea id="tkB" rows="4" maxlength="3000" placeholder="وش المطلوب بالضبط…"></textarea></label>
+      <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap"><input type="file" id="tkF" style="max-width:260px"><span class="muted">مرفق اختياري حتى 700 ك.ب</span><span class="grow"></span><button class="btn pri" id="tkSend">إرسال المهمة</button></div>${ATT_NOTE}</div>
+    <div class="card"><div class="stats">
+      <div class="stat"><div class="n">${all.filter(t => t.status !== "closed").length}</div><div class="l">مفتوحة</div></div>
+      <div class="stat"><div class="n" style="color:var(--late, #b7791f)">${cnt("done")}</div><div class="l">بانتظار اعتمادك</div></div>
+      <div class="stat"><div class="n" style="color:var(--abs)">${all.filter(taskLate).length}</div><div class="l">متأخرة</div></div>
+      <div class="stat"><div class="n">${cnt("closed")}</div><div class="l">معتمدة</div></div></div>
+      <div class="row" style="margin-top:10px;gap:8px"><select id="tkfD" style="width:auto"><option value="">كل الإدارات</option>${Object.entries(TASK_TO).map(([k, v]) => `<option value="${k}" ${fD === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
+        <select id="tkfS" style="width:auto">${[["open", "المفتوحة"], ["done", "بانتظار اعتمادي"], ["late", "المتأخرة"], ["closed", "المعتمدة"], ["all", "الكل"]].map(([k, v]) => `<option value="${k}" ${fS === k ? "selected" : ""}>${v}</option>`).join("")}</select></div></div>
+    ${list.map(t => taskCard(t, "owner")).join("") || `<div class="card empty">ما فيه مهام هنا.</div>`}`;
+  $("#tkfD").onchange = e => { S.tkD = e.target.value; render(); };
+  $("#tkfS").onchange = e => { S.tkS = e.target.value; render(); };
+  $("#tkSend").onclick = async e => {
+    const title = $("#tkT").value.trim(); if (!title) return toast("اكتب عنوان المهمة");
+    const f = $("#tkF").files[0]; if (f && f.size > TASK_MAX) return toast("المرفق أكبر من 700 ك.ب");
+    e.target.disabled = true;
+    const id = "t-" + uid() + uid();
+    try {
+      await setDoc(ref("tasks/" + id), {to: $("#tkTo").value, title, body: $("#tkB").value.trim(), due: $("#tkDue").value || "", pri: $("#tkPri").value, status: "new", at: new Date().toISOString(), by: "owner"});
+      if (f) { const ofile = await taskFilePut(id, "o", f); await setDoc(ref("tasks/" + id), {ofile}, {merge: true}); }
+      notify("task", id); toast("انرسلت المهمة ✓"); $("#tkT").value = ""; $("#tkB").value = ""; $("#tkF").value = "";
+    } catch (x) { console.error(x); toast(x.code === "permission-denied" ? "ما فيه صلاحية — حدّث قواعد Firebase" : "تعذّر الإرسال"); }
+    e.target.disabled = false;
+  };
+  bindTaskCards(el);
+}
+
+/* ---------- attachments shared between departments (task reports, signing files): kept until the director archives them ----------
+   Everyone is told to keep their own copy of anything important after 30 days. When the files start weighing on the system,
+   the director downloads one ZIP with all of them (and an index), then deletes them from the system. */
+const ATT_NOTE = `<p class="muted" style="margin:4px 0 0;font-size:.85em">📌 المرفقات تبقى في النظام 30 يوم كحد أدنى، وبعدها ممكن تنأرشف وتنحذف من النظام. لو الملف مهم نزّل نسخة عندك.</p>`;
+function crc32(b){
+  const t = crc32.t || (crc32.t = Array.from({length: 256}, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; }));
+  let x = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) x = t[(x ^ b[i]) & 255] ^ (x >>> 8); return (x ^ 0xFFFFFFFF) >>> 0;
+}
+function makeZip(files){   // plain (stored) ZIP, UTF-8 names: opens on Windows, Mac and phones
+  const enc = new TextEncoder(), parts = [], cen = []; let off = 0;
+  for (const f of files) {
+    const n = enc.encode(f.name), crc = crc32(f.data), sz = f.data.length;
+    const h = new DataView(new ArrayBuffer(30)); [[0, 0x04034b50, 4], [4, 20, 2], [6, 0x0800, 2], [12, 0x21, 2], [14, crc, 4], [18, sz, 4], [22, sz, 4], [26, n.length, 2]].forEach(([o, v, w]) => w === 4 ? h.setUint32(o, v, true) : h.setUint16(o, v, true));
+    parts.push(h, n, f.data);
+    const c = new DataView(new ArrayBuffer(46)); [[0, 0x02014b50, 4], [4, 20, 2], [6, 20, 2], [8, 0x0800, 2], [14, 0x21, 2], [16, crc, 4], [20, sz, 4], [24, sz, 4], [28, n.length, 2], [42, off, 4]].forEach(([o, v, w]) => w === 4 ? c.setUint32(o, v, true) : c.setUint16(o, v, true));
+    cen.push(c, n); off += 30 + n.length + sz;
+  }
+  const cs = cen.reduce((a, x) => a + x.byteLength, 0), e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, cs, true); e.setUint32(16, off, true);
+  return new Blob([...parts, ...cen, e], {type: "application/zip"});
+}
+const dataBytes = d => { const b = atob(String(d).split(",")[1] || ""); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
+const dataExt = d => { const m = /^data:([^;,]+)/.exec(d || ""); const t = m ? m[1] : ""; return t === "application/pdf" ? "pdf" : t.startsWith("image/") ? t.slice(6).replace("jpeg", "jpg") : ""; };
+const safeName = s => String(s || "ملف").replace(/[\\/:*?"<>|\n\r]/g, "-").slice(0, 80).trim() || "ملف";
+async function archCollect(days){
+  const cut = days ? new Date(Date.now() - days * 864e5).toISOString() : "9999";
+  const out = [];   // {kind, label, dept, date, path, fname, done}
+  (S.tasks || []).forEach(t => ["o", "r"].forEach(side => { const f = side === "o" ? t.ofile : t.rfile; if (!f || f.archived) return;
+    const date = f.at || (side === "r" ? t.doneAt : t.at) || t.at || ""; if (date >= cut) return;
+    out.push({kind: "مهمة", dept: TASK_TO[t.to] || t.to, label: `${t.title} — ${side === "o" ? "مرفق المالك" : "تقرير الإدارة"}`, date, path: `taskFiles/${t.id}_${side}`, fname: f.name, task: t.id, side}); }));
+  try {
+    const snap = await getDocs(collection(db, "signReqs"));
+    snap.docs.forEach(d => { const r = {id: d.id, ...d.data()}; if (r.filesArchived || r.status === "pending" || (r.at || "") >= cut) return;
+      out.push({kind: "طلب توقيع", dept: ROLES[r.from] || r.from || "", label: r.title, date: r.at, path: "signFiles/" + r.id, fname: r.title, sign: r.id});
+      if (r.status === "signed") out.push({kind: "طلب توقيع", dept: ROLES[r.from] || r.from || "", label: r.title + " — الموقّع", date: r.at, path: `signFiles/${r.id}_signed`, fname: r.title + " - موقّع", sign: r.id}); });
+  } catch (e) { console.error(e); }
+  return out;
+}
+function attArchiveCard(el){
+  if (S.adminRole !== "admin") return;
+  el.insertAdjacentHTML("beforeend", `<div class="card" id="archCard"><h2>أرشفة المرفقات بين الإدارات</h2>
+    <p class="muted" style="margin-top:0">تقارير المهام ومرفقاتها وملفات طلبات التوقيع محفوظة داخل النظام. لما تحس إنها صارت تثقّل النظام: نزّلها كلها في ملف ZIP واحد (مع فهرس)، وبعدها احذفها من النظام. المهام والطلبات نفسها تبقى، وجنبها علامة «مؤرشف».</p>
+    <div class="row" style="align-items:end;gap:8px"><label class="f" for="arD" style="width:200px">المرفقات الأقدم من<select id="arD"><option value="30">30 يوم</option><option value="60">60 يوم</option><option value="90">90 يوم</option><option value="0">الكل</option></select></label>
+      <button class="btn" id="arScan">احسب</button><button class="btn pri" id="arZip" disabled>1) تنزيل نسخة ZIP</button><button class="btn danger" id="arDel" disabled>2) حذفها من النظام</button></div>
+    <div id="arOut" class="muted" style="margin-top:8px"></div></div>`);
+  let items = [], loaded = [];
+  const out = $("#arOut");
+  $("#arScan").onclick = async () => {
+    out.textContent = "جاري الحساب…"; items = await archCollect(Number($("#arD").value)); loaded = [];
+    out.textContent = items.length ? `${items.length} مرفق: ${items.filter(x => x.task).length} من المهام و${items.filter(x => x.sign).length} من طلبات التوقيع.` : "ما فيه مرفقات بهذا العمر.";
+    $("#arZip").disabled = !items.length; $("#arDel").disabled = true;
+  };
+  $("#arD").onchange = () => { items = []; loaded = []; $("#arZip").disabled = $("#arDel").disabled = true; out.textContent = ""; };
+  $("#arZip").onclick = async e => {
+    e.target.disabled = true; const files = [], rows = [["النوع", "الإدارة", "العنوان", "التاريخ", "اسم الملف في الأرشيف"]]; loaded = []; let total = 0;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i]; out.textContent = `جاري تجهيز ${i + 1} من ${items.length}…`;
+      try { const s = await getDoc(ref(it.path)); if (!s.exists()) { loaded.push(it); continue; }
+        const d = s.data().data, bytes = dataBytes(d), ext = (it.fname.match(/\.[a-z0-9]{2,5}$/i) ? "" : dataExt(d)), name = `${String(i + 1).padStart(3, "0")} - ${safeName(it.dept)} - ${safeName(it.fname)}${ext ? "." + ext : ""}`;
+        files.push({name: name, data: bytes}); total += bytes.length; rows.push([it.kind, it.dept, it.label, (it.date || "").slice(0, 10), name]); loaded.push(it);
+      } catch (x) { console.error(x); }
+    }
+    const csv = "﻿" + rows.map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    files.unshift({name: "000 - الفهرس.csv", data: new TextEncoder().encode(csv)});
+    const a = document.createElement("a"); a.href = URL.createObjectURL(makeZip(files)); a.download = `مرفقات-أسس-${today()}.zip`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    out.innerHTML = `نزل الملف: ${files.length - 1} مرفق (${fmtSize(total) || "أقل من 1 ميغا"}). <b>افتح الملف وتأكد إنه سليم واحفظه في مكان آمن</b>، وبعدها اضغط «حذفها من النظام».`;
+    e.target.disabled = false; $("#arDel").disabled = !loaded.length;
+  };
+  $("#arDel").onclick = async e => {
+    if (!loaded.length || !confirm(`تأكدت إن ملف ZIP محفوظ عندك؟\nبيتحذف ${loaded.length} مرفق من النظام نهائياً.`)) return;
+    e.target.disabled = true; out.textContent = "جاري الحذف…";
+    try {
+      const ops = []; const now = new Date().toISOString(), signs = new Set();
+      loaded.forEach(it => { ops.push(b => b.delete(ref(it.path)));
+        if (it.task) { const t = (S.tasks || []).find(x => x.id === it.task), k = it.side === "o" ? "ofile" : "rfile"; if (t && t[k]) ops.push(b => b.set(ref("tasks/" + it.task), {[k]: {...t[k], archived: true, archivedAt: now}}, {merge: true})); }
+        if (it.sign) signs.add(it.sign); });
+      signs.forEach(id => ops.push(b => b.set(ref("signReqs/" + id), {filesArchived: true, archivedAt: now}, {merge: true})));
+      for (let i = 0; i < ops.length; i += 400) { const b = writeBatch(db); ops.slice(i, i + 400).forEach(f => f(b)); await b.commit(); }
+      logAction("أرشفة مرفقات الإدارات", `${loaded.length} مرفق`); out.textContent = `انحذف ${loaded.length} مرفق من النظام ✓`; items = []; loaded = []; $("#arZip").disabled = true;
+    } catch (x) { console.error(x); out.textContent = "تعذّر الحذف — حدّث قواعد Firebase وجرّب مرة ثانية"; e.target.disabled = false; }
+  };
+}
+
+/* the weekly report (built by the push service every Thursday evening, or now on request) */
+async function weeklyTab(el){
+  if (!S.weeks) {
+    el.innerHTML = `<div class="card"><p class="muted" style="margin:0">جاري التحميل…</p></div>`;
+    try { const snap = await getDocs(collection(db, "weekly")); S.weeks = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => b.id.localeCompare(a.id)); }
+    catch (e) { console.error(e); S.weeks = []; }
+    if (S.aTab === "weekly") render(); return;
+  }
+  const W = S.weeks, w = W.find(x => x.id === S.wkSel) || W[0];
+  const n0 = v => Number(v || 0).toLocaleString("en-US");
+  el.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="margin:0">التقرير الأسبوعي</h2>
+      <div class="row" style="gap:6px">${W.length ? `<select id="wkSel" style="width:auto">${W.map(x => `<option value="${esc(x.id)}" ${w && x.id === w.id ? "selected" : ""}>${esc(x.from)} → ${esc(x.to)}</option>`).join("")}</select>` : ""}
+        <button class="btn sm" id="wkNow">إنشاء تقرير الحين</button>${w ? `<button class="btn sm" id="wkX">Excel</button><button class="btn sm" id="wkP">طباعة</button>` : ""}</div></div>
+      <p class="muted" style="margin:6px 0 0">ينسحب تلقائياً كل خميس الساعة 8 مساءً: كل اللي سوّته الإدارات خلال الأسبوع، ويوصلك إشعار.</p></div>
+    ${!w ? `<div class="card empty">للحين ما انعمل تقرير. أول واحد يجي الخميس، أو اضغط «إنشاء تقرير الحين».</div>` : `<div id="wkBody">
+    <div class="card"><h3 style="margin-top:0">الأسبوع ${esc(w.from)} → ${esc(w.to)}</h3><div class="stats">
+      <div class="stat"><div class="n">${n0(w.total)}</div><div class="l">عملية للإدارات</div></div>
+      <div class="stat"><div class="n">${n0((w.tasks || {}).sent)}</div><div class="l">مهام انرسلت</div></div>
+      <div class="stat"><div class="n">${n0((w.tasks || {}).done)}</div><div class="l">مهام انسلّمت</div></div>
+      <div class="stat"><div class="n" style="color:var(--abs)">${n0((w.tasks || {}).late)}</div><div class="l">مهام متأخرة</div></div>
+      <div class="stat"><div class="n">${n0((w.att || {}).lectures)}</div><div class="l">محاضرة تحضّرت</div></div>
+      <div class="stat"><div class="n">${n0((w.att || {}).a)}</div><div class="l">غياب طلاب</div></div>
+      <div class="stat"><div class="n">${SAR((w.fin || {}).collected)}</div><div class="l">محصّل (${n0((w.fin || {}).payments)} دفعة)</div></div>
+      <div class="stat"><div class="n">${SAR((w.fin || {}).expenses)}</div><div class="l">مصروفات</div></div>
+      <div class="stat"><div class="n">${n0((w.reqs || {}).acNew)}</div><div class="l">طلبات أكاديمية (${n0((w.reqs || {}).acDone)} انرد)</div></div>
+      <div class="stat"><div class="n">${n0((w.reqs || {}).finNew)}</div><div class="l">طلبات مالية</div></div></div>
+      ${(w.fin || {}).voided ? `<p class="muted" style="margin:8px 0 0">⚠️ ${n0(w.fin.voided)} دفعة/مصروف انلغت هذا الأسبوع.</p>` : ""}</div>
+    ${Object.values((w.tasks || {}).byDept || {}).some(d => d.late) ? `<div class="card"><h3 style="margin-top:0">مهام متأخرة</h3>${Object.values(w.tasks.byDept).filter(d => d.late).map(d => `<p style="margin:4px 0"><b>${esc(d.name)}</b>: ${d.lateList.map(x => `${esc(x.title)} <span class="muted">(${esc(x.due)})</span>`).join("، ")}</p>`).join("")}</div>` : ""}
+    ${(w.depts || []).map(d => `<details class="card"><summary><b>${esc(d.name)}</b> · ${n0(d.n)} عملية${d.who && d.who.length ? ` <span class="muted">· ${d.who.slice(0, 3).map(x => esc(x.k)).join("، ")}</span>` : ""}</summary>
+      <div class="row" style="flex-wrap:wrap;gap:6px;margin:10px 0">${(d.kinds || []).map(k => `<span class="pill">${esc(k.k)} · ${k.n}</span>`).join("")}</div>
+      <div class="tbl"><table><thead><tr><th>الوقت</th><th class="nm">مين</th><th class="nm">العملية</th><th class="nm">التفاصيل</th></tr></thead><tbody>${(d.last || []).map(l => `<tr><td>${esc(fmtIso(l.at))}</td><td class="nm">${esc(l.who)}</td><td class="nm">${esc(l.action)}</td><td class="nm" style="white-space:normal">${esc(l.details)}</td></tr>`).join("")}</tbody></table></div>
+      ${d.n > (d.last || []).length ? `<p class="muted">يعرض آخر ${(d.last || []).length}. الباقي في «سجل الإدارات».</p>` : ""}</details>`).join("") || `<div class="card empty">ما فيه عمليات مسجّلة هذا الأسبوع.</div>`}</div>`}`;
+  if ($("#wkSel")) $("#wkSel").onchange = e => { S.wkSel = e.target.value; render(); };
+  $("#wkNow").onclick = async e => {
+    const url = ((S.site || {}).pushUrl || "").replace(/\/+$/, ""); if (!url) return toast("رابط خدمة الإشعارات غير مضبوط");
+    e.target.disabled = true; toast("جاري تجهيز التقرير…");
+    try { const r = await fetch(url + "/weekly", {method: "POST", headers: {authorization: "Bearer " + await S.authUser.getIdToken()}}); const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(r.status === 404 ? "old" : j.error || "x"); S.weeks = null; S.wkSel = j.id; render(); toast("جاهز ✓"); }
+    catch (x) { console.error(x); toast(x.message === "old" ? "حدّث worker في Cloudflare لآخر نسخة" : "تعذّر إنشاء التقرير"); e.target.disabled = false; }
+  };
+  if (!w) return;
+  $("#wkP").onclick = () => { const p = openPrint(); if (!p) return; p.document.write(`<html dir="rtl"><head><meta charset="utf-8"><title>التقرير الأسبوعي ${esc(w.to)}</title><style>body{font-family:system-ui,Tahoma;padding:20px}details{display:block}summary{font-size:1.1em;margin:14px 0 6px}table{border-collapse:collapse;width:100%;font-size:12px}td,th{border:1px solid #ccc;padding:4px}.stats{display:flex;flex-wrap:wrap;gap:10px}.stat{border:1px solid #ddd;border-radius:8px;padding:8px;min-width:120px}.n{font-size:1.3em;font-weight:700}.pill{display:inline-block;border:1px solid #ccc;border-radius:20px;padding:2px 8px;margin:2px;font-size:12px}</style></head><body><h1>معهد أسس — التقرير الأسبوعي</h1>${$("#wkBody").innerHTML.replace(/<details/g, "<details open")}</body></html>`); p.document.close(); setTimeout(() => p.print(), 400); };
+  $("#wkX").onclick = async () => {
+    const rows = [["الإدارة", "الوقت", "مين", "العملية", "التفاصيل"]]; (w.depts || []).forEach(d => (d.last || []).forEach(l => rows.push([d.name, fmtIso(l.at), l.who, l.action, l.details])));
+    const sum = [["البند", "القيمة"], ["الفترة", `${w.from} → ${w.to}`], ["عمليات الإدارات", w.total], ...(w.depts || []).map(d => ["  " + d.name, d.n]), ["مهام انرسلت", (w.tasks || {}).sent], ["مهام انسلّمت", (w.tasks || {}).done], ["مهام متأخرة", (w.tasks || {}).late], ["محاضرات تحضّرت", (w.att || {}).lectures], ["حضور", (w.att || {}).p], ["تأخير", (w.att || {}).l], ["غياب", (w.att || {}).a], ["المحصّل", (w.fin || {}).collected], ["المصروفات", (w.fin || {}).expenses], ["طلبات أكاديمية", (w.reqs || {}).acNew], ["طلبات مالية", (w.reqs || {}).finNew]];
+    try { await excelDownload(`التقرير الأسبوعي ${w.to}`, [{title: "الملخص", rows: sum, widths: [28, 24]}, {title: "عمليات الإدارات", rows, widths: [22, 20, 24, 26, 60]}]); } catch (e) { console.error(e); toast("تعذّر التنزيل"); }
+  };
+}
+/* the owner reads everything: in sections built for staff, anything that would change data is hidden */
+function ownerReadOnly(el){
+  if (!RO() || !el) return;
+  el.querySelectorAll("textarea, input[type=text], input[type=number], input[type=tel], input[type=time], input[type=file], input[type=checkbox]").forEach(x => { if (!/ابحث|بحث/.test(x.placeholder || "")) x.disabled = true; });
+  el.querySelectorAll("button, label.btn").forEach(b => { if (b.closest(".tabs") || b.dataset.tfile) return;
+    if (!/تنزيل|Excel|طباعة|PDF|عرض|تفاصيل|فتح|إغلاق|السابق|التالي|أقدم|كشف|📎/.test(b.textContent || "")) b.style.display = "none"; });
 }
 
 async function setDisabled(coll, id, on, name){
@@ -5166,13 +5434,14 @@ const INST_PILL = {paid: "p", late: "a", part: "l", due: ""};
 const paysOf = num => (S.pays || []).filter(p => p.num === num);
 
 function adminFinance(el){
-  const t = S.finTab || "sum";
+  let t = S.finTab || "sum";
   const nW = fReqWaiting();
-  const tabs = [["sum", "الملخص"], ["req", "طلبات الطلاب" + (nW ? ` (${nW})` : "")], ["acc", "حسابات الطلاب"], ["pay", "الدفعات"], ["rcpt", "الإيصالات"], ["late", "المتأخرين"], ["exp", "المصروفات"], ["sal", "رواتب المدربين"], ["part", "الشركاء والعمولات"], ["rep", "التقرير الشهري"], ...(FIN() ? [["sign", "طلبات التوقيع"], ["memo", "المراسلات" + memoBadge()], ["mail", "البريد" + mailBadge()]] : []), ["set", "الإعدادات"]];
+  const tabs = [["sum", "الملخص"], ["req", "طلبات الطلاب" + (nW ? ` (${nW})` : "")], ["acc", "حسابات الطلاب"], ["pay", "الدفعات"], ["rcpt", "الإيصالات"], ["late", "المتأخرين"], ["exp", "المصروفات"], ["sal", "رواتب المدربين"], ["part", "الشركاء والعمولات"], ["rep", "التقرير الشهري"], ...(FIN() ? [["tasks", "مهام المالك" + taskBadge()], ["sign", "طلبات التوقيع"], ["memo", "المراسلات" + memoBadge()], ["mail", "البريد" + mailBadge()]] : []), ...(RO() ? [] : [["set", "الإعدادات"]])];
+  if (RO()) { const keep = ["sum", "acc", "pay", "rcpt", "late", "exp", "sal", "part", "rep"]; for (let i = tabs.length - 1; i >= 0; i--) if (!keep.includes(tabs[i][0])) tabs.splice(i, 1); if (!keep.includes(S.finTab || "sum")) S.finTab = "sum"; t = S.finTab || "sum"; }
   el.innerHTML = `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k, v]) => `<button class="tab ${t === k ? "on" : ""}" data-ft="${k}">${v}</button>`).join("")}</div></div><div id="fb"></div>`;
   el.querySelectorAll("[data-ft]").forEach(b => b.onclick = () => { S.finTab = b.dataset.ft; render(); });
   if (!S.finSet) { $("#fb").innerHTML = `<div class="card"><p class="muted" style="margin:0">جاري التحميل…</p></div>`; return; }
-  ({sum: finSummary, req: finReqTab, acc: finAccounts, pay: finPayments, rcpt: finReceipts, late: finLate, exp: finExpenses, sal: finSalaries, part: finPartners, rep: finReport, sign: signRequests, memo: memosTab, mail: mailTab, set: finSettings})[t]($("#fb"));
+  ({sum: finSummary, req: finReqTab, acc: finAccounts, pay: finPayments, rcpt: finReceipts, late: finLate, exp: finExpenses, sal: finSalaries, part: finPartners, rep: finReport, sign: signRequests, memo: memosTab, mail: mailTab, set: finSettings, tasks: tasksTab})[S.finTab || "sum"]($("#fb"));
 }
 function finRows(){
   return Object.values(S.students).map(s => { const acc = (S.finAcc || {})[s.num]; return {s, acc, st: acc ? accStatus(acc, paysOf(s.num)) : {net: 0, paid: 0, remaining: 0, overdue: 0, status: "none"}}; });
