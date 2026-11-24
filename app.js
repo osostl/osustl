@@ -4296,8 +4296,12 @@ function watchMsgs(){
   if (S._msgSub || !S.authUser) return;
   const field = S.role === "student" ? ["nums", S.myNum] : S.role === "trainer" ? (S.me ? ["tids", S.me] : null) : S.adminRole ? ["roles", S.adminRole] : null;
   if (!field) return; S._msgSub = true;
-  S.subs.push(onSnapshot(query(collection(db, "msgs"), where(field[0], "array-contains", field[1])), snap => { S.inbox = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => b.at.localeCompare(a.at)); renderInboxBar(); if (S.sTab === "msgs" && !busyEditing()) render(); }, () => {}));
-  S.subs.push(onSnapshot(query(collection(db, "msgReads"), where("uid", "==", S.authUser.uid)), snap => { S.inboxRead = new Set(snap.docs.map(d => d.data().msg)); renderInboxBar(); if (S.role === "student" && !busyEditing()) render(); }, () => {}));
+  /* only the newest 40 messages (and their read marks) are read at sign-in: the inbox grows all term and every message was a read
+     each time. Needs two Firebase indexes (firestore.indexes.json); without them it falls back to reading all, as before. */
+  const live = (lim, all, fn) => { let u = onSnapshot(lim, fn, e => { console.warn("inbox: index missing, reading all", e && e.code); u = onSnapshot(all, fn, () => {}); }); S.subs.push(() => u()); };
+  const mq = (...x) => query(collection(db, "msgs"), where(field[0], "array-contains", field[1]), ...x), rq = (...x) => query(collection(db, "msgReads"), where("uid", "==", S.authUser.uid), ...x);
+  live(mq(orderBy("at", "desc"), limit(40)), mq(), snap => { S.inbox = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => b.at.localeCompare(a.at)); renderInboxBar(); if (S.sTab === "msgs" && !busyEditing()) render(); });
+  live(rq(orderBy("at", "desc"), limit(80)), rq(), snap => { S.inboxRead = new Set(snap.docs.map(d => d.data().msg)); renderInboxBar(); if (S.role === "student" && !busyEditing()) render(); });
 }
 const unreadMsgs = () => (S.inbox || []).filter(m => !(S.inboxRead || new Set()).has(m.id));
 async function markMsgRead(m){
@@ -7024,17 +7028,40 @@ function statementHTML(s, acc, st, pays){
   <div class="sig">${sigSlot("المالية", "finance")}${sigSlot("الختم", "", true)}</div>`;
 }
 function finPayments(el){
-  const m = S.payM || today().slice(0, 7);
-  const list = (S.pays || []).filter(p => (p.date || "").startsWith(m)).sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.receiptNo || "").localeCompare(a.receiptNo || ""));
-  const tot = list.filter(p => !p.void).reduce((a, p) => a + Number(p.amount), 0);
-  el.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">الدفعات</h2><div class="row"><input type="month" id="payM" value="${esc(m)}" style="width:170px"><button class="btn sm" id="payX">تنزيل Excel</button></div></div>
-    <p class="muted" style="margin:8px 0 0">${list.filter(p => !p.void).length} دفعة · المجموع <b>${SAR(tot)}</b></p></div>
+  /* period: a month, a date range or everything; method: all or one (cash, transfer…). The Excel follows the filter,
+     and «Excel لكل طريقة» gives one sheet per method plus a summary. */
+  const F = S.payF = S.payF || {per: "month", m: S.payM || today().slice(0, 7), from: today().slice(0, 8) + "01", to: today(), meth: ""};
+  const inPer = p => { const d = p.date || ""; return F.per === "all" ? true : F.per === "range" ? d >= (F.from || "") && d <= (F.to || "9999") : d.startsWith(F.m); };
+  const perL = F.per === "all" ? "كل الفترات" : F.per === "range" ? `من ${F.from} إلى ${F.to}` : F.m;
+  const inP = (S.pays || []).filter(inPer).sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.receiptNo || "").localeCompare(a.receiptNo || ""));
+  const meths = [...new Set([...METHODS, ...inP.map(p => p.method).filter(Boolean)])];
+  const list = F.meth ? inP.filter(p => p.method === F.meth) : inP;
+  const live = x => x.filter(p => !p.void), sum = x => Math.round(live(x).reduce((a, p) => a + Number(p.amount || 0), 0) * 100) / 100, tot = sum(list);
+  const byM = meths.map(mt => [mt, inP.filter(p => p.method === mt)]).filter(([, x]) => live(x).length);
+  el.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><h2 style="margin:0">الدفعات</h2>
+      <div class="row" style="flex-wrap:wrap;gap:6px"><select id="payP" style="width:auto"><option value="month" ${F.per === "month" ? "selected" : ""}>شهر</option><option value="range" ${F.per === "range" ? "selected" : ""}>من تاريخ إلى تاريخ</option><option value="all" ${F.per === "all" ? "selected" : ""}>كل الفترات</option></select>
+        ${F.per === "month" ? `<input type="month" id="payM" value="${esc(F.m)}" style="width:170px">` : F.per === "range" ? `<input type="date" id="payF1" value="${esc(F.from)}" style="width:150px"><input type="date" id="payF2" value="${esc(F.to)}" style="width:150px">` : ""}
+        <select id="payMt" style="width:auto"><option value="">كل الطرق</option>${meths.map(x => `<option ${F.meth === x ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>
+        <button class="btn sm" id="payX">تنزيل Excel</button><button class="btn sm gold" id="payXM">Excel لكل طريقة</button></div></div>
+    <p class="muted" style="margin:8px 0 0">${live(list).length} دفعة · المجموع <b>${SAR(tot)}</b>${F.meth ? ` · ${esc(F.meth)}` : ""} · ${esc(perL)}</p>
+    ${!F.meth && byM.length > 1 ? `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">${byM.map(([mt, x]) => `<button class="pill" data-pmt="${esc(mt)}" style="cursor:pointer;border:0">${esc(mt)}: <b>${SAR(sum(x))}</b> (${live(x).length})</button>`).join("")}</div>` : ""}</div>
   <div class="tbl"><table><thead><tr><th>السند</th><th>التاريخ</th><th class="nm">الطالب</th><th>المبلغ</th><th>الطريقة</th><th>المرجع</th><th></th></tr></thead><tbody>
-  ${list.map(p => `<tr style="${p.void ? "opacity:.5;text-decoration:line-through" : ""}"><td>${esc(p.receiptNo)}</td><td>${dH(p.date)}</td><td class="nm">${esc(p.name)}</td><td>${SAR(p.amount)}</td><td>${esc(p.method)}</td><td>${esc(p.ref || "")}</td><td>${p.hasImg ? `<button class="btn sm" data-rview="payments:${esc(p.id)}">الإيصال</button> ` : ""}<button class="btn sm" data-fo="${esc(p.num)}">الحساب</button></td></tr>`).join("") || `<tr><td colspan="7" class="empty">ما فيه دفعات في هذا الشهر</td></tr>`}</tbody></table></div>`;
-  $("#payM").onchange = e => { S.payM = e.target.value; render(); };
+  ${list.map(p => `<tr style="${p.void ? "opacity:.5;text-decoration:line-through" : ""}"><td>${esc(p.receiptNo)}</td><td>${dH(p.date)}</td><td class="nm">${esc(p.name)}</td><td>${SAR(p.amount)}</td><td>${esc(p.method)}</td><td>${esc(p.ref || "")}</td><td>${p.hasImg ? `<button class="btn sm" data-rview="payments:${esc(p.id)}">الإيصال</button> ` : ""}<button class="btn sm" data-fo="${esc(p.num)}">الحساب</button></td></tr>`).join("") || `<tr><td colspan="7" class="empty">ما فيه دفعات بهذا الفلتر</td></tr>`}</tbody></table></div>`;
+  const re = () => { S.payM = F.m; render(); };
+  $("#payP").onchange = e => { F.per = e.target.value; re(); };
+  if ($("#payM")) $("#payM").onchange = e => { F.m = e.target.value || today().slice(0, 7); re(); };
+  if ($("#payF1")) $("#payF1").onchange = e => { F.from = e.target.value; re(); };
+  if ($("#payF2")) $("#payF2").onchange = e => { F.to = e.target.value; re(); };
+  $("#payMt").onchange = e => { F.meth = e.target.value; re(); };
+  el.querySelectorAll("[data-pmt]").forEach(b => b.onclick = () => { F.meth = b.dataset.pmt; re(); });
   bindRcpt(el);
   el.querySelectorAll("[data-fo]").forEach(b => b.onclick = () => openFinAccount(b.dataset.fo));
-  $("#payX").onclick = () => excelDownload(`الدفعات ${m}`, [{title: "الدفعات", rows: [[INST_AR], [`الدفعات · ${m}`], [], ["السند", "التاريخ", "الطالب", "الرقم", "المبلغ", "الطريقة", "المرجع", "الحالة"], ...list.map(p => [p.receiptNo, p.date, p.name, p.num, Number(p.amount), p.method, p.ref || "", p.void ? "ملغى" : "مستلم"]), [], ["", "", "المجموع", "", tot]], widths: [13, 12, 28, 11, 11, 14, 16, 9]}]);
+  const head = ["السند", "التاريخ", "الطالب", "الرقم", "المبلغ", "الطريقة", "المرجع", "الحالة"], W = [13, 12, 28, 11, 11, 14, 16, 9];
+  const sheet = (title, x) => ({title: title.slice(0, 30), rows: [[INST_AR], [`الدفعات · ${title} · ${perL}`], [], head, ...x.map(p => [p.receiptNo, p.date, p.name, p.num, Number(p.amount), p.method, p.ref || "", p.void ? "ملغى" : "مستلم"]), [], ["", "", "المجموع (بدون الملغى)", "", sum(x)]], widths: W});
+  const fileP = perL.replace(/[\/:*?"<>|]/g, "-");
+  $("#payX").onclick = () => excelDownload(`الدفعات ${F.meth || "كل الطرق"} ${fileP}`, [sheet(F.meth || "كل الطرق", list)]);
+  $("#payXM").onclick = () => { if (!byM.length) return toast("ما فيه دفعات بهذي الفترة");
+    excelDownload(`الدفعات حسب الطريقة ${fileP}`, [{title: "الملخص", rows: [[INST_AR], [`ملخص الدفعات حسب الطريقة · ${perL}`], [], ["الطريقة", "عدد الدفعات", "المجموع"], ...byM.map(([mt, x]) => [mt, live(x).length, sum(x)]), [], ["الإجمالي", live(inP).length, sum(inP)]], widths: [18, 12, 14]}, ...byM.map(([mt, x]) => sheet(mt, x))]); };
 }
 function finLate(el){
   const all = finRows(), in3 = new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 10);
