@@ -447,6 +447,7 @@ function bindSecCard(el){
   };
 }
 /* ---------- recordings on the classroom server ---------- */
+const fileKB = n => n >= 1024 ** 2 ? (n / 1024 ** 2).toFixed(1) + " ميجا" : Math.max(1, Math.round(n / 1024)) + " ك.ب";
 const fmtSize = n => !n ? "" : n >= 1024 ** 3 ? (n / 1024 ** 3).toFixed(1) + " جيجا" : Math.max(1, Math.round(n / 1024 ** 2)) + " ميغا";
 async function recTicket(body){
   const url = ((S.site || {}).pushUrl || "").replace(/\/+$/, ""); if (!url) throw new Error("no service");
@@ -1159,7 +1160,7 @@ function corrForm(el, kind){
         <label class="row" style="gap:4px;display:inline-flex;margin-inline-start:8px"><input type="radio" name="crTr" value="some" ${!F.to.includes("trainers") && (pick.length || F.trSome) ? "checked" : ""}> مدربين محددين</label><label class="row" style="gap:4px;display:inline-flex;margin-inline-start:8px"><input type="radio" name="crTr" value="none" ${!F.to.includes("trainers") && !pick.length && !F.trSome ? "checked" : ""}> بدون</label>
         ${!F.to.includes("trainers") && (pick.length || F.trSome) ? `<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:6px">${trs.map(t => `<label class="row" style="gap:4px"><input type="checkbox" data-ctr="${esc(t.id)}" ${pick.includes(t.id) ? "checked" : ""}> ${esc(trainerTitle(t))}</label>`).join("") || `<span class="muted">ما فيه مدربين</span>`}</div>` : ""}</div>`; })() : ""}
     ${kind === "in" ? `<label class="f" style="margin-top:6px;max-width:260px">التوجيه<select id="crA">${CORR_ACT.map(a => `<option ${F.action === a ? "selected" : ""}>${a}</option>`).join("")}</select></label>` : ""}
-    <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px;align-items:flex-end"><label class="f grow">${kind === "in" ? "صورة الخطاب الوارد" : "مرفقات"} (اختياري، حتى 20 ميجا)<input type="file" id="crF" multiple accept="image/*,application/pdf,.pdf,.doc,.docx,.xlsx"></label>
+    <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px;align-items:flex-end"><label class="f grow">${kind === "in" ? "صورة الخطاب الوارد" : "مرفقات"} (اختياري، حتى 20 ميجا)<input type="file" id="crF" multiple accept="image/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx"></label>
       ${kind !== "in" ? `<label class="f" style="min-width:180px">جهة التوقيع<input type="text" id="crSg" maxlength="80" value="${esc(F.signer)}"></label><label class="f" style="min-width:160px">الاسم<input type="text" id="crSgN" maxlength="80" value="${esc(F.signerName || "")}"></label>${boss ? `<label class="row" style="gap:4px" title="${okImg((S.sigs || {}).director) ? "" : "ارفعه أول من النظام ← توقيع مدير المعهد"}"><input type="checkbox" id="crSd" ${F.sign.director ? "checked" : ""} ${okImg((S.sigs || {}).director) ? "" : "disabled"}> التوقيع</label><label class="row" style="gap:4px" title="${okImg(S.stamp) ? "" : "ارفعه أول من النظام ← الختم الإلكتروني"}"><input type="checkbox" id="crSt" ${F.sign.stamp ? "checked" : ""} ${okImg(S.stamp) ? "" : "disabled"}> الختم</label>` : ""}` : ""}</div>
     <div class="row" style="gap:8px;margin-top:10px"><button class="btn pri" id="crSave">${kind === "in" ? "تسجيل الوارد" : "حفظ وإصدار"}${kind !== "in" ? " وطباعة" : ""}</button><button class="btn" id="crCancel">إلغاء</button></div></div>`;
   const read = () => { F.date = $("#crD").value || today(); F.subject = $("#crS").value.trim(); F.body = $("#crBody").value; F.party = $("#crP") ? $("#crP").value.trim() : ""; F.cc = $("#crCC") ? $("#crCC").value.trim() : "";
@@ -4920,7 +4921,7 @@ function memoThreadHTML(k){
   const t = iso => { try { return new Date(iso).toLocaleTimeString("ar-SA-u-nu-latn", {hour: "numeric", minute: "2-digit"}); } catch { return ""; } };
   return T.map(m => { const d = String(m.at || "").slice(0, 10), sep = d !== day ? `<div class="dy">${esc(d === today() ? "اليوم" : bothDates(d))}</div>` : ""; day = d;
     const mine = m.from === me;
-    return sep + `<div class="bb ${mine ? "me" : "ot"}">${!mine && k === "all" ? `<div class="wh">${esc(chatName(m.from))}</div>` : ""}${linkify(esc(m.text))}<div class="mt">${esc(t(m.at))}${mine && k !== "all" ? ` <span style="color:${m.readAt ? "#2b8a3e" : "#889"}">${m.readAt ? "✓✓" : "✓"}</span>` : ""}</div></div>`; }).join("")
+    return sep + `<div class="bb ${mine ? "me" : "ot"}">${!mine && k === "all" ? `<div class="wh">${esc(chatName(m.from))}</div>` : ""}${m.file && m.file.name && m.text === "📎 " + m.file.name ? "" : linkify(esc(m.text))}${m.file && isSrv(m.file.m) ? `<button type="button" class="btn sm" data-mmf="${esc(m.id)}" style="display:flex;gap:6px;align-items:center;margin-top:4px;max-width:100%"><span>📎</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.file.name || "ملف")}</span>${m.file.size ? `<span class="muted" style="font-size:11px">${esc(fileKB(m.file.size))}</span>` : ""}</button>` : ""}<div class="mt">${esc(t(m.at))}${mine && k !== "all" ? ` <span style="color:${m.readAt ? "#2b8a3e" : "#889"}">${m.readAt ? "✓✓" : "✓"}</span>` : ""}</div></div>`; }).join("")
     || `<div class="muted" style="margin:auto">${k === "all" ? "رسائل هنا توصل لكل الإدارات." : "ما فيه رسائل للحين. اكتب أول رسالة."}</div>`;
 }
 function memoMarkRead(k){
@@ -4945,8 +4946,8 @@ function memosTab(el){
     ${S.role === "trainer" ? `<p class="muted" style="font-size:12px;margin:8px 6px 4px">الإدارة العامة والجهة الرقابية توصلها عن طريق الإدارات. وإذا ما انحلت مشكلتك أرسل لهم من «📧 بريدي».</p>` : ""}</div>
     <div class="card pane">${k ? `<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px"><b style="font-size:17px">${esc(chatName(k))}</b><button class="btn sm" id="mmBack">→ المحادثات</button></div>
       <div class="th" id="mmThread"></div>
-      <div class="cmp"><textarea id="mmT" rows="1" maxlength="1000" placeholder="اكتب رسالة… (Enter للإرسال، Shift+Enter لسطر جديد)">${esc(S._mmDraft && S._mmDraft[k] || "")}</textarea><button class="btn pri" id="mmSend">إرسال</button></div>
-      <p class="muted" style="margin:6px 0 0;font-size:12px">${k === "all" ? "توصل لكل الإدارات مع إشعار." : "توصلهم مع إشعار. ✓ انرسلت · ✓✓ انقرأت."}</p>`
+      <div class="cmp"><label class="btn" for="mmF" id="mmFL" title="إرفاق ملف: Excel أو PDF أو Word أو صورة… حتى 20 ميجا" style="cursor:pointer;padding-inline:12px">📎</label><input type="file" id="mmF" style="display:none"><textarea id="mmT" rows="1" maxlength="1000" placeholder="اكتب رسالة… (Enter للإرسال، Shift+Enter لسطر جديد)">${esc(S._mmDraft && S._mmDraft[k] || "")}</textarea><button class="btn pri" id="mmSend">إرسال</button></div>
+      <p class="muted" style="margin:6px 0 0;font-size:12px">${k === "all" ? "توصل لكل الإدارات مع إشعار." : "توصلهم مع إشعار. ✓ انرسلت · ✓✓ انقرأت."} و📎 لإرفاق ملف (حتى 20 ميجا).</p>`
       : `<div class="empty" style="padding:40px 10px">اختر محادثة من القائمة.</div>`}</div></div>`;
   bindMemoList();
   if ($("#chQ")) $("#chQ").oninput = e => { S.chatQ = e.target.value; $("#mmList").innerHTML = memoListHTML(); bindMemoList(); };
@@ -4966,6 +4967,24 @@ function memosTab(el){
     btn.disabled = false; ta.focus();
   };
   $("#mmSend").onclick = send;
+  /* a file in the conversation: it goes to the institute server; the message keeps only its reference */
+  $("#mmF").onchange = async e => {
+    const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+    if (f.size > SRV_MAX) return toast("الملف أكبر من 20 ميجا");
+    if (!(S.site || {}).pushUrl) return toast("خدمة الملفات مو مضبوطة");
+    const L = $("#mmFL"), btn = $("#mmSend"); L.textContent = "⏳"; L.style.pointerEvents = "none"; btn.disabled = true;
+    try {
+      const mref = await srvPut(f, f.name, f.type || "application/octet-stream"), name = String(f.name || "ملف").slice(0, 150);
+      const typed = ta.value.trim().slice(0, 1000), id = "mm-" + Date.now().toString(36) + uid();
+      const d = {from: me, to: k, text: typed || ("📎 " + name).slice(0, 1000), file: {m: mref, name, size: f.size}, at: new Date().toISOString()};
+      await setDoc(ref("memos/" + id), d); notify("memo", id);
+      if (typed) { ta.value = ""; if (S._mmDraft) S._mmDraft[k] = ""; grow(); }
+      S._mmJump = true; if (!(S.memos || []).some(m => m.id === id)) S.memos = [...(S.memos || []), {id, ...d}]; memoPaint(); toast("انرسل الملف ✓");
+    } catch (x) { x && x.message === "srv-big" ? toast("الملف أكبر من 20 ميجا") : x && x.code ? handleWriteErr(x) : toast("تعذّر رفع الملف، تأكد من الاتصال وحاول مرة ثانية"); }
+    L.textContent = "📎"; L.style.pointerEvents = ""; btn.disabled = false;
+  };
+  $("#mmThread").onclick = async e => { const b = e.target.closest("[data-mmf]"); if (!b) return; const m = (S.memos || []).find(x => x.id === b.dataset.mmf); if (!m || !m.file) return;
+    b.disabled = true; try { await srvOpen(m.file.m); } catch { toast("تعذّر فتح الملف"); } b.disabled = false; };
   ta.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } };
 }
 
