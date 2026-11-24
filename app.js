@@ -7042,7 +7042,7 @@ function finPayments(el){
       <div class="row" style="flex-wrap:wrap;gap:6px"><select id="payP" style="width:auto"><option value="month" ${F.per === "month" ? "selected" : ""}>شهر</option><option value="range" ${F.per === "range" ? "selected" : ""}>من تاريخ إلى تاريخ</option><option value="all" ${F.per === "all" ? "selected" : ""}>كل الفترات</option></select>
         ${F.per === "month" ? `<input type="month" id="payM" value="${esc(F.m)}" style="width:170px">` : F.per === "range" ? `<input type="date" id="payF1" value="${esc(F.from)}" style="width:150px"><input type="date" id="payF2" value="${esc(F.to)}" style="width:150px">` : ""}
         <select id="payMt" style="width:auto"><option value="">كل الطرق</option>${meths.map(x => `<option ${F.meth === x ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>
-        <button class="btn sm" id="payX">تنزيل Excel</button><button class="btn sm gold" id="payXM">Excel لكل طريقة</button></div></div>
+        <button class="btn sm" id="payX">تنزيل Excel</button><button class="btn sm gold" id="payXM">Excel لكل طريقة</button><button class="btn sm pri" id="payPdf">PDF بالأسماء</button></div></div>
     <p class="muted" style="margin:8px 0 0">${live(list).length} دفعة · المجموع <b>${SAR(tot)}</b>${F.meth ? ` · ${esc(F.meth)}` : ""} · ${esc(perL)}</p>
     ${!F.meth && byM.length > 1 ? `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">${byM.map(([mt, x]) => `<button class="pill" data-pmt="${esc(mt)}" style="cursor:pointer;border:0">${esc(mt)}: <b>${SAR(sum(x))}</b> (${live(x).length})</button>`).join("")}</div>` : ""}</div>
   <div class="tbl"><table><thead><tr><th>السند</th><th>التاريخ</th><th class="nm">الطالب</th><th>المبلغ</th><th>الطريقة</th><th>المرجع</th><th></th></tr></thead><tbody>
@@ -7060,6 +7060,29 @@ function finPayments(el){
   const sheet = (title, x) => ({title: title.slice(0, 30), rows: [[INST_AR], [`الدفعات · ${title} · ${perL}`], [], head, ...x.map(p => [p.receiptNo, p.date, p.name, p.num, Number(p.amount), p.method, p.ref || "", p.void ? "ملغى" : "مستلم"]), [], ["", "", "المجموع (بدون الملغى)", "", sum(x)]], widths: W});
   const fileP = perL.replace(/[\/:*?"<>|]/g, "-");
   $("#payX").onclick = () => excelDownload(`الدفعات ${F.meth || "كل الطرق"} ${fileP}`, [sheet(F.meth || "كل الطرق", list)]);
+  /* PDF by trainee: how many payments, which installments they settled, and the total — for the filtered method and period */
+  $("#payPdf").onclick = () => {
+    const got = live(list); if (!got.length) return toast("ما فيه دفعات بهذا الفلتر");
+    const ids = new Set(got.map(p => p.id)), by = {};
+    got.forEach(p => { (by[p.num] = by[p.num] || {num: p.num, name: p.name, pays: []}).pays.push(p); });
+    const rows = Object.values(by).map(r => {
+      const acc = (S.finAcc || {})[r.num], ins = [];
+      if (acc) { const st = accStatus(acc, paysOf(r.num));
+        st.sched.forEach(i => { const a = i.pays.filter(x => ids.has(x.p.id)).reduce((t, x) => t + x.amount, 0); if (a > 0.0001) ins.push(instName(i, st.sched) + (a < (Number(i.amount) || 0) - 0.01 ? " (جزئي)" : "")); }); }
+      const full = ins.filter(x => !/جزئي/.test(x)).length;
+      return {...r, name: (S.students[r.num] || {}).name || r.name, ins, full, total: Math.round(r.pays.reduce((a, p) => a + Number(p.amount || 0), 0) * 100) / 100};
+    }).sort((a, b) => (a.name || "").localeCompare(b.name || "", "ar"));
+    const T = rows.reduce((a, r) => a + r.total, 0), nPay = rows.reduce((a, r) => a + r.pays.length, 0), nFull = rows.reduce((a, r) => a + r.full, 0);
+    const title = `كشف الدفعات ${F.meth ? "(" + F.meth + ")" : "(كل الطرق)"} بالأسماء`;
+    const html = `<h1>${esc(title)}</h1>
+      <div class="info"><div><b>الطريقة:</b> ${esc(F.meth || "كل الطرق")}</div><div><b>الفترة:</b> ${esc(perL)}</div><div><b>عدد المتدربين:</b> ${rows.length}</div><div><b>عدد الدفعات:</b> ${nPay}</div><div><b>الأقساط المسددة كاملة:</b> ${nFull}</div><div><b>الإجمالي:</b> ${SAR(T)}</div></div>
+      <table><thead><tr><th>م</th><th>المتدرب</th><th>الرقم</th><th>عدد الدفعات</th><th>الأقساط المسددة بها</th><th>عدد الأقساط</th><th>المجموع</th></tr></thead><tbody>
+      ${rows.map((r, k) => `<tr><td>${k + 1}</td><td style="text-align:start">${esc(r.name)}</td><td>${esc(r.num)}</td><td>${r.pays.length}</td><td style="text-align:start;font-size:11px">${esc(r.ins.join("، ") || "—")}</td><td>${r.full}</td><td>${SAR(r.total)}</td></tr>`).join("")}
+      <tr style="font-weight:700"><td colspan="3">الإجمالي</td><td>${nPay}</td><td></td><td>${nFull}</td><td>${SAR(T)}</td></tr></tbody></table>
+      <p style="font-size:11px;color:#666">«جزئي» يعني إن الدفعة غطّت جزء من القسط. الدفعات الملغاة غير محسوبة. تاريخ الإصدار: ${esc(bothDates(today()))}</p>
+      <div class="sig">${sigSlot("المالية", "finance")}${sigSlot("الختم", "", true)}</div>`;
+    const w = openPrint(); if (w) fillPrintFin(w, title + " · " + perL, [{html}]);
+  };
   $("#payXM").onclick = () => { if (!byM.length) return toast("ما فيه دفعات بهذي الفترة");
     excelDownload(`الدفعات حسب الطريقة ${fileP}`, [{title: "الملخص", rows: [[INST_AR], [`ملخص الدفعات حسب الطريقة · ${perL}`], [], ["الطريقة", "عدد الدفعات", "المجموع"], ...byM.map(([mt, x]) => [mt, live(x).length, sum(x)]), [], ["الإجمالي", live(inP).length, sum(inP)]], widths: [18, 12, 14]}, ...byM.map(([mt, x]) => sheet(mt, x))]); };
 }
