@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, doc, collection, query, where, onSnapshot, setDoc, deleteDoc, writeBatch, getDoc, getDocs, addDoc, orderBy, limit, serverTimestamp, runTransaction, getCountFromServer, Timestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, doc, collection, query, where, onSnapshot, setDoc, deleteDoc, writeBatch, getDoc, getDocs, getDocsFromCache, addDoc, orderBy, limit, serverTimestamp, runTransaction, getCountFromServer, Timestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./config.js";
 
 /* ---------- constants ---------- */
@@ -60,14 +60,50 @@ if (configured) {
   setPersistence(auth, browserLocalPersistence).catch(() => {});
 }
 const ref = path => doc(db, ...path.split("/"));
+/* reads saver (Firebase's free daily limit): a list that does not need to be live comes from the server at most once per ttl;
+   in between the browser's own copy answers. If that copy was wiped (sign-out), it goes back to the server. */
+async function cachedDocs(key, q, ttl){
+  let m = {}; try { m = JSON.parse(localStorage.getItem("qc_" + key) || "{}"); } catch {}
+  if (ttl > 0 && m.t && Date.now() - m.t < ttl) { try { const c = await getDocsFromCache(q); if (c.size && c.size >= (m.n || 0)) return c; } catch {} }
+  const sn = await getDocs(q);
+  try { localStorage.setItem("qc_" + key, JSON.stringify({t: Date.now(), n: sn.size})); } catch {}
+  return sn;
+}
 /* staff sessions: they end when the browser closes (login above), and after 30 minutes without any activity */
-const IDLE_MS = 30 * 60e3; let _lastAct = Date.now();
+const IDLE_MS = 60 * 60e3; let _lastAct = Date.now();
 ["pointerdown", "keydown", "touchstart", "wheel"].forEach(ev => addEventListener(ev, () => { _lastAct = Date.now(); }, {passive: true, capture: true}));
 setInterval(() => {
-  if (S.view === "admin" && S.authUser && !S.room && Date.now() - _lastAct > IDLE_MS) {
-    _lastAct = Date.now(); try { sessionStorage.setItem("idleOut", "1"); } catch {} logout();
-  }
+  if (["admin", "student"].includes(S.view) && S.authUser && !S.room && !S._idleLocked && Date.now() - _lastAct > IDLE_MS) idleLock();
 }, 60000);
+/* after an hour without activity (staff and trainees) the screen locks instead of signing out: the portal stays connected underneath,
+   so unlocking does not read the whole institute again (Firebase's daily read limit). The same code unlocks it;
+   five wrong tries, or «خروج», sign out. A reload while locked stays locked. */
+function idleLock(){
+  if (S._idleLocked || !S.authUser) return;
+  S._idleLocked = true; let tries = 0; try { sessionStorage.setItem("idleLocked", "1"); } catch {}
+  const bg = document.createElement("div"); bg.id = "idleLock";
+  bg.setAttribute("style", "position:fixed;inset:0;z-index:2147483000;background:var(--bg,#0f2a22);display:flex;align-items:center;justify-content:center;padding:16px");
+  bg.innerHTML = `<form class="card" id="ilF" style="max-width:360px;width:100%;text-align:center"><div style="font-size:40px">🔒</div><h2 style="margin:6px 0">الشاشة مقفلة</h2>
+    <p class="muted" style="margin:0 0 10px">قفلت تلقائياً بعد ساعة بدون نشاط. اكتب ${S.role === "admin" ? "رمز " + esc(ROLES[S.adminRole] || "حسابك") : "رمز دخولك"} لتكمل.</p>
+    <input type="password" id="ilC" inputmode="numeric" autocomplete="current-password" required style="width:100%;text-align:center" placeholder="الرمز">
+    <p class="muted" id="ilE" style="margin:6px 0 0;min-height:1.2em"></p>
+    <div class="row" style="gap:8px;justify-content:center;margin-top:8px"><button class="btn pri" type="submit" id="ilGo">فتح</button><button class="btn" type="button" id="ilOut">خروج</button></div></form>`;
+  document.body.appendChild(bg); $("#app").setAttribute("aria-hidden", "true"); setTimeout(() => { const i = $("#ilC"); if (i) i.focus(); }, 50);
+  $("#ilOut").onclick = () => logout();
+  $("#ilF").onsubmit = async e => {
+    e.preventDefault(); const code = digits($("#ilC").value); if (!code) return;
+    $("#ilGo").disabled = true; $("#ilE").textContent = "";
+    try {
+      await reauthenticateWithCredential(auth.currentUser, EmailAuthProvider.credential(auth.currentUser.email, code));
+      S._idleLocked = false; _lastAct = Date.now(); try { sessionStorage.removeItem("idleLocked"); } catch {}
+      bg.remove(); $("#app").removeAttribute("aria-hidden");
+    } catch (err) {
+      tries++; $("#ilC").value = "";
+      if (tries >= 5 || ["auth/user-disabled", "auth/user-token-expired", "auth/user-mismatch"].includes(err && err.code)) { try { sessionStorage.removeItem("idleLocked"); sessionStorage.setItem("idleOut", "1"); } catch {} return logout(); }
+      $("#ilE").textContent = err && err.code === "auth/too-many-requests" ? "محاولات كثيرة، انتظر شوي وجرّب" : `الرمز غير صحيح (${5 - tries} محاولات باقية)`;
+    } finally { const g = $("#ilGo"); if (g) g.disabled = false; }
+  };
+}
 /* the general administration and academic affairs hear about a struggling classroom server even when on another tab */
 setInterval(async () => {
   if (S.view !== "admin" || !["admin", "academic"].includes(S.adminRole) || !MEET() || S.aTab === "live") return;
@@ -76,9 +112,10 @@ setInterval(async () => {
   toast(x.down ? "⚠️ سيرفر القاعة ما يرد. افتح «المحاضرات والتسجيلات»" : "⚠️ ضغط عالي على سيرفر القاعة. افتح «المحاضرات والتسجيلات» وانقل لـ Teams");
 }, 120000);
 try { if (sessionStorage.getItem("lockOut")) { sessionStorage.removeItem("lockOut"); setTimeout(() => toast("انتهت جلستك: الإدارة غيّرت رمز الحساب أو أوقفته"), 1500); } } catch {}
-try { if (sessionStorage.getItem("idleOut")) { sessionStorage.removeItem("idleOut"); setTimeout(() => toast("طلعت من البوابة تلقائياً بعد 30 دقيقة بدون نشاط"), 1500); } } catch {}
+try { if (sessionStorage.getItem("idleOut")) { sessionStorage.removeItem("idleOut"); setTimeout(() => toast("طلعت من البوابة بعد 5 محاولات خاطئة لفتح القفل"), 1500); } } catch {}
 /* sign out and wipe the cached copy, so nothing stays on a shared computer */
 async function logout(){
+  try { sessionStorage.removeItem("idleLocked"); } catch {}
   try { await signOut(auth); } catch {}
   try { await terminate(db); await clearIndexedDbPersistence(db); } catch {}
   location.reload();
@@ -624,6 +661,7 @@ if (!configured) {
     getDoc(ref("sigs/finance")).then(x => { S.sigs.finance = x.exists() ? x.data().img || "" : ""; }).catch(() => {});
     S._loginLog = S.role !== "student";
     render();
+    if (["admin", "student"].includes(S.role)) { try { if (sessionStorage.getItem("idleLocked")) idleLock(); } catch {} }
   });
 }
 
@@ -654,7 +692,10 @@ function startData(){
     sub(query(collection(db, "groups"), where("memberNums", "array-contains", S.myNum)), snap => {
       S.groups = {}; snap.docs.forEach(d => S.groups[d.id] = {id: d.id, ...d.data()}); S.loaded.groups = true; afterData();
     });
-    S.subs.push(onSnapshot(query(collection(db, "att"), where("memberNums", "array-contains", S.myNum)), snap => { S.myAtt = snap.docs.map(d => d.data()); render(); }, () => {}));
+    // attendance: not live — from the server at most every 3 hours (it was the biggest daily read)
+    S.loadMyAtt = force => cachedDocs("att_" + S.myNum, query(collection(db, "att"), where("memberNums", "array-contains", S.myNum)), force ? 0 : 3 * 3600e3)
+      .then(snap => { S.myAtt = snap.docs.map(d => d.data()); if (!busyEditing()) render(); }).catch(e => console.error(e));
+    S.loadMyAtt();
     S.subs.push(onSnapshot(query(collection(db, "results"), where("num", "==", S.myNum)), snap => { S.myResults = snap.docs.map(d => d.data()); render(); }, () => {}));
     S.subs.push(onSnapshot(query(collection(db, "excuses"), where("num", "==", S.myNum)), snap => { S.myExc = snap.docs.map(d => ({id: d.id, ...d.data()})); if (!busyEditing()) render(); }, () => {}));
     S.subs.push(onSnapshot(query(collection(db, "warnings"), where("num", "==", S.myNum)), snap => { S.myWarn = snap.docs.map(d => d.data()); if (!busyEditing()) render(); }, () => {}));
@@ -4438,7 +4479,7 @@ const liveAnnAll = k => liveAnn(S.ann[k]);   // expired ones are dropped on the 
 /* ---------- follow-up tab: deprivation alerts, most absent courses, monthly report ---------- */
 async function loadAllAtt(force){
   if (S.allAtt && !force) return;
-  const snap = await getDocs(collection(db, "att"));
+  const snap = await cachedDocs("allatt", collection(db, "att"), force ? 0 : 3 * 3600e3);
   S.allAtt = snap.docs.map(d => d.data()); S.allAttAt = new Date();
 }
 /* every student who reached a warning level; shared by the follow-up tab and the alert banner */
@@ -4461,15 +4502,20 @@ function absAlerts(){
 const alertWaiting = a => a.wid && !(S.warnings || {})[a.wid] && !(S.waivers || {})[a.wid];
 function absNag(){
   if (!["academic", "admin"].includes(S.adminRole)) return "";
-  if (!S.allAtt) { if (!S._attLoading && S.loaded && S.loaded.groups) { S._attLoading = true; loadAllAtt().then(() => { if (S.view === "admin" && !busyEditing()) render(); }).catch(() => {}).finally(() => { S._attLoading = false; }); } return ""; }
-  const w = absAlerts().alerts.filter(alertWaiting); if (!w.length || S.aTab === "follow") return "";
-  const n3 = w.filter(a => a.st.level === 3).length;
-  return `<div class="notice err" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="grow">تنبيه غياب: ${w.length} طالب وصلوا نسبة ${n3 ? `حرمان (${n3}) أو إنذار` : "إنذار"} وما صدر لهم إنذار.</span><button class="btn sm pri" id="nagAbs">افتح المتابعة</button></div>`;
+  const nag = (n, n3) => `<div class="notice err" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="grow">تنبيه غياب: ${n} طالب وصلوا نسبة ${n3 ? `حرمان (${n3}) أو إنذار` : "إنذار"} وما صدر لهم إنذار.</span><button class="btn sm pri" id="nagAbs">افتح المتابعة</button></div>`;
+  if (!S.allAtt) {   // the whole attendance is read once a day per browser for this banner; the follow-up tab reads it when opened
+    let c = null; try { c = JSON.parse(localStorage.getItem("absSum") || "null"); } catch {}
+    if (c && c.day === today()) return c.n && S.aTab !== "follow" ? nag(c.n, c.n3) : "";
+    if (!S._attLoading && S.loaded && S.loaded.groups) { S._attLoading = true; loadAllAtt().then(() => { if (S.view === "admin" && !busyEditing()) render(); }).catch(() => {}).finally(() => { S._attLoading = false; }); } return ""; }
+  const w = absAlerts().alerts.filter(alertWaiting), n3 = w.filter(a => a.st.level === 3).length;
+  try { localStorage.setItem("absSum", JSON.stringify({day: today(), n: w.length, n3})); } catch {}
+  if (!w.length || S.aTab === "follow") return "";
+  return nag(w.length, n3);
 }
 function adminFollow(el){
   if (!S.allAtt) {
     el.innerHTML = `<div class="card"><p class="muted" style="margin:0">جاري تحميل سجلات الحضور…</p></div>`;
-    loadAllAtt().then(() => { if (S.aTab === "follow") render(); }).catch(e => { console.error(e); el.innerHTML = `<div class="notice err">تعذّر تحميل السجلات.</div>`; });
+    loadAllAtt(S._attForce).finally(() => { S._attForce = false; }).then(() => { if (S.aTab === "follow") render(); }).catch(e => { console.error(e); el.innerHTML = `<div class="notice err">تعذّر تحميل السجلات.</div>`; });
     return;
   }
   const {gs, alerts, courses} = absAlerts();
@@ -4520,7 +4566,7 @@ function adminFollow(el){
       ${mStu.map(r => `<tr><td class="nm">${esc(r.s.name)}</td><td>${esc(r.s.sid || "—")}</td><td class="nm">${esc(r.g.course)}</td><td>${r.a}</td><td>${r.held}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">ما فيه غياب في هذا الشهر</td></tr>`}</tbody></table></div>`
     : `<p class="muted">ما فيه تحضير مسجل في هذا الشهر.</p>`}
   </div>`;
-  $("#fRef").onclick = () => { S.allAtt = null; render(); };
+  $("#fRef").onclick = () => { S.allAtt = null; S._attForce = true; render(); };
   $("#repM").onchange = e => { S.repMonth = e.target.value; render(); };
   $("#copyM").onclick = async () => {
     const t = ["#mtM", "#mtS"].map(id => $(id)).filter(Boolean).map(tb => [...tb.rows].map(tr => [...tr.cells].map(td => td.innerText.trim()).join("\t")).join("\n")).join("\n\n");
@@ -5255,8 +5301,8 @@ function adminEvals(el){
 function adminKpi(el){
   if (!S.kpiAtt) {
     el.innerHTML = `<div class="card"><p class="muted" style="margin:0">جاري حساب المؤشرات…</p></div>`;
-    Promise.all([getDocs(collection(db, "att")), S.evalsAll || RO() ? null : getDocs(collection(db, "evals")).catch(() => null)]).then(([a, e]) => {
-      S.kpiAtt = a.docs.map(d => d.data()); if (e) S.evalsAll = e.docs.map(d => d.data());
+    Promise.all([loadAllAtt(S._kpiForce), S.evalsAll || RO() ? null : getDocs(collection(db, "evals")).catch(() => null)]).then(([a, e]) => {
+      S._kpiForce = false; S.kpiAtt = S.allAtt; if (e) S.evalsAll = e.docs.map(d => d.data());
       if (S.aTab === "kpi") render();
     }).catch(err => { console.error(err); el.innerHTML = `<div class="notice err">تعذّر تحميل البيانات.</div>`; });
     return;
@@ -5299,7 +5345,7 @@ function adminKpi(el){
     ${Object.entries(trainers).map(([k, l]) => { const a = avgOf(l, "att"), e = avgOf(l, "ev"); return `<tr><td class="nm">${esc(k === "_" ? "بدون مدرب" : tName(k))}</td><td>${l.length}</td><td>${pctBar(a === null ? null : Math.round(a))}</td><td>${e === null ? "—" : e.toFixed(1)}</td></tr>`; }).join("")}
   </tbody></table></div></div>
   <div class="card"><h2>الحضور حسب الشهر</h2>${Object.keys(months).length ? `<div class="list">${Object.entries(months).sort().map(([m, o]) => `<div class="item" style="padding:8px 12px"><span style="width:80px">${m}</span><span class="grow">${pctBar(o.all ? Math.round(o.pr / o.all * 100) : null)}</span></div>`).join("")}</div>` : `<p class="muted" style="margin:0">ما فيه تحضير بعد.</p>`}</div>`;
-  $("#kRef").onclick = () => { S.kpiAtt = null; render(); };
+  $("#kRef").onclick = () => { S.kpiAtt = null; S._kpiForce = true; render(); };
 }
 
 
