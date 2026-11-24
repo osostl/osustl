@@ -1222,8 +1222,16 @@ function corrModal(){
   $("#crBack").onclick = () => { if (S._corrList) { S._corrOpen = null; corrModal(); } else { S._corrOpen = null; closeModal(); } };
   $("#crPr").onclick = () => corrPrint(c);
   $("#modalBox").querySelectorAll("[data-crf]").forEach(b => b.onclick = async () => { b.disabled = true; try { await srvOpen(c.files[Number(b.dataset.crf)].m); } catch { toast("تعذّر فتح الملف"); } b.disabled = false; });
-  if ($("#crSeen")) $("#crSeen").onclick = async e => { e.target.disabled = true; const rp = $("#crRep") ? $("#crRep").value.trim().slice(0, 1500) : ""; try { await setDoc(ref("corr/" + c.id), {seen: {[key]: new Date().toISOString()}, ...(rp ? {replies: {[key]: rp}} : {})}, {merge: true}); } catch (x) { e.target.disabled = false; handleWriteErr(x); } };
-  if ($("#crRepS")) $("#crRepS").onclick = async () => { const v = $("#crRep").value.trim().slice(0, 1500); try { await setDoc(ref("corr/" + c.id), {replies: {[key]: v}, ...(seen[key] ? {} : {seen: {[key]: new Date().toISOString()}})}, {merge: true}); toast("انحفظت الإفادة"); } catch (x) { handleWriteErr(x); } };
+  /* «اطّلعت» and the reply: written directly, and through the push service when the security rules refuse it */
+  const corrMark = async (rp, withReply) => {
+    const now = new Date().toISOString();
+    try { await setDoc(ref("corr/" + c.id), {...(seen[key] ? {} : {seen: {[key]: now}}), ...(withReply ? {replies: {[key]: rp}} : {})}, {merge: true}); }
+    catch (x) { if (!x || x.code !== "permission-denied" || !(S.site || {}).pushUrl) throw x; await pushApi("/corr", {action: "seen", id: c.id, ...(withReply ? {reply: rp} : {})}); }
+    c.seen = {...(c.seen || {}), [key]: seen[key] || now}; if (withReply) c.replies = {...(c.replies || {}), [key]: rp};
+  };
+  if ($("#crSeen")) $("#crSeen").onclick = async e => { e.target.disabled = true; const rp = $("#crRep") ? $("#crRep").value.trim().slice(0, 1500) : "";
+    try { await corrMark(rp, !!rp); toast("✓ انسجل اطّلاعك"); renderTop(); corrModal(); } catch (x) { e.target.disabled = false; handleWriteErr(x); } };
+  if ($("#crRepS")) $("#crRepS").onclick = async () => { const v = $("#crRep").value.trim().slice(0, 1500); try { await corrMark(v, true); toast("انحفظت الإفادة"); } catch (x) { handleWriteErr(x); } };
   if ($("#crDel")) $("#crDel").onclick = async e => { const b = e.target; if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟"; return; }
     try { await deleteDoc(ref("corr/" + c.id)); logAction(`حذف ${CORR_K[c.kind][0]}`, `${c.no}/${c.year} · ${c.subject}`); S._corrOpen = null; closeModal(); } catch (x) { handleWriteErr(x); } };
 }
@@ -3221,6 +3229,14 @@ img{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 @media print{body{background:#fff}.bar{display:none}.page{margin:0;width:auto;min-height:auto}}
 `;
 const fillPrintFin = (w, title, pages, land) => fillPrint(w, title, pages, land, "المالية");
+/* print on this page (hidden frame): a print dialog in a background window used to freeze the portal until it was closed */
+function printFrame(title, pages, land, dept){
+  const old = $("#prFrame"); if (old) old.remove();
+  const f = document.createElement("iframe"); f.id = "prFrame"; f.setAttribute("aria-hidden", "true");
+  f.style.cssText = "position:fixed;width:0;height:0;border:0;inset-inline-start:-10px;bottom:0;opacity:0";
+  document.body.appendChild(f);
+  try { fillPrint(f.contentWindow, title, pages, land, dept); } catch (e) { console.error(e); f.remove(); }
+}
 function fillPrint(w, title, pages, land, dept){
   if (!w) return;
   const head = `<header class="hd"><img src="${SITE()}logo-mark.png" alt=""><div class="t"><b>${INST_AR}</b><span>${INST_EN}</span></div><div class="meta">${esc(dept || "الشؤون الأكاديمية")}<br>${esc(bothDates(today()))}${S.site && S.site.accNo ? `<br>رقم الرخصة: ${esc(S.site.accNo)}` : ""}</div>${S._licQR && S.site && S.site.licUrl === S._licQRurl ? `<div class="licq">${S._licQR}</div>` : ""}</header>`;
@@ -6636,8 +6652,8 @@ function accStatus(acc, pays){
   const live = pays.filter(p => !p.void).sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.receiptNo || "").localeCompare(b.receiptNo || ""));
   const room = i => Math.max(0, (Number(i.amount) || 0) - i.covered), put = (i, p, a) => { if (a <= 0.0001) return; i.covered = Math.round((i.covered + a) * 100) / 100; i.pays.push({p, amount: a}); };
   const pool = [];
-  live.forEach(p => { let left = Number(p.amount) || 0; const t = p.inst && sched.find(i => i.key === p.inst);
-    if (t) { const a = Math.min(left, room(t)); put(t, p, a); left = Math.round((left - a) * 100) / 100; }
+  live.forEach(p => { let left = Number(p.amount) || 0;
+    String(p.inst || "").split(",").forEach(k => { const t = k && sched.find(i => i.key === k); if (!t || left <= 0.0001) return; const a = Math.min(left, room(t)); put(t, p, a); left = Math.round((left - a) * 100) / 100; });
     if (left > 0.0001) pool.push({p, left}); });
   pool.forEach(x => { for (const i of sched) { if (x.left <= 0.0001) break; const a = Math.min(x.left, room(i)); put(i, x.p, a); x.left = Math.round((x.left - a) * 100) / 100; } });
   sched.forEach(i => { i.st = i.covered >= (Number(i.amount) || 0) - 0.001 ? "paid" : i.due <= today() ? "late" : i.covered > 0 ? "part" : "due"; });
@@ -6723,6 +6739,9 @@ function openFinAccount(num){
   const draw = () => {
     const st = accStatus(acc, paysOf(num)), pays = paysOf(num).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
     /* which payments covered which installment: payments fill the schedule in date order */
+    // tick several installments and pay them in one receipt
+    const instLeft = i => Math.max(0, Math.round((Number(i.amount) - i.covered) * 100) / 100);
+    const selCell = i => `<td style="text-align:center">${instLeft(i) > 0 && (S.finAcc || {})[num] ? `<input type="checkbox" data-isel="${esc(i.key)}" data-ileft="${instLeft(i)}" data-ilbl="${esc(instName(i, st.sched))}" title="حدده عشان تسجّل له دفعة مع غيره">` : ""}</td>`;
     const instCell = (i, k) => {
       const left = Math.max(0, Math.round((Number(i.amount) - i.covered) * 100) / 100);
       // a payment bigger than one installment covers several: each row says how much it took from that receipt
@@ -6752,9 +6771,10 @@ function openFinAccount(num){
         <label class="f grow" for="fPh">جوال للتذكير (الطالب أو ولي الأمر)<input type="tel" id="fPh" dir="ltr" value="${esc(acc.phone || "")}" placeholder="05xxxxxxxx"></label>
         <label class="f grow" for="fPar">سجّل عن طريق (للعمولة)<select id="fPar"><option value="">بدون شريك</option>${(S.finSet.partners || []).map(p => `<option value="${esc(p.id)}" ${acc.partner === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>
       </div>
-      <div class="tbl" style="margin-top:10px"><table><thead><tr><th>القسط</th><th>الاستحقاق (تقدر تغيّره)</th><th>المبلغ</th><th>الحالة</th><th>الإيصال</th></tr></thead><tbody>
-        ${st.sched.map((i, k) => i.xi !== undefined ? `<tr><td>${esc(i.label)}</td><td>${dH(i.due)}</td><td>${SAR(i.amount)}</td><td><span class="pill ${INST_PILL[i.st]}">${INST_ST[i.st]}</span></td><td>${instCell(i, k)}</td></tr>` : `<tr><td><b>${esc(instName(i, st.sched))}</b></td><td><input type="date" data-idue="${i.ix}" value="${esc(i.due)}" style="width:150px;padding:4px"></td><td><input type="number" data-iamt="${i.ix}" value="${i.amount}" style="width:110px;padding:4px"></td><td><span class="pill ${INST_PILL[i.st]}">${INST_ST[i.st]}</span></td><td>${instCell(i, k)}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">اضغط "توليد الجدول"</td></tr>`}
+      <div class="tbl" style="margin-top:10px"><table><thead><tr><th title="حدد أكثر من قسط وسجّلهم بدفعة وحدة">دفع</th><th>القسط</th><th>الاستحقاق (تقدر تغيّره)</th><th>المبلغ</th><th>الحالة</th><th>الإيصال</th></tr></thead><tbody>
+        ${st.sched.map((i, k) => i.xi !== undefined ? `<tr>${selCell(i)}<td>${esc(i.label)}</td><td>${dH(i.due)}</td><td>${SAR(i.amount)}</td><td><span class="pill ${INST_PILL[i.st]}">${INST_ST[i.st]}</span></td><td>${instCell(i, k)}</td></tr>` : `<tr>${selCell(i)}<td><b>${esc(instName(i, st.sched))}</b></td><td><input type="date" data-idue="${i.ix}" value="${esc(i.due)}" style="width:150px;padding:4px"></td><td><input type="number" data-iamt="${i.ix}" value="${i.amount}" style="width:110px;padding:4px"></td><td><span class="pill ${INST_PILL[i.st]}">${INST_ST[i.st]}</span></td><td>${instCell(i, k)}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">اضغط "توليد الجدول"</td></tr>`}
       </tbody></table></div>
+      <div class="row" id="iSelBar" style="margin-top:8px;display:none;gap:8px;align-items:center;background:#fff8e6;border:1px solid var(--gold);border-radius:10px;padding:8px 12px"><span class="grow" id="iSelT"></span><button class="btn sm gold" id="iSelPay">تسجيل دفعة للأقساط المحددة</button></div>
       <div class="row" style="margin-top:10px"><button class="btn pri" id="fSave">حفظ الحساب</button><span class="muted" id="fChk"></span></div>
     </div>
     <div class="card" style="background:var(--bg)"><h3>رسوم إضافية</h3>
@@ -6769,13 +6789,13 @@ function openFinAccount(num){
         <label class="f" for="pM" style="width:170px">الطريقة<select id="pM">${METHODS.map(m => `<option ${acc.plan === "qasima" && m === "قسيمة بلس" ? "selected" : ""}>${m}</option>`).join("")}</select></label>
         <label class="f" for="pD" style="width:160px">التاريخ<input type="date" id="pD" value="${today()}" max="${today()}"></label>
         <label class="f grow" for="pRef">رقم العملية / المرجع<input type="text" id="pRef"></label>
-        <label class="f" for="pInst" style="width:170px">عن أي قسط<select id="pInst"><option value="">تلقائي (الأقدم أول)</option>${st.sched.map(i => `<option value="${esc(i.key)}">${esc(instName(i, st.sched))}</option>`).join("")}</select></label>
+        <label class="f" for="pInst" style="width:170px">عن أي قسط<select id="pInst"><option value="">تلقائي (الأقدم أول)</option><option value="" id="pInstMulti" hidden>الأقساط المحددة</option>${st.sched.map(i => `<option value="${esc(i.key)}">${esc(instName(i, st.sched))}</option>`).join("")}</select></label>
       </div>
       <div class="row" style="margin-top:8px"><label class="f grow" for="pN">ملاحظة<input type="text" id="pN"></label><label class="f grow" for="pImg">الإيصال: صورة أو PDF (اختياري)<input type="file" id="pImg" accept="image/*,application/pdf,.pdf"></label></div>
       <div class="row" style="margin-top:8px"><button class="btn gold" id="pAdd" ${(S.finAcc || {})[num] ? "" : "disabled"}>تسجيل الدفعة وطباعة السند</button>${(S.finAcc || {})[num] ? "" : `<span class="muted">احفظ الحساب أول</span>`}</div>
     </div>
     <div><h3>الدفعات (${pays.length})</h3><div class="list">${pays.map(p => `<div class="item" style="${p.void ? "opacity:.55" : ""}"><div class="grow"><div class="t">${SAR(p.amount)} · ${esc(p.method)}</div><div class="muted">سند ${esc(p.receiptNo)} · ${dH(p.date)}${p.ref ? " · " + esc(p.ref) : ""}${p.void ? " · ملغى: " + esc(p.voidReason || "") : ""}</div></div>
-      ${p.void ? "" : `<select data-pinst="${esc(p.id)}" title="عن أي قسط" style="width:auto;padding:4px 6px;font-size:13px"><option value="">القسط: تلقائي</option>${st.sched.map(i => `<option value="${esc(i.key)}" ${p.inst === i.key ? "selected" : ""}>${esc(instName(i, st.sched))}</option>`).join("")}</select>
+      ${p.void ? "" : `<select data-pinst="${esc(p.id)}" title="عن أي قسط" style="width:auto;padding:4px 6px;font-size:13px"><option value="">القسط: تلقائي</option>${String(p.inst || "").includes(",") ? `<option value="${esc(p.inst)}" selected>${String(p.inst).split(",").length} أقساط</option>` : ""}${st.sched.map(i => `<option value="${esc(i.key)}" ${p.inst === i.key ? "selected" : ""}>${esc(instName(i, st.sched))}</option>`).join("")}</select>
       <button class="btn sm" data-pdate="${esc(p.id)}">تعديل التاريخ</button>`}
       ${rcptBtns("payments", p)}<button class="btn sm" data-prc="${esc(p.id)}">السند</button>${p.void ? `<button class="btn sm gold" data-pres="${esc(p.id)}">استرجاع</button>` : `<button class="btn sm danger" data-pv="${esc(p.id)}">إلغاء</button>`}</div>`).join("") || `<span class="muted">ما فيه دفعات</span>`}</div></div>
     <div class="row"><button class="btn sm" id="fStmt">كشف حساب PDF</button>${acc.phone ? `<a class="btn sm gold" target="_blank" rel="noopener" href="https://wa.me/${normPhone(acc.phone)}?text=${encodeURIComponent(finReminder(s, st))}">تذكير واتساب</a>` : ""}</div>`;
@@ -6783,6 +6803,34 @@ function openFinAccount(num){
     const readForm = () => { acc.program = $("#fP").value; acc.fee = Number($("#fFee").value) || 0; acc.discount = Number($("#fDis").value) || 0; acc.discountNote = $("#fDisN").value.trim(); acc.plan = $("#fPl").value; acc.start = $("#fSt").value; acc.months = Number($("#fMo").value) || 4; acc.second = $("#fSec").value; acc.phone = $("#fPh").value.trim(); acc.partner = $("#fPar").value;
       document.querySelectorAll("[data-idue]").forEach(x => { const k = Number(x.dataset.idue); if (acc.installments[k]) acc.installments[k].due = x.value; });
       document.querySelectorAll("[data-iamt]").forEach(x => { const k = Number(x.dataset.iamt); if (acc.installments[k]) acc.installments[k].amount = Number(x.value) || 0; }); };
+    /* the installment total always follows the net: change one amount and the unpaid installments after it share the difference */
+    const sumChk = () => { const net = Math.max(0, (Number($("#fFee").value) || 0) - (Number($("#fDis").value) || 0)), t = Math.round([...document.querySelectorAll("[data-iamt]")].reduce((a, x) => a + (Number(x.value) || 0), 0) * 100) / 100;
+      if (!document.querySelector("[data-iamt]")) return;
+      $("#fChk").innerHTML = Math.abs(t - net) <= 0.01 ? `مجموع الأقساط ${SAR(t)} = الصافي ✓` : `<span style="color:var(--abs)">مجموع الأقساط ${SAR(t)} والصافي ${SAR(net)} · الفرق ${SAR(Math.round((net - t) * 100) / 100)}</span>`; };
+    const spread = k => {
+      readForm(); const net = Math.max(0, acc.fee - acc.discount), L = acc.installments; if (!L[k]) return;
+      const done = new Set(st.sched.filter(i => i.xi === undefined && i.covered > 0).map(i => i.ix));   // started or paid: left as they are
+      const order = L.map((x, ix) => ix).sort((a, b) => (L[a].due || "").localeCompare(L[b].due || "") || a - b), pos = order.indexOf(k);
+      let adj = order.slice(pos + 1).filter(ix => !done.has(ix)); if (!adj.length) adj = order.slice(0, pos).filter(ix => !done.has(ix)).reverse();
+      let diff = Math.round((net - L.reduce((a, x) => a + (Number(x.amount) || 0), 0)) * 100) / 100;
+      for (let r = 0; r < 3 && Math.abs(diff) > 0.009 && adj.length; r++) {
+        const each = Math.trunc(diff / adj.length * 100) / 100; let given = 0;
+        adj.forEach((ix, j) => { let a = j === adj.length - 1 ? Math.round((diff - given) * 100) / 100 : each; const nv = Math.max(0, Math.round(((Number(L[ix].amount) || 0) + a) * 100) / 100); a = Math.round((nv - (Number(L[ix].amount) || 0)) * 100) / 100; L[ix].amount = nv; given = Math.round((given + a) * 100) / 100; });
+        diff = Math.round((diff - given) * 100) / 100; adj = adj.filter(ix => L[ix].amount > 0);
+      }
+      document.querySelectorAll("[data-iamt]").forEach(x => { const i = Number(x.dataset.iamt); if (L[i] && i !== k) x.value = L[i].amount; });
+      sumChk(); if (Math.abs(diff) > 0.009) toast("ما قدرت أوزّع الفرق كله، عدّل المبالغ يدوياً");
+    };
+    document.querySelectorAll("[data-iamt]").forEach(x => { x.onchange = () => spread(Number(x.dataset.iamt)); x.oninput = sumChk; });
+    ["#fFee", "#fDis"].forEach(sl => { if ($(sl)) $(sl).addEventListener("input", sumChk); });
+    sumChk();
+    const selUpd = () => { const c = [...document.querySelectorAll("[data-isel]")].filter(x => x.checked), t = Math.round(c.reduce((a, x) => a + Number(x.dataset.ileft), 0) * 100) / 100;
+      $("#iSelBar").style.display = c.length ? "" : "none"; $("#iSelT").innerHTML = `محدد <b>${c.length}</b> ${c.length === 1 ? "قسط" : "أقساط"} · المجموع <b>${SAR(t)}</b>`; return {c, t}; };
+    document.querySelectorAll("[data-isel]").forEach(x => x.onchange = selUpd);
+    if ($("#iSelPay")) $("#iSelPay").onclick = () => { const {c, t} = selUpd(); if (!c.length) return;
+      const o = $("#pInstMulti"); o.value = c.map(x => x.dataset.isel).join(","); o.hidden = false; o.textContent = `الأقساط المحددة (${c.length})`; $("#pInst").value = o.value;
+      $("#pAmt").value = t; $("#pN").value = c.map(x => x.dataset.ilbl).join(" + ");
+      $("#pAmt").closest(".card").scrollIntoView({behavior: "smooth", block: "center"}); toast("المبلغ جاهز، أرفق الإيصال واضغط تسجيل الدفعة"); };
     $("#xT").onchange = () => { const o = $("#xT").selectedOptions[0]; $("#xL").style.display = $("#xT").value === "_o" ? "" : "none"; if (o && o.dataset.fee) $("#xA").value = o.dataset.fee; };
     const saveExtras = async (list, msg) => { try { await setDoc(ref("finAccounts/" + num), {extras: list}, {merge: true}); acc.extras = list; S.finAcc[num] = {...S.finAcc[num], extras: list}; logAction(msg, s.name); toast("انحفظ"); draw(); } catch (e) { handleWriteErr(e); } };
     $("#xAdd").onclick = () => { const label = $("#xT").value === "_o" ? $("#xL").value.trim() : $("#xT").value, amount = Number($("#xA").value) || 0; if (!label || amount <= 0) return toast("اختر النوع واكتب المبلغ"); saveExtras([...(acc.extras || []), {label, amount, date: $("#xD").value || today()}], `رسوم إضافية: ${label} ${amount}`); };
@@ -6804,8 +6852,9 @@ function openFinAccount(num){
       const amount = Math.round((Number($("#pAmt").value) || 0) * 100) / 100;
       if (amount <= 0) return toast("اكتب المبلغ");
       if (amount > st.remaining + 0.01) return toast(`المبلغ أكبر من المتبقي (${SAR(st.remaining)})`);
-      const w = openPrint(); if (!w) return;
-      let img = null; try { img = await pickedImg("#pImg"); } catch (e) { w.close(); return rcptErr(e); }
+      const btn = $("#pAdd"); if (btn.disabled) return; btn.disabled = true; btn.textContent = "جاري التسجيل…";
+      const undo = () => { const b = $("#pAdd"); if (b) { b.disabled = false; b.textContent = "تسجيل الدفعة وطباعة السند"; } };
+      let img = null; try { img = await pickedImg("#pImg"); } catch (e) { undo(); return rcptErr(e); }
       const pay = {...($("#pInst").value ? {inst: $("#pInst").value} : {}), num, name: s.name, amount, method: $("#pM").value, date: $("#pD").value || today(), ref: $("#pRef").value.trim(), note: $("#pN").value.trim(), program: acc.program, by: S.adminRole, void: false};
       try {
         const id = "p-" + uid() + uid();
@@ -6817,9 +6866,9 @@ function openFinAccount(num){
         });
         logAction("تسجيل دفعة", `${s.name} · ${SAR(amount)} · سند ${pay.receiptNo}`);
         const after = Math.max(0, Math.round((st.remaining - amount) * 100) / 100);
-        fillPrintFin(w, `سند قبض ${pay.receiptNo}`, [{html: receiptHTML({...pay, id}, acc, [...paysOf(num).filter(x => x.id !== id), {...pay, id}])}]);
         toast("انسجلت الدفعة"); if ($("#pImg")) $("#pImg").value = ""; draw();
-      } catch (e) { w.close(); handleWriteErr(e); }
+        printFrame(`سند قبض ${pay.receiptNo}`, [{html: receiptHTML({...pay, id}, acc, [...paysOf(num).filter(x => x.id !== id), {...pay, id}])}], false, "المالية");
+      } catch (e) { undo(); handleWriteErr(e); }
     };
     bindRcpt($("#modalBox"));
     $("#modalBox").querySelectorAll("[data-payinst]").forEach(b => b.onclick = () => {
