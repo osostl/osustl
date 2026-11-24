@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, doc, collection, query, where, onSnapshot, setDoc, deleteDoc, writeBatch, getDoc, getDocs, getDocsFromCache, addDoc, orderBy, limit, serverTimestamp, runTransaction, getCountFromServer, Timestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, doc, collection, query, where, onSnapshot, setDoc, deleteDoc, writeBatch, getDoc, getDocs, getDocsFromCache, documentId, addDoc, orderBy, limit, serverTimestamp, runTransaction, getCountFromServer, Timestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./config.js";
 
 /* ---------- constants ---------- */
@@ -60,6 +60,24 @@ if (configured) {
   setPersistence(auth, browserLocalPersistence).catch(() => {});
 }
 const ref = path => doc(db, ...path.split("/"));
+/* a trainee's attendance, the heaviest list a trainee reads: from this device's copy for 3 hours; after that only the last
+   4 days of each course come from the server (corrections to older days arrive with the weekly full refresh) */
+async function loadMyAtt(force){
+  const key = "qc_att_" + S.myNum, full = query(collection(db, "att"), where("memberNums", "array-contains", S.myNum)), now = Date.now();
+  let m = {}; try { m = JSON.parse(localStorage.getItem(key) || "{}"); } catch {}
+  const save = x => { m = {...m, ...x}; try { localStorage.setItem(key, JSON.stringify(m)); } catch {} };
+  let c0 = null; if (!force && m.n) { try { c0 = await getDocsFromCache(full); } catch {} if (c0 && c0.size < m.n) c0 = null; }
+  if (c0 && m.t && now - m.t < 3 * 3600e3) return c0;
+  if (c0 && m.full && now - m.full < 7 * 864e5) {
+    try {
+      const from = new Date(now - 4 * 864e5 + 3 * 3600e3).toISOString().slice(0, 10);
+      const gids = [...new Set([...Object.keys(S.groups || {}), ...c0.docs.map(d => d.data().groupId)].filter(Boolean))];
+      await Promise.all(gids.map(g => getDocs(query(collection(db, "att"), where("memberNums", "array-contains", S.myNum), where(documentId(), ">=", `${g}_${from}`), where(documentId(), "<=", `${g}_\uf8ff`)))));
+      const c = await getDocsFromCache(full); save({t: now, n: c.size}); return c;
+    } catch (e) { console.warn("att: recent only failed, reading all", e); }
+  }
+  const sn = await getDocs(full); save({t: now, full: now, n: sn.size}); return sn;
+}
 /* reads saver (Firebase's free daily limit): a list that does not need to be live comes from the server at most once per ttl;
    in between the browser's own copy answers. If that copy was wiped (sign-out), it goes back to the server. */
 async function cachedDocs(key, q, ttl){
@@ -164,7 +182,7 @@ async function checkPayReturn(){   // back from Tap's page: ?pay=pi…
   const pi = new URLSearchParams(location.search).get("pay"); if (!pi || S._payChecked === pi || S.role !== "student" || !(S.site || {}).pushUrl) return;
   S._payChecked = pi; history.replaceState(null, "", location.pathname + location.hash); toast("⏳ جاري التأكد من الدفع…");
   for (let i = 0; i < 4; i++) { try { const j = await payApi("/pay/verify", {pi});
-      if (j.status === "CAPTURED") return toast(j.kind === "coffee" ? "✅ انقبل الدفع — طلبك مدفوع" : `✅ انقبلت دفعتك (${j.amount} ر.س) ونزل لك سند في «المالية»`);
+      if (j.status === "CAPTURED") { if (S.loadMine) S.loadMine(true); toast(j.kind === "coffee" ? "✅ انقبل الدفع — طلبك مدفوع" : `✅ انقبلت دفعتك (${j.amount} ر.س) ونزل لك سند في «المالية»`); return; }
       if (/DECLINED|CANCELLED|FAILED|ABANDONED|VOID|RESTRICTED|TIMEDOUT/.test(j.status || "")) return toast("❌ ما تمت عملية الدفع — ما انخصم منك شيء");
     } catch (e) {} await new Promise(r => setTimeout(r, 2500)); }
   toast("الدفع قيد المعالجة — بيظهر خلال دقائق إذا انخصم المبلغ");
@@ -694,19 +712,22 @@ function startData(){
       S.groups = {}; snap.docs.forEach(d => S.groups[d.id] = {id: d.id, ...d.data()}); S.loaded.groups = true; afterData();
     });
     // attendance: not live — from the server at most every 3 hours (it was the biggest daily read)
-    S.loadMyAtt = force => cachedDocs("att_" + S.myNum, query(collection(db, "att"), where("memberNums", "array-contains", S.myNum)), force ? 0 : 3 * 3600e3)
-      .then(snap => { S.myAtt = snap.docs.map(d => d.data()); if (!busyEditing()) render(); }).catch(e => console.error(e));
+    S.loadMyAtt = force => loadMyAtt(force).then(snap => { S.myAtt = snap.docs.map(d => d.data()); if (!busyEditing()) render(); }).catch(e => console.error(e));
     S.loadMyAtt();
-    S.subs.push(onSnapshot(query(collection(db, "results"), where("num", "==", S.myNum)), snap => { S.myResults = snap.docs.map(d => d.data()); render(); }, () => {}));
     S.subs.push(onSnapshot(query(collection(db, "excuses"), where("num", "==", S.myNum)), snap => { S.myExc = snap.docs.map(d => ({id: d.id, ...d.data()})); if (!busyEditing()) render(); }, () => {}));
-    S.subs.push(onSnapshot(query(collection(db, "warnings"), where("num", "==", S.myNum)), snap => { S.myWarn = snap.docs.map(d => d.data()); if (!busyEditing()) render(); }, () => {}));
     S.subs.push(onSnapshot(ref("finAccounts/" + S.myNum), snap => { S.myFin = snap.exists() ? snap.data() : null; if (!busyEditing()) render(); }, () => {}));
-    S.subs.push(onSnapshot(query(collection(db, "payments"), where("num", "==", S.myNum)), snap => { S.myPay = snap.docs.map(d => ({id: d.id, ...d.data()})); if (!busyEditing()) render(); }, () => {}));
     S.subs.push(onSnapshot(query(collection(db, "acReqs"), where("num", "==", S.myNum)), snap => { S.myAReq = snap.docs.map(d => ({id: d.id, ...d.data()})); if (!busyEditing()) render(); }, () => {}));
     S.subs.push(onSnapshot(query(collection(db, "finReqs"), where("num", "==", S.myNum)), snap => { S.myFReq = snap.docs.map(d => ({id: d.id, ...d.data()})); if (!busyEditing()) render(); }, () => {}));
-    S.subs.push(onSnapshot(query(collection(db, "idcards"), where("num", "==", S.myNum)), snap => { const t = snap.docs[0] ? snap.docs[0].id : null; if (t !== S.myIdTok) { S.myIdTok = t; if (S.sTab === "card" && !busyEditing()) render(); } }, () => {}));
-    S.subs.push(onSnapshot(query(collection(db, "certs"), where("num", "==", S.myNum)), snap => { S.myCerts = snap.docs.map(d => d.data()).filter(c => !c.revoked); if (!busyEditing()) render(); }, () => {}));
-    S.subs.push(onSnapshot(query(collection(db, "evals"), where("num", "==", S.myNum)), snap => { S.myEvals = snap.docs.map(d => d.data()); if (!busyEditing()) render(); }, () => {}));
+    /* lists a trainee only reads: from this device for an hour (Firebase's daily read limit); «تحديث» or a payment refreshes them */
+    const mine = c => query(collection(db, c), where("num", "==", S.myNum));
+    S.loadMine = force => { const ttl = force ? 0 : 3600e3, rd = () => { if (!busyEditing()) render(); };
+      cachedDocs("res_" + S.myNum, mine("results"), ttl).then(sn => { S.myResults = sn.docs.map(d => d.data()); rd(); }).catch(() => {});
+      cachedDocs("warn_" + S.myNum, mine("warnings"), ttl).then(sn => { S.myWarn = sn.docs.map(d => d.data()); rd(); }).catch(() => {});
+      cachedDocs("pay_" + S.myNum, mine("payments"), ttl).then(sn => { S.myPay = sn.docs.map(d => ({id: d.id, ...d.data()})); rd(); }).catch(() => {});
+      cachedDocs("idc_" + S.myNum, mine("idcards"), ttl).then(sn => { const t = sn.docs[0] ? sn.docs[0].id : null; if (t !== S.myIdTok) { S.myIdTok = t; rd(); } }).catch(() => {});
+      cachedDocs("cert_" + S.myNum, mine("certs"), ttl).then(sn => { S.myCerts = sn.docs.map(d => d.data()).filter(c => !c.revoked); rd(); }).catch(() => {});
+      cachedDocs("eval_" + S.myNum, mine("evals"), ttl).then(sn => { S.myEvals = sn.docs.map(d => d.data()); rd(); }).catch(() => {}); };
+    S.loadMine();
     watchCamp(); watchMsgs(); setTimeout(checkPayReturn, 1500);
     S.subs.push(onSnapshot(query(collection(db, "exams"), where("memberNums", "array-contains", S.myNum)), snap => { S.myExams = snap.docs.map(d => ({id: d.id, ...d.data()})); if (!S.exTake && !busyEditing()) render(); }, e => console.error(e)));
     S.subs.push(onSnapshot(query(collection(db, "examSubs"), where("num", "==", S.myNum)), snap => {
@@ -2923,6 +2944,7 @@ function renderTrainer(app){
         <button class="tab ${S.tTab==="hist"?"on":""}" data-tab="hist">سجل الحضور</button>
         <button class="tab ${S.tTab==="grades"?"on":""}" data-tab="grades">الدرجات</button>
         <button class="tab ${S.tTab==="exams"?"on":""}" data-tab="exams">الاختبارات</button>
+        <button class="tab ${S.tTab==="smsg"?"on":""}" data-tab="smsg">📨 رسالة للطلاب</button>
       </div>
     </div>
   </div>`;
@@ -2947,6 +2969,7 @@ function renderTrainer(app){
     <div class="list" id="roll">${st.length ? st.map((s,i) => stuRow(s,i,rec[s.id]||{})).join("") : `<div class="card empty">ما فيه طلاب في هذا المقرر بعد.</div>`}</div>`;
   } else if (S.tTab === "hist") body = `<div class="card"><h2>سجل الحضور</h2>${matrixTable(g, S.groupAtt)}</div>`;
   else if (S.tTab === "exams") body = examsTab(g);
+  else if (S.tTab === "smsg") body = `<div id="tsmBox"></div>`;
   else body = gradesEditor(g, "trainer");
   app.innerHTML = head + body;
   $("#back").onclick = () => { S.tGroup = null; stopAtt(); render(); };
@@ -2992,7 +3015,42 @@ function renderTrainer(app){
   }
   else if (S.tTab === "hist") bindCopy();
   else if (S.tTab === "exams") bindExamsTab(g);
+  else if (S.tTab === "smsg") trStudentMsgs($("#tsmBox"), g);
   else bindGrades(g, "trainer");
+}
+/* ---------- a trainer writes to the students of his course: it lands in their «رسائلي» with a notification ----------
+   msgs/{id} with tid + gid; the rules accept only students of that course, and only from its trainer. */
+function trStudentMsgs(el, g){
+  const t = S.trainers[S.me] || {}, studs = (g.students || []).filter(x => x.sid), F = S._tsm = S._tsm && S._tsm.gid === g.id ? S._tsm : {gid: g.id, all: true, pick: [], title: "", text: ""};
+  const hist = (S._tsmHist || []).filter(m => m.gid === g.id);
+  el.innerHTML = `<div class="card"><h2 style="margin-top:0">📨 رسالة لطلاب ${esc(g.course)}</h2>
+    <p class="muted" style="margin-top:0">توصلهم في «رسائلي» داخل البوابة مع إشعار على جوالاتهم.</p>
+    <label class="f">العنوان<input type="text" id="tsmT" maxlength="80" value="${esc(F.title)}" placeholder="مثل: تغيير موعد المحاضرة"></label>
+    <label class="f" style="margin-top:6px">الرسالة *<textarea id="tsmX" rows="5" maxlength="2000" placeholder="السلام عليكم…">${esc(F.text)}</textarea></label>
+    <div class="row" style="gap:14px;margin-top:8px;flex-wrap:wrap"><b>إلى:</b>
+      <label class="row" style="gap:4px"><input type="radio" name="tsmA" value="all" ${F.all ? "checked" : ""}> كل طلاب المقرر (${studs.length})</label>
+      <label class="row" style="gap:4px"><input type="radio" name="tsmA" value="some" ${F.all ? "" : "checked"}> طلاب محددين</label></div>
+    ${F.all ? "" : `<div class="row" style="gap:6px 14px;flex-wrap:wrap;margin-top:8px;max-height:220px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius:10px">${studs.map(x => `<label class="row" style="gap:4px"><input type="checkbox" data-tsmp="${esc(x.sid)}" ${F.pick.includes(x.sid) ? "checked" : ""}> ${esc(x.name || x.sid)}</label>`).join("") || `<span class="muted">ما فيه طلاب بأرقام أكاديمية.</span>`}</div>`}
+    <div class="row" style="margin-top:10px"><button class="btn pri" id="tsmSend">إرسال</button><span class="muted" id="tsmN"></span></div></div>
+    <div class="card"><h3 style="margin-top:0">رسائلك لهذا المقرر</h3><div class="list" id="tsmL">${S._tsmHist ? (hist.map(m => `<div class="item" style="display:block"><div class="row" style="justify-content:space-between;gap:8px"><b>${esc(m.title || "")}</b><span class="muted">${esc(bothDates(String(m.at || "").slice(0, 10)))} · ${(m.nums || []).length} طالب</span></div><div style="white-space:pre-wrap;margin-top:6px">${esc(m.text || "")}</div><div class="row" style="margin-top:6px"><button class="btn sm danger" data-tsmd="${esc(m.id)}">حذف</button></div></div>`).join("") || `<span class="muted">ما أرسلت رسائل للحين.</span>`) : `<span class="muted">جاري التحميل…</span>`}</div></div>`;
+  const keep = () => { F.title = $("#tsmT").value; F.text = $("#tsmX").value; };
+  el.querySelectorAll("[name=tsmA]").forEach(r => r.onchange = () => { keep(); F.all = r.value === "all"; trStudentMsgs(el, g); });
+  el.querySelectorAll("[data-tsmp]").forEach(c => c.onchange = () => { F.pick = c.checked ? [...new Set([...F.pick, c.dataset.tsmp])] : F.pick.filter(x => x !== c.dataset.tsmp); $("#tsmN").textContent = `محدد ${F.pick.length}`; });
+  if (!S._tsmHist && !S._tsmLoading) { S._tsmLoading = true;
+    getDocs(query(collection(db, "msgs"), where("tid", "==", S.me))).then(sn => { S._tsmHist = sn.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => String(b.at).localeCompare(String(a.at))); })
+      .catch(e => { console.error(e); S._tsmHist = []; }).finally(() => { S._tsmLoading = false; if (S.tTab === "smsg" && $("#tsmBox")) { keep(); trStudentMsgs($("#tsmBox"), g); } }); }
+  el.querySelectorAll("[data-tsmd]").forEach(b => b.onclick = async () => { if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟ تنحذف من عند الطلاب"; return; }
+    try { await deleteDoc(ref("msgs/" + b.dataset.tsmd)); S._tsmHist = (S._tsmHist || []).filter(m => m.id !== b.dataset.tsmd); keep(); trStudentMsgs(el, g); toast("انحذفت"); } catch (e) { handleWriteErr(e); } });
+  $("#tsmSend").onclick = async () => {
+    keep(); const text = F.text.trim(), nums = F.all ? [...new Set(studs.map(x => x.sid))] : F.pick.filter(n => studs.some(x => x.sid === n));
+    if (!text) return toast("اكتب الرسالة"); if (!nums.length) return toast(F.all ? "ما فيه طلاب في المقرر" : "اختر الطلاب");
+    if (nums.length > 300) return toast("العدد كبير، قسّمها");
+    const b = $("#tsmSend"); b.disabled = true;
+    const id = "tm-" + Date.now().toString(36) + uid(), who = trainerTitle(t);
+    const d = {title: (F.title.trim() || `رسالة من ${who}`).slice(0, 80), text: text.slice(0, 2000), at: new Date().toISOString(), by: `${who} · ${g.course}`.slice(0, 120), kind: "trainer", tid: S.me, gid: g.id, nums, tids: [], roles: [], count: nums.length};
+    try { await setDoc(ref("msgs/" + id), d); notify("msg", id); S._tsmHist = [{id, ...d}, ...(S._tsmHist || [])]; S._tsm = null; toast(`📨 وصلت الرسالة لـ ${nums.length} طالب`); trStudentMsgs(el, g); }
+    catch (e) { b.disabled = false; handleWriteErr(e); }
+  };
 }
 function stuRow(s, i, r){
   const stc = r.st || "";
@@ -4984,7 +5042,13 @@ function memosTab(el){
     L.textContent = "📎"; L.style.pointerEvents = ""; btn.disabled = false;
   };
   $("#mmThread").onclick = async e => { const b = e.target.closest("[data-mmf]"); if (!b) return; const m = (S.memos || []).find(x => x.id === b.dataset.mmf); if (!m || !m.file) return;
-    b.disabled = true; try { await srvOpen(m.file.m); } catch { toast("تعذّر فتح الملف"); } b.disabled = false; };
+    // pictures and PDFs open in a new tab to look at; other files download
+    const meta = srvMeta(m.file.m), view = /^image\/|^application\/pdf$/.test(meta.type) || /\.(jpe?g|png|gif|webp|heic|pdf)$/i.test(meta.name);
+    const w = view ? window.open("", "_blank") : null; if (w) w.document.write(`<p dir="rtl" style="font-family:sans-serif;padding:20px">جاري فتح الملف…</p>`);
+    b.disabled = true;
+    try { if (w) w.location.href = await srvUrl(m.file.m, true); else { await srvOpen(m.file.m); toast("⬇️ نزل الملف في «التنزيلات»"); } }
+    catch (x) { console.error(x); if (w) w.close(); toast(x && x.status === 403 ? "ما عندك صلاحية تفتح الملف، حدّث الصفحة وجرّب" : "تعذّر فتح الملف، تأكد من الاتصال وجرّب مرة ثانية"); }
+    b.disabled = false; };
   ta.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } };
 }
 
