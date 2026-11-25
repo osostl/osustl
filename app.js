@@ -2669,7 +2669,8 @@ function hrBioView(el){
   $("#bioAdd").onclick = () => add($("#bioSn").value);
   $("#bioPull").onclick = () => { const f = $("#bioF").value, t = $("#bioT").value; if (!f || !t || f > t) return toast("اختر فترة صحيحة"); save({cmd: {id: String(Math.floor(Date.now() / 1000) % 100000000), from: f, to: t, at: new Date().toISOString()}}, `سحب سجلات ${f} → ${t}`); };
 }
-function hrStaffView(el){
+function hrStaffView(el){ hrStaffView0(el); fillMount(el, "hr"); }
+function hrStaffView0(el){
   const list = S.hrStaff || [], ed = S._hrEd;
   el.innerHTML = `<div class="card"><h2>${ed && ed.id ? "تعديل موظف" : "إضافة موظف"}</h2>
     <div class="row"><label class="f grow" for="hsN">الاسم<input type="text" id="hsN" value="${esc(ed ? ed.name : "")}"></label><label class="f grow" for="hsJ">الوظيفة<input type="text" id="hsJ" value="${esc(ed ? ed.job || "" : "")}" placeholder="مدرب، محاسب، استقبال…"></label><label class="f grow" for="hsDp">القسم<input type="text" id="hsDp" value="${esc(ed ? ed.dept || "" : "")}"></label></div>
@@ -4199,7 +4200,84 @@ function renderModalStudents(){
 }
 
 /* students tab */
-function adminStudents(el){
+
+/* ---------- «نموذج تعبئة البيانات الناقصة»: download a sheet with what is already known, fill the empty cells, upload it back.
+   Only EMPTY fields are filled: nothing that exists is ever changed. Each department gets its own data. ---------- */
+const phoneOk = v => { const p = normPhone(v); return /^9665\d{8}$/.test(p) ? p : null; };
+const dateOk = v => { if (v instanceof Date && !isNaN(v)) return new Date(v.getTime() - v.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); const t = String(v).trim().replace(/\//g, "-"); return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null; };
+const txtOk = n => v => { const t = String(v).trim().slice(0, n); return t || null; };
+const numOk = v => { const n = Number(String(v).replace(/[^\d.]/g, "")); return n > 0 ? Math.round(n * 100) / 100 : null; };
+const FILLS = {
+  st: {title: "بيانات الطلاب", can: () => ["admin", "academic"].includes(S.adminRole) && !RO(),
+    rows: () => Object.values(S.students || {}).sort((a, b) => a.num.localeCompare(b.num)).map(s => ({id: s.num, ro: [s.num, s.name], cur: (S.stProf || {})[s.num] || {}})),
+    roH: ["الرقم الأكاديمي", "الاسم"], path: id => "studentSecrets/" + id,
+    f: [["nid", "رقم الهوية", v => { const d = digits(String(v)).replace(/\D/g, ""); return /^[12]\d{9}$/.test(d) ? d : null; }], ["dob", "تاريخ الميلاد (2005-03-21)", dateOk], ["nat", "الجنسية", txtOk(30)],
+        ["phone", "جوال المتدرب", phoneOk], ["gphone", "جوال ولي الأمر", phoneOk], ["email", "البريد الإلكتروني", v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim()) ? String(v).trim().slice(0, 120) : null],
+        ["edu", "المؤهل", txtOk(60)], ["city", "المدينة / الحي", txtOk(80)]]},
+  fin: {title: "الحسابات المالية", can: () => ["admin", "finance"].includes(S.adminRole),
+    rows: () => Object.values(S.finAcc || {}).sort((a, b) => String(a.num).localeCompare(String(b.num))).map(a => ({id: a.num, ro: [a.num, (S.students[a.num] || {}).name || a.name || "", (((S.finSet || {}).programs || []).find(x => x.id === a.program) || {}).name || a.programName || ""], cur: a})),
+    roH: ["الرقم الأكاديمي", "الاسم", "البرنامج"], path: id => "finAccounts/" + id,
+    f: [["phone", "جوال التواصل (الطالب أو ولي الأمر)", phoneOk], ["discountNote", "سبب الخصم", txtOk(80)]]},
+  hr: {title: "بيانات الموظفين", can: () => hrOkC() && !RO(),
+    rows: () => (S.hrStaff || []).map(x => ({id: x.id, ro: [x.name, x.job || ""], cur: x})),
+    roH: ["الاسم", "الوظيفة"], path: id => "hrStaff/" + id,
+    f: [["phone", "الجوال", phoneOk], ["nid", "رقم الهوية / الإقامة", v => { const d = String(v).replace(/\D/g, ""); return d.length >= 8 && d.length <= 12 ? d : null; }], ["nat", "الجنسية", txtOk(30)],
+        ["dept", "القسم", txtOk(60)], ["start", "تاريخ المباشرة (2025-09-01)", dateOk], ["idEnd", "انتهاء الهوية", dateOk], ["contractEnd", "انتهاء العقد", dateOk],
+        ["salary", "الراتب الأساسي", numOk], ["allow", "البدلات", numOk], ["pin", "رقم البصمة", v => { const t = String(v).trim().replace(/[^\w]/g, "").slice(0, 24); return t || null; }]]},
+  tr: {title: "بيانات المدربين", can: () => ["admin", "academic"].includes(S.adminRole) && !RO(),
+    rows: () => Object.entries(S.trainers || {}).sort((a, b) => (a[1].name || "").localeCompare(b[1].name || "", "ar")).map(([id, t]) => ({id, ro: [t.num || "", t.name], cur: {phone: (S.trPhones || {})[id] || ""}})),
+    roH: ["الرقم", "الاسم"], path: id => "secrets/" + id,
+    f: [["phone", "الجوال", phoneOk]]}
+};
+const hrOkC = () => ["admin", "hr"].includes(S.adminRole);
+const fillEmpty = v => v === undefined || v === null || v === "" || (typeof v === "number" && !(v > 0));
+function fillMount(el, k){
+  const C = FILLS[k]; if (!C || !C.can() || !el) return;
+  el.insertAdjacentHTML("beforeend", `<div class="card" id="fill_${k}"><h2 style="margin-top:0">📋 نموذج تعبئة ${esc(C.title)} الناقصة</h2>
+    <p class="muted" style="margin-top:0">1) نزّل النموذج: فيه كل ${esc(C.title)} الموجودة، والخانات الفاضية فاضية. 2) عبّ الناقص في Excel (لا تغيّر عمود «المعرّف»). 3) ارفعه: تطلع معاينة، وينحفظ <b>الفاضي بس</b>؛ أي بيانات موجودة ما تتغيّر.</p>
+    <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn sm gold" id="fillDl_${k}">⬇️ تنزيل النموذج</button><label class="btn sm pri" for="fillUp_${k}" style="cursor:pointer">⬆️ رفع النموذج المعبّأ</label><input type="file" id="fillUp_${k}" accept=".xlsx,.xls" style="display:none"><span class="muted" id="fillN_${k}"></span></div>
+    <div id="fillOut_${k}"></div></div>`);
+  const R = C.rows(), miss = R.reduce((a, r) => a + C.f.filter(([f]) => fillEmpty(r.cur[f])).length, 0);
+  $("#fillN_" + k).textContent = `${R.length} سجل · ${miss} خانة ناقصة`;
+  $("#fillDl_" + k).onclick = () => {
+    const head = ["المعرّف (لا تعدّله)", ...C.roH, ...C.f.map(x => x[1])];
+    const rows = C.rows().map(r => [r.id, ...r.ro, ...C.f.map(([f]) => fillEmpty(r.cur[f]) ? "" : (f === "phone" || f === "gphone" ? "0" + String(r.cur[f]).replace(/^966/, "") : r.cur[f]))]);
+    excelDownload(`نموذج ${C.title} ${today()}`, [{title: C.title.slice(0, 30), rows: [head, ...rows], widths: [16, ...C.roH.map(() => 22), ...C.f.map(() => 20)]}]);
+  };
+  $("#fillUp_" + k).onchange = async e => {
+    const file = e.target.files[0]; e.target.value = ""; if (!file) return;
+    const out = $("#fillOut_" + k); out.innerHTML = `<p class="muted">جاري القراءة…</p>`;
+    let X, rows; try { X = await loadXLSX(); const wb = X.read(await file.arrayBuffer(), {cellDates: true}); rows = X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header: 1, defval: "", raw: true}); }
+    catch { out.innerHTML = ""; return toast("تعذّر قراءة الملف، تأكد إنه ملف Excel"); }
+    const H = (rows[0] || []).map(x => String(x).trim()), col = {}; C.f.forEach(([f, l]) => { const i = H.indexOf(l); if (i >= 0) col[f] = i; });
+    if (!String(H[0] || "").startsWith("المعرّف") || !Object.keys(col).length) { out.innerHTML = ""; return toast("هذا مو نموذج " + C.title + ". نزّل النموذج من الزر وعبّه"); }
+    const byId = Object.fromEntries(C.rows().map(r => [String(r.id), r])), upd = [], bad = [], unknown = [];
+    rows.slice(1).forEach((row, ri) => {
+      const id = String(row[0] || "").trim(); if (!id) return; const r = byId[id]; if (!r) { unknown.push(id); return; }
+      const d = {}; C.f.forEach(([f, l, ok]) => { if (!(f in col)) return; const v = row[col[f]]; if (v === "" || v === null || v === undefined || !fillEmpty(r.cur[f])) return;
+        const good = ok(v); if (good === null) bad.push(`${r.ro.join(" · ")}: ${l} «${String(v).slice(0, 30)}»`); else d[f] = good; });
+      if (Object.keys(d).length) upd.push({r, d});
+    });
+    const nF = upd.reduce((a, u) => a + Object.keys(u.d).length, 0), lbl = Object.fromEntries(C.f.map(([f, l]) => [f, l]));
+    out.innerHTML = `<div style="margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:10px">
+      <b>المعاينة:</b> ${nF} خانة لـ ${upd.length} سجل${bad.length ? ` · <span style="color:var(--abs)">${bad.length} قيمة غير صحيحة ما راح تنحفظ</span>` : ""}${unknown.length ? ` · ${unknown.length} معرّف غير موجود` : ""}
+      <div style="max-height:260px;overflow:auto;margin-top:6px;font-size:13px">${upd.map(u => `<div>• <b>${esc(u.r.ro.join(" · "))}</b>: ${Object.entries(u.d).map(([f, v]) => `${esc(lbl[f])} = ${esc(String(v))}`).join("، ")}</div>`).join("") || `<span class="muted">ما فيه خانات فاضية انعبّت في الملف.</span>`}
+      ${bad.length ? `<div style="margin-top:6px;color:var(--abs)">${bad.slice(0, 40).map(x => `<div>✗ ${esc(x)}</div>`).join("")}${bad.length > 40 ? `<div>… و${bad.length - 40} غيرها</div>` : ""}</div>` : ""}</div>
+      ${upd.length ? `<div class="row" style="margin-top:8px"><button class="btn pri" id="fillGo_${k}">حفظ ${nF} خانة</button><button class="btn" id="fillNo_${k}">إلغاء</button></div>` : ""}</div>`;
+    if (!upd.length) return;
+    $("#fillNo_" + k).onclick = () => { out.innerHTML = ""; };
+    $("#fillGo_" + k).onclick = async ev => { ev.target.disabled = true; ev.target.textContent = "جاري الحفظ…";
+      try { for (let i = 0; i < upd.length; i += 400) { const b = writeBatch(db); upd.slice(i, i + 400).forEach(u => b.set(ref(C.path(u.r.id)), u.d, {merge: true})); await b.commit(); }
+        logAction("تعبئة بيانات ناقصة", `${C.title}: ${nF} خانة لـ ${upd.length} سجل`); toast(`✓ انحفظت ${nF} خانة`); out.innerHTML = "";
+        if (k === "st") upd.forEach(u => { S.stProf[u.r.id] = {...(S.stProf[u.r.id] || {}), ...u.d}; if (u.d.phone) S.stPhones[u.r.id] = u.d.phone; });
+        if (k === "tr") upd.forEach(u => { if (u.d.phone) S.trPhones[u.r.id] = u.d.phone; });
+        render(); }
+      catch (x) { ev.target.disabled = false; ev.target.textContent = "حفظ"; handleWriteErr(x); } };
+  };
+}
+
+function adminStudents(el){ adminStudents0(el); fillMount(el, "st"); }
+function adminStudents0(el){
   const list = Object.values(S.students).sort((a,b) => a.num.localeCompare(b.num));
   const groupsOf = num => Object.values(S.groups).filter(g => (g.memberNums || []).includes(num));
   el.innerHTML = `
@@ -7583,7 +7661,8 @@ const daysAgo = d => Math.max(0, Math.round((new Date(today()) - new Date(d)) / 
 function finSoonText(s, st){
   return `السلام عليكم ${s.name}\nالرقم الأكاديمي: ${s.num}\n\nنذكّركم بموعد القسط القادم:\n${SAR(st.next.amount)} بتاريخ ${st.next.due}\nالمتبقي الكلي: ${SAR(st.remaining)}\n\nالمالية\n${INST_AR}`;
 }
-function finSettings(el){
+function finSettings(el){ finSettings0(el); fillMount(el, "fin"); }
+function finSettings0(el){
   const progs = S.finSet.programs || [], canPay = ["admin", "academic"].includes(S.adminRole);
   el.innerHTML = `<div class="card"><h2>👁️ المالية عند الطلاب</h2>
     <p class="muted" style="margin-top:0">لو شلت الصح، يختفي تبويب «المالية والدفع» من بوابة كل الطلاب (رسومهم، الدفع، الفاتورة النهائية، الاستفسارات) لين ترجّعه — مفيد وقت تعديل الفواتير. بياناتكم ما تتأثر.</p>
@@ -8021,7 +8100,8 @@ async function saveTrainer(tid, data, code){
   b.set(ref("public/trainerLogin"), trainerLoginMap({...S.trainers, [tid]: {id: tid, ...data}}));
   await b.commit();
 }
-function adminTrainers(el){
+function adminTrainers(el){ adminTrainers0(el); fillMount(el, "tr"); }
+function adminTrainers0(el){
   const ts = Object.values(S.trainers).sort((a,b)=>a.name.localeCompare(b.name,"ar"));
   el.innerHTML = `
   <div class="card"><h2>المدربين والرموز</h2>
