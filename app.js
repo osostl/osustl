@@ -940,7 +940,7 @@ const DR_PILL = {open: "a", doing: "l", done: "p", rejected: "a", cancel: "", bo
 const DR_SEL = {
   prio: ["عادي", "عاجل"], cat: ["أجهزة تقنية", "أثاث", "معدات قاعات", "مركبة", "أخرى"], cond: ["جيد", "يحتاج صيانة", "تالف"],
   ctype: ["عقد موظف", "اتفاقية مدرب متعاون", "شراكة", "إيجار", "مورد / خدمة", "أخرى"], cst: ["draft", "legal", "approved", "signed", "ended"],
-  lst: ["active", "ended"], casetype: ["قضية", "شكوى", "مطالبة مالية", "إنذار / إخطار"], casest: ["open", "closed"], ast: ["active", "retired"]};
+  lst: ["active", "ended"], lok: ["تمت المراجعة"], casetype: ["قضية", "شكوى", "مطالبة مالية", "إنذار / إخطار"], casest: ["open", "closed"], ast: ["active", "retired"]};
 // fields: k key, l label, t type, top = stored at the top of the record (end/day for reminders and room queries), w width
 const DR_F = {
   maint: [{k: "title", l: "وش المشكلة باختصار", t: "text", req: 1}, {k: "place", l: "المكان", t: "text"}, {k: "prio", l: "الأولوية", t: "sel", o: "prio"}, {k: "text", l: "التفاصيل", t: "area"}],
@@ -949,8 +949,9 @@ const DR_F = {
   opinion: [{k: "title", l: "الموضوع", t: "text", req: 1}, {k: "text", l: "السؤال والتفاصيل", t: "area", req: 1}, {k: "due", l: "مطلوب قبل", t: "date"}],
   asset: [{k: "title", l: "اسم الأصل", t: "text", req: 1}, {k: "code", l: "رقم الأصل", t: "text"}, {k: "cat", l: "الفئة", t: "sel", o: "cat"}, {k: "place", l: "الموقع", t: "text"},
     {k: "serial", l: "الرقم التسلسلي", t: "text"}, {k: "value", l: "القيمة (ريال)", t: "num"}, {k: "date", l: "تاريخ الشراء", t: "date"}, {k: "cond", l: "الحالة", t: "sel", o: "cond"}, {k: "status", l: "الوضع", t: "st", o: "ast"}],
-  contract: [{k: "title", l: "عنوان العقد", t: "text", req: 1}, {k: "party", l: "الطرف الثاني", t: "text", req: 1}, {k: "ctype", l: "النوع", t: "sel", o: "ctype"}, {k: "start", l: "يبدأ", t: "date"},
-    {k: "end", l: "ينتهي", t: "date", top: 1}, {k: "value", l: "القيمة (ريال)", t: "num"}, {k: "status", l: "المرحلة", t: "st", o: "cst"}, {k: "note", l: "ملاحظات قانونية", t: "area"}],
+  contract: [{k: "title", l: "عنوان العقد", t: "text", req: 1}, {k: "ctype", l: "النوع", t: "sel", o: "ctype"}, {k: "party", l: "الطرف الثاني", t: "text", req: 1}, {k: "partyId", l: "رقم الهوية / السجل التجاري", t: "text"}, {k: "partyRep", l: "يمثله", t: "text"},
+    {k: "start", l: "يبدأ", t: "date"}, {k: "end", l: "ينتهي", t: "date", top: 1}, {k: "value", l: "القيمة (ريال)", t: "num"}, {k: "status", l: "المرحلة", t: "st", o: "cst"}, {k: "legalOk", l: "المراجعة القانونية", t: "sel", o: "lok"},
+    {k: "note", l: "ملاحظات قانونية", t: "area"}, {k: "body", l: "نص العقد (البنود)", t: "area"}],
   license: [{k: "title", l: "اسم الترخيص أو الوثيقة", t: "text", req: 1}, {k: "issuer", l: "الجهة المصدرة", t: "text"}, {k: "no", l: "الرقم", t: "text"}, {k: "start", l: "تاريخ الإصدار", t: "date"},
     {k: "end", l: "تاريخ الانتهاء", t: "date", top: 1, req: 1}, {k: "status", l: "الوضع", t: "st", o: "lst"}, {k: "note", l: "ملاحظات", t: "area"}],
   case: [{k: "title", l: "عنوان القضية أو المطالبة", t: "text", req: 1}, {k: "party", l: "الطرف الآخر", t: "text"}, {k: "ctype", l: "النوع", t: "sel", o: "casetype"}, {k: "court", l: "الجهة (محكمة، لجنة…)", t: "text"},
@@ -996,7 +997,7 @@ async function drUpFiles(input){
 }
 function drFieldHtml(f, v, rooms){
   const id = "drv_" + f.k, val = v == null ? "" : v;
-  if (f.t === "area") return `<label class="f" style="flex-basis:100%">${f.l}<textarea id="${id}" rows="3" maxlength="2000">${esc(val)}</textarea></label>`;
+  if (f.t === "area") return `<label class="f" style="flex-basis:100%">${f.l}${f.k === "body" ? ` <button type="button" class="btn sm" id="drTpl">📄 تعبئة البنود من النموذج الثابت</button>` : ""}<textarea id="${id}" rows="${f.k === "body" ? 16 : 3}" maxlength="${f.k === "body" ? 20000 : 2000}">${esc(val)}</textarea></label>`;
   if (f.t === "sel" || f.t === "st") { const o = DR_SEL[f.o] || []; return `<label class="f">${f.l}<select id="${id}">${f.t === "sel" ? `<option value="">—</option>` : ""}${o.map(x => `<option value="${esc(x)}" ${x === val ? "selected" : ""}>${esc(f.t === "st" ? DR_ST[x] : x)}</option>`).join("")}</select></label>`; }
   if (f.t === "room") return `<label class="f">${f.l}<select id="${id}">${(rooms || []).map(x => `<option ${x === val ? "selected" : ""}>${esc(x)}</option>`).join("") || `<option value="">ما فيه قاعات مضافة</option>`}</select></label>`;
   const ty = {num: "number", date: "date", time: "time"}[f.t] || "text";
@@ -1009,7 +1010,7 @@ function drRead(kind, box){
     let v = String(e.value || "").trim();
     if (f.req && !v) { miss = miss || f.l; continue; }
     if (f.t === "num") v = v === "" ? "" : Math.max(0, Number(v) || 0);
-    if (f.k === "title") out.title = v.slice(0, 150); else if (f.k === "status") out.status = v; else if (f.top) out[f.k] = v; else if (v !== "") out.d[f.k] = typeof v === "string" ? v.slice(0, 2000) : v;
+    if (f.k === "title") out.title = v.slice(0, 150); else if (f.k === "status") out.status = v; else if (f.top) out[f.k] = v; else if (v !== "") out.d[f.k] = typeof v === "string" ? v.slice(0, f.k === "body" ? 20000 : 2000) : v;
   }
   return {out, miss};
 }
@@ -1028,6 +1029,13 @@ function drForm(el, kind, r, onDone){
       ${kind === "room" ? "" : `<label class="f" style="flex-basis:100%">${kind === "purchase" ? "عروض الأسعار والمستندات" : "مرفقات"} ${r && (r.files || []).length ? `(فيه ${(r.files || []).length}، اللي ترفعه ينضاف)` : ""}<input type="file" id="drFiles" multiple accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx"></label>`}</div>
       <div class="row" style="gap:8px;margin-top:8px"><button class="btn pri" id="drSave">${r ? "حفظ التعديل" : kind === "purchase" ? "إرسال الطلب" : DR_K[kind].req ? "إرسال" : "حفظ"}</button><button class="btn" id="drCancel">إلغاء</button></div></div>`;
     el.querySelector("#drCancel").onclick = () => onDone(false);
+    if (el.querySelector("#drTpl")) {
+      let last = null;
+      const fill = force => { const b = el.querySelector("#drv_body"); if (!force && b.value.trim() && b.value !== last) return; const {out} = drRead(kind, el); b.value = last = drContractBody(out.d, out.end); };
+      ["#drv_party", "#drv_start", "#drv_end", "#drv_value"].forEach(q => el.querySelector(q).addEventListener("change", () => fill(false)));
+      el.querySelector("#drTpl").onclick = () => { if (el.querySelector("#drv_body").value.trim() && !confirm("يستبدل النص الحالي بالنموذج الثابت؟")) return; fill(true); };
+      el.querySelector("#drv_ctype").addEventListener("change", () => fill(false)); fill(false);
+    }
     el.querySelector("#drSave").onclick = async e => {
       const {out, miss} = drRead(kind, el); if (miss) return toast("عبّ: " + miss);
       if (kind === "room") {
@@ -1100,9 +1108,10 @@ function drCard(r, ctx){
   if (mine && ["maint", "opinion"].includes(r.kind) && r.status === "open" && !(r.replies || []).length) btn.push(`<button class="btn sm danger" data-drs="${esc(r.id)}:cancel">إلغاء</button>`);
   if (desk && !reqKinds.includes(r.kind)) btn.push(`<button class="btn sm" data-dre="${esc(r.id)}">تعديل</button>`, `<button class="btn sm danger" data-drdel="${esc(r.id)}">حذف</button>`);
   if (ctx === "held" && r.holder === drMe() && r.ack !== drMe()) btn.push(`<button class="btn sm gold" data-drack="${esc(r.id)}">استلمت العهدة ✓</button>`);
+  btn.push(`<button class="btn sm ghost" data-drpr="${esc(r.id)}">🖨️ ${r.kind === "contract" ? "طباعة العقد" : r.kind === "asset" ? "سند العهدة" : "طباعة"}</button>`);
   const thread = ["maint", "opinion", "purchase"].includes(r.kind) && (desk || mine || ctx === "owner" || ctx === "fin");
   return `<div class="card" style="margin:8px 0;padding:12px" data-drid="${esc(r.id)}">
-    <div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>${k.ic} ${esc(r.title || k.n)}</b> <span class="muted" style="font-size:12px">${reqKinds.includes(r.kind) && !mine ? "من " + esc(drWho(r.byKind, r.by, r.byName)) + " · " : ""}${esc(fmtIso(r.at))}</span></div>
+    <div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>${k.ic} ${esc(r.title || k.n)}</b> <span class="muted" style="font-size:12px"><span dir="ltr">${esc(drRef(r))}</span> · ${reqKinds.includes(r.kind) && !mine ? "من " + esc(drWho(r.byKind, r.by, r.byName)) + " · " : ""}${esc(fmtIso(r.at))}</span></div>
       <div class="row" style="gap:6px">${warn}<span class="pill ${DR_PILL[r.status] || ""}">${esc(DR_ST[r.status] || r.status || "")}</span></div></div>
     ${facts.filter(Boolean).length ? `<div class="muted" style="margin-top:4px">${facts.filter(Boolean).map(esc).join(" · ")}</div>` : ""}
     ${d.text || d.why || d.note ? `<div style="white-space:pre-wrap;margin:6px 0">${linkify(esc(d.text || d.why || d.note))}</div>` : ""}
@@ -1142,6 +1151,7 @@ function drBind(root, L, again, editBox, ctx){
     if (S.role === "admin") logAction("طلب شراء: " + act, `${r.title} · ${SAR(amt)}`); });
   root.querySelectorAll("[data-drinv]").forEach(inp => inp.onchange = async () => { const r = find(inp.dataset.drinv); try { toast("جاري الرفع…"); const add = await drUpFiles(inp); save(r, {files: [...(r.files || []), ...add].slice(0, 8)}, ctx === "fin" ? "انرفعت الفاتورة ✓" : "انضاف المرفق ✓", false); } catch { toast("تعذّر الرفع", 1); } });
   root.querySelectorAll("[data-dre]").forEach(b => b.onclick = () => editBox(find(b.dataset.dre)));
+  root.querySelectorAll("[data-drpr]").forEach(b => b.onclick = () => drPrint(find(b.dataset.drpr)));
   root.querySelectorAll("[data-drdel]").forEach(b => b.onclick = async () => { if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟"; return; }
     const r = find(b.dataset.drdel); try { await deleteDoc(ref("dreg/" + r.id)); logAction("حذف " + (DR_K[r.kind] || {}).n, r.title); Object.keys(S.dr).forEach(k => { S.dr[k].t = 0; }); toast("انحذف"); again(); } catch (e) { handleWriteErr(e); } });
   root.querySelectorAll("[data-drack]").forEach(b => b.onclick = () => { const r = find(b.dataset.drack); save(r, {ack: drMe(), ackAt: new Date().toISOString()}, "تم تأكيد استلام العهدة ✓", false); });
@@ -1188,7 +1198,11 @@ function drSection(el, dept, kind, ctx){
 /* the department's own tabs (admaff / legal): pick the section from S.drSec */
 function drDeptTab(el, dept){
   const ks = DR_DEPT_K[dept], k = ks.includes(S.drSec) ? S.drSec : ks[0];
-  drSection(el, dept, k, "desk");
+  if (S._drSigLoaded !== dept) { S._drSigLoaded = dept; getDoc(ref("sigs/" + dept)).then(x => { S.sigs[dept] = x.exists() ? x.data().img || "" : ""; render(); }).catch(() => {}); }
+  const has = okImg((S.sigs || {})[dept]);
+  el.innerHTML = `<div id="drSec"></div><details class="card" ${S.sigs && S.sigs[dept] === "" ? "open" : ""}><summary>${has ? `<span class="muted">✍️ توقيع ${esc(ROLES[dept])} على النماذج المطبوعة ✓</span>` : `<b>✍️ ارفع توقيع ${esc(ROLES[dept])} عشان يطلع على النماذج المطبوعة</b>`}</summary>${sigCard(dept, "توقيع " + ROLES[dept], "يطلع في العقود وسندات العهد والطلبات المطبوعة.")}</details>`;
+  bindSigCards(el);
+  drSection(el.querySelector("#drSec"), dept, k, "desk");
 }
 /* the executive director and the owner: both departments under one tab */
 function drOverTab(el){
@@ -1239,6 +1253,105 @@ async function drModal(tab){
       drBind(box, act, again, () => {}, "mine");
     }
   } catch (e) { console.error(e); box.innerHTML = `<div class="notice err">تعذّر التحميل${/permission/i.test(String(e.message)) ? ": ارفع ملف القواعد الجديد" : ""}.</div>`; }
+}
+/* ---- official printed forms for الشؤون الإدارية / القانونية: same header, footer, signatures and stamp as the receipts ---- */
+const DR_PFX = {contract: "C", purchase: "P", maint: "M", asset: "A", opinion: "L", license: "T", case: "K", room: "R"};
+const drRef = r => `${DR_PFX[r.kind] || "X"}-${String(r.at || "").slice(0, 4) || new Date().getFullYear()}-${String(r.id || "").replace(/^dr-/, "").slice(-5).toUpperCase()}`;
+const drDate = s => { const d = String(s || "").slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(d) ? bothDates(d) : "—"; };
+const drRow = (k, v) => v === "" || v == null ? "" : `<tr><td class="n" style="width:30%"><b>${k}</b></td><td class="n">${v}</td></tr>`;
+const drPara = t => String(t || "").split(/\n+/).map(x => x.trim()).filter(Boolean).map(x => /^(البند|المادة|أولاً|ثانياً|ثالثاً|رابعاً|خامساً|سادساً|سابعاً|ثامناً|تاسعاً|عاشراً|تمهيد)/.test(x) ? `<p style="margin:10px 0 2px;font-weight:700;color:#1F5136">${esc(x)}</p>` : `<p style="margin:2px 0;line-height:1.9;text-align:justify">${esc(x)}</p>`).join("");
+const drSig = k => (S.sigs || {})[k] ? k : "";
+/* the contract text: a fixed template per type, filled from the record. الشؤون القانونية edit it before printing */
+function drContractBody(d, end){
+  const p = d.party || "الطرف الثاني", v = Number(d.value) ? `${Number(d.value).toLocaleString("en")} ريال (${esc0(d.valueTxt || "")})`.replace(" ()", "") : "………… ريال", st = d.start ? drDate(d.start) : "…/…/……", en = end ? drDate(end) : "…/…/……";
+  const common = [
+    `البند الأول: التمهيد`,
+    `يعد التمهيد أعلاه والبيانات الواردة في صدر هذا العقد جزءاً لا يتجزأ منه، ومكملاً لأحكامه.`];
+  const tail = [
+    `البند: السرية وحماية البيانات`,
+    `يلتزم الطرف الثاني بالمحافظة على سرية المعلومات والبيانات التي يطلع عليها بحكم هذا العقد، ومنها بيانات المتدربين والعاملين، وفق نظام حماية البيانات الشخصية، ويستمر هذا الالتزام بعد انتهاء العقد.`,
+    `البند: الإخطارات`,
+    `تتم الإخطارات بين الطرفين كتابةً على العناوين والبريد الإلكتروني المدونة في صدر هذا العقد، وتعد منتجة لآثارها من تاريخ إرسالها.`,
+    `البند: النظام الواجب التطبيق وتسوية النزاعات`,
+    `يخضع هذا العقد للأنظمة المعمول بها في المملكة العربية السعودية، ويسعى الطرفان لحل أي خلاف ودياً، فإن تعذر ذلك خلال ثلاثين يوماً فيحال إلى الجهة القضائية المختصة.`,
+    `البند: نسخ العقد`,
+    `حُرر هذا العقد من نسختين أصليتين، بيد كل طرف نسخة للعمل بموجبها، والله الموفق.`];
+  const T = {
+    "عقد موظف": [`البند الثاني: الوظيفة ومكان العمل`, `يعمل الطرف الثاني لدى الطرف الأول في وظيفة (……………) بمقر المعهد في مدينة حائل، ويؤدي المهام الواردة في وصفه الوظيفي المعتمد في الدليل التنظيمي للمعهد.`,
+      `البند الثالث: مدة العقد وفترة التجربة`, `مدة هذا العقد من ${st} إلى ${en}، ويخضع الطرف الثاني لفترة تجربة مدتها (……) يوماً لا تتجاوز مائة وثمانين يوماً، وفق نظام العمل.`,
+      `البند الرابع: الأجر`, `يتقاضى الطرف الثاني أجراً شهرياً إجمالياً قدره ${v}، يصرف في نهاية كل شهر ميلادي بتحويل إلى حسابه البنكي.`,
+      `البند الخامس: ساعات العمل والحضور`, `يلتزم الطرف الثاني بساعات العمل المعتمدة، ويثبت حضوره وانصرافه بجهاز البصمة المرتبط ببوابة المعهد.`,
+      `البند السادس: الالتزامات واللوائح`, `يلتزم الطرف الثاني بالدليل التنظيمي للمعهد ولائحة تنظيم العمل المعتمدة، ومنها لائحة المخالفات والجزاءات، ويقر بالاطلاع عليها.`,
+      `البند السابع: توثيق العقد`, `يوثق هذا العقد في منصة قوى، وعند أي تعارض يقدم المسجل في المنصة.`],
+    "اتفاقية مدرب متعاون": [`البند الثاني: موضوع الاتفاقية`, `يتولى الطرف الثاني تقديم البرامج والمقررات التدريبية التي يكلفه بها الطرف الأول وفق الحقائب والجداول المعتمدة من مشرف التدريب (الشؤون الأكاديمية).`,
+      `البند الثالث: المدة`, `تسري هذه الاتفاقية من ${st} إلى ${en}، ولا تعد عقد عمل خاضعاً لنظام العمل.`,
+      `البند الرابع: الأتعاب`, `يستحق الطرف الثاني أتعاباً قدرها ${v}، تصرف بعد تنفيذ الجلسات ورصد الحضور والدرجات في بوابة المعهد واعتمادها.`,
+      `البند الخامس: التزامات الطرف الثاني`, `الالتزام بالحقيبة والجدول وزمن الجلسة، ورصد الحضور والدرجات في البوابة في موعدها، والإبلاغ المسبق عن أي غياب لتأمين بديل، وعدم تقديم دروس أو خدمات مدفوعة للمتدربين خارج المعهد، وعدم استخدام المادة التدريبية المملوكة للمعهد خارجه دون إذن مكتوب.`,
+      `البند السادس: الإخلال والخصم`, `عند إخلال الطرف الثاني بأي من التزاماته، يُخصم من أتعابه أو تُنهى الاتفاقية وفق ما يقابل جدول المخالفات التدريبية (ج) في الدليل التنظيمي للمعهد، بعد إخطاره كتابياً وسماع إفادته.`,
+      `البند السابع: الإنهاء`, `يجوز لأي من الطرفين إنهاء الاتفاقية بإخطار كتابي قبل (……) يوماً، دون إخلال بالمستحقات عن الجلسات المنفذة.`],
+    "شراكة": [`البند الثاني: موضوع الشراكة`, `يتعاون الطرفان في (……………………) وفق ما يتفقان عليه كتابةً في ملاحق هذه الاتفاقية.`,
+      `البند الثالث: المدة`, `تسري هذه الاتفاقية من ${st} إلى ${en}، وتجدد باتفاق مكتوب بين الطرفين.`,
+      `البند الرابع: الالتزامات المالية`, `${Number(d.value) ? "قيمة الاتفاقية " + v + "، " : ""}وتحدد أي مستحقات مالية أو خصومات أو عمولات في ملحق موقع من الطرفين.`,
+      `البند الخامس: الاسم والشعار`, `لا يجوز لأي طرف استخدام اسم الطرف الآخر أو شعاره أو الإعلان عن هذه الشراكة إلا بالصيغة التي يعتمدها الطرفان كتابةً.`],
+    "إيجار": [`البند الثاني: العين المؤجرة`, `يؤجر الطرف الأول/الثاني (……………………) الكائن في (……………)، بغرض استخدامه مقراً لأنشطة المعهد التدريبية.`,
+      `البند الثالث: المدة`, `مدة الإيجار من ${st} إلى ${en}.`,
+      `البند الرابع: الأجرة وطريقة السداد`, `الأجرة السنوية ${v}، تسدد على دفعات (……) بتحويل بنكي، ويوثق العقد في منصة إيجار.`,
+      `البند الخامس: الصيانة`, `يتحمل المؤجر الصيانة الأساسية والإنشائية، ويتحمل المستأجر الصيانة التشغيلية الناتجة عن الاستخدام.`],
+    "مورد / خدمة": [`البند الثاني: موضوع العقد`, `يلتزم الطرف الثاني بتوريد/تقديم (……………………) وفق المواصفات وعرض السعر المرفق، والذي يعد جزءاً من هذا العقد.`,
+      `البند الثالث: المدة ومواعيد التسليم`, `يسري العقد من ${st} إلى ${en}، ويتم التسليم في (……………).`,
+      `البند الرابع: القيمة والسداد`, `قيمة العقد ${v} شاملة ضريبة القيمة المضافة، وتسدد بعد الاستلام ومطابقة الفاتورة الإلكترونية، وفق إجراءات المشتريات في الدليل التنظيمي للمعهد.`,
+      `البند الخامس: الضمان`, `يضمن الطرف الثاني سلامة ما يورده أو يقدمه لمدة (……) من تاريخ الاستلام.`]};
+  const body = T[d.ctype] || [`البند الثاني: موضوع العقد`, `(……………………)`, `البند الثالث: المدة`, `من ${st} إلى ${en}.`, `البند الرابع: القيمة`, `${v}.`];
+  const all = [...common, ...body, ...tail];
+  let n = 1; const ord = ["الأول", "الثاني", "الثالث", "الرابع", "الخامس", "السادس", "السابع", "الثامن", "التاسع", "العاشر", "الحادي عشر", "الثاني عشر", "الثالث عشر", "الرابع عشر"];
+  return all.map(x => /^البند/.test(x) ? `البند ${ord[n++ - 1] || n}: ${x.replace(/^البند[^:]*:\s*/, "")}` : x).join("\n");
+}
+const esc0 = s => String(s || "");
+function drPrintHTML(r){
+  const d = r.d || {}, k = r.kind, ref0 = drRef(r), files = (r.files || []).map(f => esc(f.name)).join("، ");
+  const steps = (r.steps || []).length ? `<h2>مراحل الاعتماد</h2><table><thead><tr><th>الجهة</th><th>الإجراء</th><th>الملاحظة</th><th>التاريخ</th></tr></thead><tbody>${r.steps.map(s => `<tr><td>${esc(ROLES[s.role] || s.role)}</td><td>${esc(s.act)}</td><td class="n">${esc(s.note || "")}</td><td>${esc(fmtIso(s.at))}</td></tr>`).join("")}</tbody></table>` : "";
+  const replies = (r.replies || []).length ? `<h2>الردود والملاحظات</h2><table><tbody>${r.replies.map(x => `<tr><td style="width:25%">${esc(x.by === r.by ? drWho(r.byKind, r.by, r.byName) : ROLES[x.by] || x.by)}<br><span style="color:#888">${esc(fmtIso(x.at))}</span></td><td class="n" style="white-space:pre-wrap">${esc(x.text)}</td></tr>`).join("")}</tbody></table>` : "";
+  const head = (t) => `<h1>${t}</h1><div class="info"><div><b>الرقم:</b> <span dir="ltr">${esc(ref0)}</span></div><div><b>التاريخ:</b> ${esc(drDate(r.at))}</div></div>`;
+  if (k === "contract") return `${head(esc(r.title || "عقد"))}
+    <table><tbody>${drRow("نوع العقد", esc(d.ctype || ""))}${drRow("الطرف الأول", esc(INST_AR) + "، ويمثله المدير التنفيذي")}${drRow("الطرف الثاني", esc(d.party || ""))}${drRow("رقم الهوية / السجل", esc(d.partyId || ""))}${drRow("يمثله", esc(d.partyRep || ""))}${drRow("مدة العقد", d.start || r.end ? `من ${esc(d.start ? drDate(d.start) : "—")} إلى ${esc(r.end ? drDate(r.end) : "—")}` : "")}${drRow("القيمة", d.value ? SAR(d.value) : "")}</tbody></table>
+    <p style="margin:14px 0 4px;line-height:1.9">إنه في يوم ${esc(drDate(d.start || r.at))}، تم الاتفاق بين الطرفين المذكورين أعلاه، وهما بكامل أهليتهما المعتبرة شرعاً ونظاماً، على ما يلي:</p>
+    <div style="font-size:13px">${drPara(d.body || drContractBody(d, r.end))}</div>
+    <div class="sig" style="margin-top:34px">${sigSlot("الطرف الأول: " + INST_AR + "<br>المدير التنفيذي", drSig("director"), true)}${sigSlot("الطرف الثاني: " + esc(d.party || "") + "<br>التوقيع: ………………", "")}</div>
+    <p style="font-size:10.5px;color:#666;margin-top:16px">روجع من الشؤون القانونية ${d.legalOk ? "✓" : "………"} · ${sgImg("legal") ? `<span style="display:inline-block;vertical-align:middle;max-height:30px">${sgImg("legal")}</span>` : ""} ${d.note ? "· " + esc(d.note) : ""}</p>`;
+  if (k === "purchase") return `${head("طلب شراء")}
+    <table><tbody>${drRow("الإدارة الطالبة", esc(drWho(r.byKind, r.by, r.byName)))}${drRow("الصنف أو الخدمة", esc(r.title))}${drRow("الكمية", esc(d.qty || ""))}${drRow("التكلفة التقديرية", `<b>${SAR(d.amount)}</b>`)}${drRow("المبرر", esc(d.why || ""))}${drRow("عروض الأسعار والمرفقات", `${(r.files || []).length}${files ? " · " + files : ""}`)}${drRow("الحالة", esc(DR_ST[r.status] || r.status))}</tbody></table>
+    <p style="font-size:10.5px;color:#666">حتى ${DR_LIM.one.toLocaleString("en")} ريال عرض سعر واحد · حتى ${DR_LIM.exec.toLocaleString("en")} ثلاثة عروض واعتماد المدير التنفيذي · فوقها اعتماد المالك (الدليل التنظيمي).</p>
+    ${steps}${replies}
+    <div class="sig" style="grid-template-columns:repeat(3,1fr)">${sigSlot("الشؤون الإدارية", drSig("admaff"))}${sigSlot("المدير التنفيذي", ["fin", "recv", "done"].includes(r.status) || (r.steps || []).some(s => s.role === "admin") ? drSig("director") : "", (r.steps || []).some(s => s.role === "admin"))}${sigSlot("المالية", ["recv", "done"].includes(r.status) ? drSig("finance") : "")}</div>
+    <div class="sig" style="margin-top:30px">${sigSlot("المستلم (اسم وتوقيع)", "")}${sigSlot("المالك (فوق " + DR_LIM.exec.toLocaleString("en") + ")", "")}</div>`;
+  if (k === "maint") return `${head("طلب صيانة")}
+    <table><tbody>${drRow("مقدم الطلب", esc(drWho(r.byKind, r.by, r.byName)))}${drRow("المشكلة", esc(r.title))}${drRow("المكان", esc(d.place || ""))}${drRow("الأولوية", esc(d.prio || "عادي"))}${drRow("التفاصيل", esc(d.text || ""))}${drRow("الحالة", esc(DR_ST[r.status] || r.status))}</tbody></table>
+    ${replies}<div class="sig">${sigSlot("مقدم الطلب (تأكيد الإنجاز)", "")}${sigSlot("الشؤون الإدارية", drSig("admaff"))}</div>`;
+  if (k === "asset") return `${head("سند تسليم عهدة")}
+    <table><tbody>${drRow("الأصل", esc(r.title))}${drRow("رقم الأصل", esc(d.code || ""))}${drRow("الرقم التسلسلي", esc(d.serial || ""))}${drRow("الفئة", esc(d.cat || ""))}${drRow("الموقع", esc(d.place || ""))}${drRow("الحالة عند التسليم", esc(d.cond || ""))}${drRow("القيمة", d.value ? SAR(d.value) : "")}${drRow("المستلم", `<b>${esc(drHolderName(r) || "—")}</b>`)}${drRow("تأكيد الاستلام في البوابة", r.holderKind && r.holderKind !== "other" ? (r.ack === r.holder ? "✓ " + esc(fmtIso(r.ackAt)) : "لم يؤكد بعد") : "")}</tbody></table>
+    <p style="margin:12px 0;line-height:1.9">أقر أنا المستلم أعلاه باستلام العهدة الموضحة بحالة سليمة، وأتعهد بالمحافظة عليها واستخدامها لأغراض العمل فقط، وإعادتها عند الطلب أو عند انتهاء علاقتي بالمعهد، وأتحمل ما يتلف منها بخطئي وفق المادة (91) من نظام العمل.</p>
+    ${(r.log || []).length ? `<h2>سجل التسليم والاستلام</h2><table><tbody>${r.log.map(l => `<tr><td class="n">${esc(l.act)}</td><td>${esc(fmtIso(l.at))}</td></tr>`).join("")}</tbody></table>` : ""}
+    <div class="sig">${sigSlot("المستلم (الاسم والتوقيع)", "")}${sigSlot("الشؤون الإدارية", drSig("admaff"), true)}</div>`;
+  if (k === "opinion") return `${head("مذكرة رأي قانوني")}
+    <table><tbody>${drRow("الجهة الطالبة", esc(drWho(r.byKind, r.by, r.byName)))}${drRow("الموضوع", esc(r.title))}${drRow("مطلوب قبل", d.due ? esc(drDate(d.due)) : "")}${drRow("المرفقات", files)}</tbody></table>
+    <h2>السؤال</h2><div style="white-space:pre-wrap;line-height:1.9">${esc(d.text || "")}</div>${replies}
+    <p style="font-size:10.5px;color:#666;margin-top:12px">هذا رأي داخلي لأغراض العمل، والنص النظامي النافذ يقدم عند أي تعارض.</p>
+    <div class="sig">${sigSlot("الشؤون القانونية", drSig("legal"))}${sigSlot("الختم", "", true)}</div>`;
+  if (k === "license") return `${head(esc(r.title))}
+    <table><tbody>${drRow("الجهة المصدرة", esc(d.issuer || ""))}${drRow("الرقم", esc(d.no || ""))}${drRow("تاريخ الإصدار", d.start ? esc(drDate(d.start)) : "")}${drRow("تاريخ الانتهاء", r.end ? `<b>${esc(drDate(r.end))}</b>` : "")}${drRow("الوضع", esc(DR_ST[r.status] || r.status))}${drRow("ملاحظات", esc(d.note || ""))}${drRow("المرفقات", files)}</tbody></table>
+    <div class="sig">${sigSlot("الشؤون القانونية", drSig("legal"))}${sigSlot("الختم", "", true)}</div>`;
+  if (k === "case") return `${head("ملف " + esc(d.ctype || "قضية"))}
+    <table><tbody>${drRow("العنوان", esc(r.title))}${drRow("الطرف الآخر", esc(d.party || ""))}${drRow("الجهة", esc(d.court || ""))}${drRow("رقم القضية", esc(d.ref || ""))}${drRow("المبلغ", d.amount ? SAR(d.amount) : "")}${drRow("الموعد القادم", r.end ? `<b>${esc(drDate(r.end))}</b>` : "")}${drRow("الحالة", esc(DR_ST[r.status] || r.status))}${drRow("الملخص", esc(d.note || ""))}${drRow("المرفقات", files)}</tbody></table>
+    ${replies}<div class="sig">${sigSlot("الشؤون القانونية", drSig("legal"))}${sigSlot("المدير التنفيذي", "")}</div>`;
+  return `${head("تأكيد حجز قاعة")}
+    <table><tbody>${drRow("القاعة", esc(d.room || ""))}${drRow("التاريخ", esc(drDate(r.day)))}${drRow("الوقت", d.from ? `${fmtTime(d.from)} – ${fmtTime(d.to)}` : "")}${drRow("الغرض", esc(r.title))}${drRow("الحاجز", esc(drWho(r.byKind, r.by, r.byName)))}${drRow("الحالة", esc(DR_ST[r.status] || r.status))}</tbody></table>
+    <div class="sig">${sigSlot("الحاجز", "")}${sigSlot("الشؤون الإدارية", drSig("admaff"))}</div>`;
+}
+async function drPrint(r){
+  await Promise.all(["admaff", "legal", "finance"].filter(k => (S.sigs || {})[k] === undefined).map(k => getDoc(ref("sigs/" + k)).then(x => { S.sigs[k] = x.exists() ? x.data().img || "" : ""; }).catch(() => { S.sigs[k] = ""; })));
+  const t = {contract: r.title || "عقد", purchase: "طلب شراء", maint: "طلب صيانة", asset: "سند تسليم عهدة", opinion: "مذكرة رأي قانوني", license: r.title, case: r.title, room: "تأكيد حجز قاعة"}[r.kind] || r.title;
+  printFrame(`${t} ${drRef(r)}`, [{html: drPrintHTML(r)}], false, ROLES[r.dept] || "");
+  if (S.role === "admin") logAction("طباعة " + ((DR_K[r.kind] || {}).n || ""), `${r.title} · ${drRef(r)}`);
 }
 /* the department's badge: open requests waiting on it (only when its records were loaded already) */
 const drBadge = (dept, kind) => { const c = S.dr["dept:" + dept]; if (!c) return ""; const n = c.L.filter(r => r.kind === kind && (kind === "purchase" ? ["review", "recv"].includes(r.status) : ["maint", "opinion"].includes(kind) ? r.status === "open" : ["contract", "license"].includes(kind) ? r.end && r.status !== "ended" && drLeft(r.end) <= 30 : kind === "case" ? r.end && r.status !== "closed" && drLeft(r.end) <= 7 && drLeft(r.end) >= 0 : false)).length; return n ? ` (${n})` : ""; };
