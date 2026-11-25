@@ -850,7 +850,7 @@ async function enablePush(silent){
     if (!(await M.isSupported())) { if (!silent) toast("متصفحك ما يدعم الإشعارات"); return; }
     const token = await M.getToken(M.getMessaging(app), {vapidKey: vapid, serviceWorkerRegistration: reg});
     if (!token) return;
-    await setDoc(ref("pushTokens/" + pushDocId(token)), {token, email: S.authUser.email, role: S.role === "admin" ? S.adminRole : S.role, num: S.myNum || "", tid: S.role === "trainer" ? (S.me || "") : "", at: new Date().toISOString()});
+    await setDoc(ref("pushTokens/" + pushDocId(token)), {token, email: S.authUser.email, role: S.role === "admin" ? S.adminRole : S.role, num: S.myNum || "", tid: S.role === "trainer" ? (S.me || String(S.authUser.email || "").split("@")[0].split(".")[0]) : "", at: new Date().toISOString()});   // the trainer id may not be loaded yet: it is the start of the sign-in email
     try { localStorage.setItem("asasPush", JSON.stringify([...new Set([...pushMine(), S.authUser.email])].slice(-6))); } catch {}
     if (!silent) { toast("تفعّلت الإشعارات ✓"); renderTop(); }
   } catch (e) { console.error(e); if (!silent) toast("تعذّر تفعيل الإشعارات"); }
@@ -1715,7 +1715,8 @@ function corrModal(){
       ${c.kind === "in" && S.role === "admin" ? `<label class="f" style="margin-top:8px">ردّكم / الإفادة (يشوفها من أحاله)<textarea id="crRep" rows="2" maxlength="1500">${esc(reps[key] || "")}</textarea></label><button class="btn sm" id="crRepS" style="margin-top:6px">حفظ الإفادة</button>` : ""}</div>` : ""}
     ${owner && audience.length ? `<div class="card" style="padding:10px;margin-top:10px"><b>الاطلاع:</b> ${audience.map(r => `<span class="pill ${seen[r] ? "p" : ""}" style="margin:2px">${seen[r] ? "✓ " : ""}${esc(corrToN(r))}</span>`).join("")}
       ${(c.to || []).some(r => ["trainers", "students"].includes(r)) ? `<div class="muted" style="margin-top:6px">${(c.to || []).includes("trainers") ? `المدربين اللي اطّلعوا: ${Object.keys(seen).filter(k => /^t-/.test(k)).length} من ${Object.keys(S.trainers || {}).length || "—"}` : ""}${(c.to || []).includes("students") ? ` · المتدربين: ${Object.keys(seen).filter(k => /^st-/.test(k)).length}` : ""}</div>` : ""}
-      ${Object.keys(reps).length ? `<div style="margin-top:8px">${Object.entries(reps).map(([k, v]) => `<div class="item" style="padding:6px 10px"><b>${esc(MEET_N[k] || k)}:</b> <span style="white-space:pre-wrap">${esc(v)}</span></div>`).join("")}</div>` : ""}</div>` : ""}
+      ${Object.keys(reps).length ? `<div style="margin-top:8px">${Object.entries(reps).map(([k, v]) => `<div class="item" style="padding:6px 10px"><b>${esc(MEET_N[k] || k)}:</b> <span style="white-space:pre-wrap">${esc(v)}</span></div>`).join("")}</div>` : ""}
+      ${c.kind !== "out" && ["admin", "academic", "hr"].includes(S.adminRole) && (S.site || {}).pushUrl ? `<div class="row" style="margin-top:8px"><button class="btn sm" id="crRemind">⏰ تذكير اللي ما اطّلعوا</button><span class="muted" style="font-size:12px">إشعار جديد لكل من ما ضغط «اطّلعت» (مرة بالساعة)</span></div>` : ""}</div>` : ""}
     ${S.adminRole === "admin" ? `<div class="row" style="margin-top:10px"><button class="btn sm danger" id="crDel">حذف</button><span class="muted" style="font-size:12px">الحذف ما يرجّع الرقم للتسلسل</span></div>` : ""}`;
   $("#modal").classList.add("on");
   $("#crBack").onclick = () => { if (S._corrList) { S._corrOpen = null; corrModal(); } else { S._corrOpen = null; closeModal(); } };
@@ -1728,6 +1729,8 @@ function corrModal(){
     catch (x) { if (!x || x.code !== "permission-denied" || !(S.site || {}).pushUrl) throw x; await pushApi("/corr", {action: "seen", id: c.id, ...(withReply ? {reply: rp} : {})}); }
     c.seen = {...(c.seen || {}), [key]: seen[key] || now}; if (withReply) c.replies = {...(c.replies || {}), [key]: rp};
   };
+  if ($("#crRemind")) $("#crRemind").onclick = async e => { e.target.disabled = true;
+    try { const j = await notifyNow("corrRemind", c.id); toast(j && j.sent ? `⏰ انرسل التذكير لـ ${j.sent} جهاز` : "ما فيه أحد باقي، أو انرسل تذكير خلال آخر ساعة"); } catch { toast("تعذّر إرسال التذكير"); } };
   if ($("#crSeen")) $("#crSeen").onclick = async e => { e.target.disabled = true; const rp = $("#crRep") ? $("#crRep").value.trim().slice(0, 1500) : "";
     try { await corrMark(rp, !!rp); toast("✓ انسجل اطّلاعك"); renderTop(); corrModal(); } catch (x) { e.target.disabled = false; handleWriteErr(x); } };
   if ($("#crRepS")) $("#crRepS").onclick = async () => { const v = $("#crRep").value.trim().slice(0, 1500); try { await corrMark(v, true); toast("انحفظت الإفادة"); } catch (x) { handleWriteErr(x); } };
@@ -6234,25 +6237,44 @@ const stpImg = () => okImg(S.stamp) ? `<img class="stp" src="${S.stamp}" alt="">
 const sigSlot = (label, k, withStamp) => `<div>${k ? sgImg(k) : ""}${withStamp ? stpImg() : ""}${label}</div>`;
 /* photos of a signature or stamp on white paper become transparent PNGs, trimmed to the ink */
 async function inkImage(file, maxW){
+  /* any photo of a signature or stamp → transparent PNG of the ink only, with no skill needed from the person:
+     - a PNG that is already transparent keeps its own transparency;
+     - otherwise the paper is measured around every point (so shadows and uneven light don't stay as a grey box), and only
+       what differs clearly from it — darker, or coloured like ink — is kept. Works on white, beige, grey, even black backgrounds. */
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = url; });
     for (const max of [maxW || 700, 520, 400, 300]) {
-      const k = Math.min(1, max / Math.max(img.width, img.height)), cv = document.createElement("canvas");
-      cv.width = Math.max(1, Math.round(img.width * k)); cv.height = Math.max(1, Math.round(img.height * k));
-      const cx = cv.getContext("2d"); cx.drawImage(img, 0, 0, cv.width, cv.height);
-      const d = cx.getImageData(0, 0, cv.width, cv.height), px = d.data;
-      let x0 = cv.width, y0 = cv.height, x1 = -1, y1 = -1;
-      for (let i = 0; i < px.length; i += 4) {
-        const r = px[i], g = px[i + 1], b = px[i + 2], a0 = px[i + 3] / 255;
-        let a = Math.max(255 - r, 255 - g, 255 - b) / 255; a = Math.min(1, Math.max(0, (a - 0.06) / 0.94));
-        const A = a * a0;
-        if (A > 0) { for (let c = 0; c < 3; c++) px[i + c] = Math.max(0, Math.min(255, (px[i + c] - 255 * (1 - a)) / (a || 1))); }
-        px[i + 3] = Math.round(A * 255);
-        if (A > 0.1) { const p = i / 4, x = p % cv.width, y = (p / cv.width) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      const k = Math.min(1, max / Math.max(img.width, img.height)), W = Math.max(1, Math.round(img.width * k)), H = Math.max(1, Math.round(img.height * k));
+      const cv = document.createElement("canvas"); cv.width = W; cv.height = H; const cx = cv.getContext("2d", {willReadFrequently: true});
+      cx.drawImage(img, 0, 0, W, H); const d = cx.getImageData(0, 0, W, H), px = d.data, n = W * H;
+      let seeThrough = 0; for (let i = 3; i < px.length; i += 4) if (px[i] < 250) seeThrough++;
+      if (seeThrough / n < 0.05) {
+        // the paper around each point: shrink a lot (thin ink disappears into the average), then stretch back
+        const sw = Math.max(2, Math.round(W / 22)), sh = Math.max(2, Math.round(H / 22));
+        const sm = document.createElement("canvas"); sm.width = sw; sm.height = sh; const sx = sm.getContext("2d"); sx.imageSmoothingQuality = "high"; sx.drawImage(cv, 0, 0, sw, sh);
+        const bgc = document.createElement("canvas"); bgc.width = W; bgc.height = H; const bx = bgc.getContext("2d", {willReadFrequently: true}); bx.imageSmoothingQuality = "high"; bx.drawImage(sm, 0, 0, W, H);
+        const bg = bx.getImageData(0, 0, W, H).data;
+        // a dark backdrop (e.g. a transparent signature that a phone saved as a photo on black): the ink is what is lit or coloured
+        const lums = []; for (let i = 0; i < px.length; i += 4 * 97) lums.push(0.3 * px[i] + 0.59 * px[i + 1] + 0.11 * px[i + 2]); lums.sort((a, b) => a - b);
+        const darkBack = lums[lums.length >> 1] < 90;
+        for (let i = 0; i < px.length; i += 4) {
+          const r = px[i], g = px[i + 1], b = px[i + 2], R = bg[i], G = bg[i + 1], B = bg[i + 2];
+          const lum = 0.3 * r + 0.59 * g + 0.11 * b, bl = 0.3 * R + 0.59 * G + 0.11 * B;
+          const darker = Math.max(0, bl - lum), chroma = Math.max(r, g, b) - Math.min(r, g, b), bChroma = Math.max(R, G, B) - Math.min(R, G, B);
+          const diff = Math.sqrt((r - R) ** 2 + (g - G) ** 2 + (b - B) ** 2);
+          const score = darkBack ? Math.max(r, g, b) : bl > 110 ? Math.max(darker, (chroma - bChroma) * 0.9) : diff;   // light paper: darker or more coloured
+          let a = Math.min(1, Math.max(0, (score - 26) / 50)); if (a < 0.12) a = 0;
+          px[i + 3] = Math.round(a * 255);
+          if (a > 0 && !darkBack) { for (let c = 0; c < 3; c++) px[i + c] = Math.max(0, Math.min(255, Math.round((px[i + c] - bg[i + c] * (1 - a)) / a))); }   // the ink's own colour, without the paper
+          else if (a > 0) { const m = Math.max(r, g, b) || 1, f = Math.min(1, 160 / m); px[i] = Math.round(r * f); px[i + 1] = Math.round(g * f); px[i + 2] = Math.round(b * f); }
+        }
       }
+      let x0 = W, y0 = H, x1 = -1, y1 = -1;
+      for (let p = 0; p < n; p++) if (px[p * 4 + 3] > 30) { const x = p % W, y = (p / W) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
       if (x1 < 0) throw new Error("empty");
       cx.putImageData(d, 0, 0);
+      const pad = 4; x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(W - 1, x1 + pad); y1 = Math.min(H - 1, y1 + pad);
       const out = document.createElement("canvas"); out.width = x1 - x0 + 1; out.height = y1 - y0 + 1;
       out.getContext("2d").drawImage(cv, x0, y0, out.width, out.height, 0, 0, out.width, out.height);
       const res = out.toDataURL("image/png"); if (res.length < 650000) return res;
@@ -6260,6 +6282,7 @@ async function inkImage(file, maxW){
     throw new Error("too-big");
   } finally { URL.revokeObjectURL(url); }
 }
+
 /* one upload card per signature, shown only to whoever owns it */
 function sigCard(k, title, note){
   const v = k === "stamp" ? S.stamp : (S.sigs || {})[k];
