@@ -5,11 +5,11 @@ import { firebaseConfig } from "./config.js";
 
 /* ---------- constants ---------- */
 const DOMAIN = "osostl.local";                       // login emails are internal, never mailed
-const MAIL_STAFF = ["admission", "business", "hr", "tech"];      // accounts that only use their own mailbox
+const MAIL_STAFF = ["admission", "business", "hr", "tech", "admaff", "legal"];      // accounts that only use their own mailbox
 const ROLE_EMAIL = {admin: "admin@" + DOMAIN, academic: "acadmic@" + DOMAIN, finance: "finance@" + DOMAIN, auditor: "audit@" + DOMAIN,
   ...Object.fromEntries(MAIL_STAFF.map(r => [r, `m-${r}@` + DOMAIN]))};
 const ROLES = {admin: "الإدارة", academic: "مسؤول الشؤون الأكاديمية", finance: "المالية", auditor: "الجهة الرقابية",
-  admission: "القبول والتسجيل وخدمة العملاء", business: "الشراكات وقطاع الشركات", hr: "الموارد البشرية", tech: "القسم التقني"};
+  admission: "القبول والتسجيل وخدمة العملاء", business: "التسويق والعلاقات العامة", hr: "الموارد البشرية", tech: "القسم التقني", admaff: "الشؤون الإدارية", legal: "الشؤون القانونية"};
 const RO = () => S.adminRole === "auditor";
 const FIN = () => S.adminRole === "finance";
 const MAILONLY = () => MAIL_STAFF.includes(S.adminRole);
@@ -439,7 +439,7 @@ function secCard(){
     <p class="muted" style="margin-top:0">لو شكّيت إن أحد دخل حساب إدارة بدون إذن، اضغط «رمز جديد» أو «إيقاف». الرمز القديم يوقف، وكل من كان داخل بالحساب يطلع فوراً من كل الأجهزة.</p>
     <div class="list">${rows}</div>
     <button class="btn danger" id="secAll" style="margin-top:10px;width:100%">طوارئ: إيقاف كل حسابات الإدارات</button>
-    <p class="muted" style="margin:6px 0 0">يوقف كل حسابات الإدارات والبريد (الأكاديمية والمالية والجهة الرقابية والقبول وخدمة العملاء والشراكات والموارد البشرية)، ويغيّر رمز الإدارة العامة. وبعدين ترجّع كل حساب بـ «تفعيل» و«رمز جديد».</p></div>`;
+    <p class="muted" style="margin:6px 0 0">يوقف كل حسابات الإدارات والبريد (الأكاديمية والمالية والجهة الرقابية والقبول وخدمة العملاء والتسويق والموارد البشرية والتقني والإدارية والقانونية)، ويغيّر رمز الإدارة العامة. وبعدين ترجّع كل حساب بـ «تفعيل» و«رمز جديد».</p></div>`;
 }
 function bindSecCard(el){
   if (!$("#secCard")) return;
@@ -915,6 +915,334 @@ function guidesRender(){
   };
 }
 
+/* ---------- الشؤون الإدارية (admaff) and الشؤون القانونية (legal) ----------
+   One collection dreg/{id}: requests anyone sends them (maintenance, room booking, purchase, legal opinion)
+   and their own registers (assets and custody; contracts, licenses, cases). Read only when a page opens (getDocs, no listeners).
+   Purchase path (الدليل التنظيمي): review (admaff) → exec (المدير التنفيذي) → owner above 20,000 → fin (المالية تشتري وتسدد) → recv (admaff يستلم) → done.
+   Above 5,000 three price quotes are required before it goes for approval. */
+const DR_LIM = {one: 5000, exec: 20000};
+const DR_K = {
+  maint: {n: "طلب صيانة", ic: "🔧", dept: "admaff", req: true},
+  room: {n: "حجز قاعة", ic: "🏫", dept: "admaff", req: true},
+  purchase: {n: "طلب شراء", ic: "🛒", dept: "admaff", req: true},
+  opinion: {n: "طلب رأي قانوني", ic: "💬", dept: "legal", req: true},
+  asset: {n: "أصل / عهدة", ic: "📦", dept: "admaff"},
+  contract: {n: "عقد", ic: "📄", dept: "legal"},
+  license: {n: "ترخيص / وثيقة", ic: "🪪", dept: "legal"},
+  case: {n: "قضية / مطالبة", ic: "⚖️", dept: "legal"}};
+const DR_DEPT_K = {admaff: ["maint", "purchase", "room", "asset"], legal: ["contract", "license", "opinion", "case"]};
+const DR_TAB_N = {maint: "🔧 الصيانة", purchase: "🛒 المشتريات", room: "🏫 القاعات", asset: "📦 العهد والأصول", contract: "📄 العقود", license: "🪪 التراخيص", opinion: "💬 طلبات الرأي", case: "⚖️ القضايا"};
+const DR_ST = {open: "جديد", doing: "قيد العمل", done: "منتهي ✓", rejected: "مرفوض", cancel: "ملغي", booked: "محجوز",
+  review: "عند الشؤون الإدارية", returned: "راجع للطالب", exec: "بانتظار المدير التنفيذي", owner: "بانتظار المالك", fin: "عند المالية للشراء", recv: "بانتظار الاستلام",
+  active: "ساري", retired: "مستبعد", draft: "مسودة", legal: "قيد المراجعة القانونية", approved: "معتمد", signed: "موقّع", ended: "منتهي", closed: "مقفلة"};
+const DR_PILL = {open: "a", doing: "l", done: "p", rejected: "a", cancel: "", booked: "p", review: "l", returned: "a", exec: "l", owner: "l", fin: "l", recv: "l",
+  active: "p", retired: "", draft: "", legal: "l", approved: "p", signed: "p", ended: "", closed: ""};
+const DR_SEL = {
+  prio: ["عادي", "عاجل"], cat: ["أجهزة تقنية", "أثاث", "معدات قاعات", "مركبة", "أخرى"], cond: ["جيد", "يحتاج صيانة", "تالف"],
+  ctype: ["عقد موظف", "اتفاقية مدرب متعاون", "شراكة", "إيجار", "مورد / خدمة", "أخرى"], cst: ["draft", "legal", "approved", "signed", "ended"],
+  lst: ["active", "ended"], casetype: ["قضية", "شكوى", "مطالبة مالية", "إنذار / إخطار"], casest: ["open", "closed"], ast: ["active", "retired"]};
+// fields: k key, l label, t type, top = stored at the top of the record (end/day for reminders and room queries), w width
+const DR_F = {
+  maint: [{k: "title", l: "وش المشكلة باختصار", t: "text", req: 1}, {k: "place", l: "المكان", t: "text"}, {k: "prio", l: "الأولوية", t: "sel", o: "prio"}, {k: "text", l: "التفاصيل", t: "area"}],
+  room: [{k: "room", l: "القاعة", t: "room", req: 1}, {k: "day", l: "التاريخ", t: "date", top: 1, req: 1}, {k: "from", l: "من", t: "time", req: 1}, {k: "to", l: "إلى", t: "time", req: 1}, {k: "title", l: "الغرض", t: "text", req: 1}],
+  purchase: [{k: "title", l: "الصنف أو الخدمة", t: "text", req: 1}, {k: "qty", l: "الكمية", t: "num"}, {k: "amount", l: "التكلفة التقديرية (ريال)", t: "num", req: 1}, {k: "why", l: "المبرر", t: "area", req: 1}],
+  opinion: [{k: "title", l: "الموضوع", t: "text", req: 1}, {k: "text", l: "السؤال والتفاصيل", t: "area", req: 1}, {k: "due", l: "مطلوب قبل", t: "date"}],
+  asset: [{k: "title", l: "اسم الأصل", t: "text", req: 1}, {k: "code", l: "رقم الأصل", t: "text"}, {k: "cat", l: "الفئة", t: "sel", o: "cat"}, {k: "place", l: "الموقع", t: "text"},
+    {k: "serial", l: "الرقم التسلسلي", t: "text"}, {k: "value", l: "القيمة (ريال)", t: "num"}, {k: "date", l: "تاريخ الشراء", t: "date"}, {k: "cond", l: "الحالة", t: "sel", o: "cond"}, {k: "status", l: "الوضع", t: "st", o: "ast"}],
+  contract: [{k: "title", l: "عنوان العقد", t: "text", req: 1}, {k: "party", l: "الطرف الثاني", t: "text", req: 1}, {k: "ctype", l: "النوع", t: "sel", o: "ctype"}, {k: "start", l: "يبدأ", t: "date"},
+    {k: "end", l: "ينتهي", t: "date", top: 1}, {k: "value", l: "القيمة (ريال)", t: "num"}, {k: "status", l: "المرحلة", t: "st", o: "cst"}, {k: "note", l: "ملاحظات قانونية", t: "area"}],
+  license: [{k: "title", l: "اسم الترخيص أو الوثيقة", t: "text", req: 1}, {k: "issuer", l: "الجهة المصدرة", t: "text"}, {k: "no", l: "الرقم", t: "text"}, {k: "start", l: "تاريخ الإصدار", t: "date"},
+    {k: "end", l: "تاريخ الانتهاء", t: "date", top: 1, req: 1}, {k: "status", l: "الوضع", t: "st", o: "lst"}, {k: "note", l: "ملاحظات", t: "area"}],
+  case: [{k: "title", l: "عنوان القضية أو المطالبة", t: "text", req: 1}, {k: "party", l: "الطرف الآخر", t: "text"}, {k: "ctype", l: "النوع", t: "sel", o: "casetype"}, {k: "court", l: "الجهة (محكمة، لجنة…)", t: "text"},
+    {k: "ref", l: "رقم القضية", t: "text"}, {k: "amount", l: "المبلغ (ريال)", t: "num"}, {k: "end", l: "الموعد القادم", t: "date", top: 1}, {k: "status", l: "الحالة", t: "st", o: "casest"}, {k: "note", l: "ملخص", t: "area"}]};
+const DR_START = {maint: "open", room: "booked", purchase: "review", opinion: "open", asset: "active", contract: "draft", license: "active", case: "open"};
+const drMe = () => S.role === "trainer" ? (S.me || "") : S.role === "admin" ? S.adminRole : "";
+const drMeKind = () => S.role === "trainer" ? "trainer" : "staff";
+const drMeName = () => S.role === "trainer" ? trainerTitle((S.trainers || {})[S.me] || {name: "مدرب"}) : ROLES[S.adminRole] || S.adminRole;
+const drIsDept = d => S.role === "admin" && S.adminRole === d;
+const drDesk = d => S.role === "admin" && (S.adminRole === d || S.adminRole === "admin");   // the department, or the executive director
+const drCanAsk = k => k === "maint" || k === "room" ? !!drMe() && S.adminRole !== "auditor" : S.role === "admin" && !["auditor"].includes(S.adminRole) && S.adminRole !== DR_K[k].dept;
+const drLeft = d => d ? Math.round((Date.parse(d + "T12:00:00") - Date.parse(today() + "T12:00:00")) / 864e5) : null;
+const drWho = (kind, w, name) => kind === "trainer" ? trainerTitle((S.trainers || {})[w] || {name: name || "مدرب"}) : name || ROLES[w] || w;
+const drHolderName = r => r.holderKind === "trainer" ? trainerTitle((S.trainers || {})[r.holder] || {name: r.holderName || ""}) : r.holderKind === "dept" ? (ROLES[r.holder] || r.holder) : r.holderName || "";
+S.dr = S.dr || {};
+async function drGet(key, q, force){
+  const c = S.dr[key];
+  if (!force && c && Date.now() - c.t < 300000) return c.L;
+  const snap = await getDocs(q);
+  const L = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => String(b.updatedAt || b.at || "").localeCompare(String(a.updatedAt || a.at || "")));
+  S.dr[key] = {t: Date.now(), L}; return L;
+}
+const drDeptQ = d => query(collection(db, "dreg"), where("dept", "==", d));
+const drMineQ = () => query(collection(db, "dreg"), where("by", "==", drMe()));
+const drHeldQ = () => query(collection(db, "dreg"), where("holder", "==", drMe()));
+async function drRooms(force){
+  if (force || !S.drRooms) { try { const s = await getDoc(ref("dcfg/rooms")); S.drRooms = (s.exists() && s.data().list) || []; } catch { S.drRooms = S.drRooms || []; } }
+  return S.drRooms;
+}
+async function drBookings(force){   // room bookings from today on (index kind+day), with a fallback while the index builds
+  try { return await drGet("rooms", query(collection(db, "dreg"), where("kind", "==", "room"), where("day", ">=", today())), force); }
+  catch (e) { if (!/index/i.test(String(e && e.message))) throw e; return (await drGet("rooms", query(collection(db, "dreg"), where("kind", "==", "room")), force)).filter(r => (r.day || "") >= today()); }
+}
+const drClash = (L, f, skip) => L.find(b => b.id !== skip && b.status === "booked" && (b.d || {}).room === f.room && b.day === f.day && (b.d || {}).from < f.to && f.from < (b.d || {}).to);
+const drFiles = r => (r.files || []).map((f, i) => `<button class="btn sm ghost" data-drf="${esc(r.id)}:${i}">📎 ${esc(f.name || "ملف")}</button>`).join("");
+async function drUpFiles(input){
+  const out = [];
+  for (const f of [...(input && input.files || [])].slice(0, 8)) {
+    if (f.size > SRV_MAX) throw new Error("big");
+    out.push({m: await srvPut(f, f.name, f.type), name: String(f.name || "ملف").slice(0, 150), size: f.size});
+  }
+  return out;
+}
+function drFieldHtml(f, v, rooms){
+  const id = "drv_" + f.k, val = v == null ? "" : v;
+  if (f.t === "area") return `<label class="f" style="flex-basis:100%">${f.l}<textarea id="${id}" rows="3" maxlength="2000">${esc(val)}</textarea></label>`;
+  if (f.t === "sel" || f.t === "st") { const o = DR_SEL[f.o] || []; return `<label class="f">${f.l}<select id="${id}">${f.t === "sel" ? `<option value="">—</option>` : ""}${o.map(x => `<option value="${esc(x)}" ${x === val ? "selected" : ""}>${esc(f.t === "st" ? DR_ST[x] : x)}</option>`).join("")}</select></label>`; }
+  if (f.t === "room") return `<label class="f">${f.l}<select id="${id}">${(rooms || []).map(x => `<option ${x === val ? "selected" : ""}>${esc(x)}</option>`).join("") || `<option value="">ما فيه قاعات مضافة</option>`}</select></label>`;
+  const ty = {num: "number", date: "date", time: "time"}[f.t] || "text";
+  return `<label class="f">${f.l}<input type="${ty}" id="${id}" value="${esc(val)}" ${f.t === "num" ? `min="0" step="any"` : `maxlength="150"`}></label>`;
+}
+function drRead(kind, box){
+  const out = {d: {}}; let miss = "";
+  for (const f of DR_F[kind]) {
+    const e = box.querySelector("#drv_" + f.k); if (!e) continue;
+    let v = String(e.value || "").trim();
+    if (f.req && !v) { miss = miss || f.l; continue; }
+    if (f.t === "num") v = v === "" ? "" : Math.max(0, Number(v) || 0);
+    if (f.k === "title") out.title = v.slice(0, 150); else if (f.k === "status") out.status = v; else if (f.top) out[f.k] = v; else if (v !== "") out.d[f.k] = typeof v === "string" ? v.slice(0, 2000) : v;
+  }
+  return {out, miss};
+}
+/* the form for a new record (or editing one). After saving: onDone() */
+function drForm(el, kind, r, onDone){
+  drRooms().then(rooms => {
+    const v = k => r ? (k === "title" ? r.title : k === "status" ? r.status : ["end", "day"].includes(k) ? r[k] : (r.d || {})[k]) : (k === "status" ? DR_START[kind] : "");
+    const isAsset = kind === "asset", trs = Object.values(S.trainers || {}).filter(t => !t.disabled).sort((a, b) => String(a.name).localeCompare(String(b.name), "ar"));
+    const deps = CHAT_ROLES.filter(x => x !== "auditor");
+    el.innerHTML = `<div class="card" style="padding:12px;border:1px solid var(--line)"><h3 style="margin:0 0 8px">${DR_K[kind].ic} ${r ? "تعديل" : "جديد"}: ${DR_K[kind].n}</h3>
+      ${kind === "purchase" ? `<p class="muted" style="margin:0 0 8px">حسب الدليل التنظيمي: حتى ${DR_LIM.one.toLocaleString("en")} ريال يكفي عرض سعر واحد، ومن ${(DR_LIM.one + 1).toLocaleString("en")} إلى ${DR_LIM.exec.toLocaleString("en")} لازم ٣ عروض ويعتمد المدير التنفيذي، وفوق ${DR_LIM.exec.toLocaleString("en")} يعتمد المالك. أرفق عروض الأسعار تحت.</p>` : ""}
+      ${kind === "room" ? `<p class="muted" style="margin:0 0 8px">النظام يمنع الحجز لو القاعة محجوزة بنفس الوقت.</p>` : ""}
+      <div class="row" style="gap:8px;flex-wrap:wrap">${DR_F[kind].map(f => drFieldHtml(f, v(f.k), rooms)).join("")}
+      ${isAsset ? `<label class="f">العهدة عند<select id="drHold"><option value="">— بدون —</option><optgroup label="الإدارات">${deps.map(x => `<option value="dept:${x}" ${r && r.holderKind === "dept" && r.holder === x ? "selected" : ""}>${esc(ROLES[x])}</option>`).join("")}</optgroup><optgroup label="المدربين">${trs.map(t => `<option value="trainer:${esc(t.id)}" ${r && r.holderKind === "trainer" && r.holder === t.id ? "selected" : ""}>${esc(trainerTitle(t))}</option>`).join("")}</optgroup><option value="other:" ${r && r.holderKind === "other" ? "selected" : ""}>شخص أو قاعة (اكتب الاسم)</option></select></label>
+        <label class="f">الاسم (لو اخترت شخص أو قاعة)<input type="text" id="drHoldN" maxlength="80" value="${esc(r && r.holderKind === "other" ? r.holderName || "" : "")}"></label>` : ""}
+      ${kind === "room" ? "" : `<label class="f" style="flex-basis:100%">${kind === "purchase" ? "عروض الأسعار والمستندات" : "مرفقات"} ${r && (r.files || []).length ? `(فيه ${(r.files || []).length}، اللي ترفعه ينضاف)` : ""}<input type="file" id="drFiles" multiple accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx"></label>`}</div>
+      <div class="row" style="gap:8px;margin-top:8px"><button class="btn pri" id="drSave">${r ? "حفظ التعديل" : kind === "purchase" ? "إرسال الطلب" : DR_K[kind].req ? "إرسال" : "حفظ"}</button><button class="btn" id="drCancel">إلغاء</button></div></div>`;
+    el.querySelector("#drCancel").onclick = () => onDone(false);
+    el.querySelector("#drSave").onclick = async e => {
+      const {out, miss} = drRead(kind, el); if (miss) return toast("عبّ: " + miss);
+      if (kind === "room") {
+        if (!(rooms || []).length) return toast("ما فيه قاعات مضافة، كلّم الشؤون الإدارية");
+        if (out.d.from >= out.d.to) return toast("وقت النهاية لازم بعد البداية");
+        if (out.day < today()) return toast("التاريخ فات");
+        const L = await drBookings(true).catch(() => []), c = drClash(L, {room: out.d.room, day: out.day, from: out.d.from, to: out.d.to}, r && r.id);
+        if (c) return toast(`القاعة محجوزة ${fmtTime(c.d.from)}–${fmtTime(c.d.to)} (${c.title || ""})`, 1);
+      }
+      e.target.disabled = true;
+      try {
+        let files = (r && r.files) || [];
+        const inp = el.querySelector("#drFiles");
+        if (inp && inp.files.length) { toast("جاري رفع المرفقات…"); files = [...files, ...(await drUpFiles(inp))].slice(0, 8); }
+        const now = new Date().toISOString();
+        const rec = {title: out.title || DR_K[kind].n, d: {...((r && r.d) || {}), ...out.d}, files, updatedAt: now};
+        DR_F[kind].filter(f => !f.top && f.k !== "title" && f.k !== "status").forEach(f => { if (!(f.k in out.d)) delete rec.d[f.k]; });
+        DR_F[kind].filter(f => f.top).forEach(f => { rec[f.k] = out[f.k] || ""; });
+        if (out.status) rec.status = out.status;
+        if (isAsset) {
+          const [hk, hv] = String(el.querySelector("#drHold").value || ":").split(":"), hn = el.querySelector("#drHoldN").value.trim().slice(0, 80);
+          const nh = hk === "other" ? "" : hv || "", nk = hk || "", nn = hk === "other" ? hn : "";
+          const changed = !r || (r.holderKind || "") !== nk || (r.holder || "") !== nh || (r.holderName || "") !== nn;
+          Object.assign(rec, {holder: nh, holderKind: nk, holderName: nn});
+          if (changed) { rec.ack = ""; rec.log = [...((r && r.log) || []), {act: nk ? "تسليم إلى " + (nk === "dept" ? ROLES[nh] : nk === "trainer" ? trainerTitle((S.trainers || {})[nh] || {name: nh}) : nn) : "استلام للمخزن", at: now}].slice(-40); }
+        }
+        let id = r && r.id;
+        if (r) await setDoc(ref("dreg/" + id), rec, {merge: true});
+        else {
+          id = "dr-" + Date.now().toString(36) + uid();
+          await setDoc(ref("dreg/" + id), {kind, dept: DR_K[kind].dept, by: drMe(), byKind: drMeKind(), byName: drMeName(), status: DR_START[kind], at: now, replies: [], steps: [], ...(isAsset ? {ack: "", log: rec.log || []} : {}), ...rec});
+        }
+        if (DR_K[kind].req && !r || kind === "asset") notify("dreg", id);
+        if (S.role === "admin") logAction((r ? "تعديل " : "إضافة ") + DR_K[kind].n, rec.title);
+        toast(r ? "انحفظ ✓" : DR_K[kind].req ? `وصل ${DR_K[kind].n} لـ ${ROLES[DR_K[kind].dept]} ✓` : "انضاف ✓");
+        Object.keys(S.dr).forEach(k => { S.dr[k].t = 0; });
+        onDone(true);
+      } catch (x) { e.target.disabled = false; if (x.message === "big") toast("ملف أكبر من 20 ميجا", 1); else if (/srv|up |files/.test(String(x.message)) || x.status) toast("تعذّر رفع المرفق: سيرفر الملفات مو متاح", 1); else handleWriteErr(x); }
+    };
+  });
+}
+/* one record as a card. ctx: "desk" (the department / executive director), "mine" (I asked), "owner" (الجهة الرقابية), "fin", "held" */
+function drCard(r, ctx){
+  const k = DR_K[r.kind] || {n: r.kind, ic: ""}, d = r.d || {}, left = r.end ? drLeft(r.end) : null;
+  const facts = [];
+  if (r.kind === "maint") facts.push(d.place, d.prio === "عاجل" ? "🔴 عاجل" : "");
+  if (r.kind === "room") facts.push(d.room, r.day && fmtDate(r.day), d.from && `${fmtTime(d.from)} – ${fmtTime(d.to)}`);
+  if (r.kind === "purchase") facts.push(d.qty ? "الكمية " + d.qty : "", SAR(d.amount), `${(r.files || []).length} مرفق`);
+  if (r.kind === "opinion") facts.push(d.due ? "مطلوب قبل " + fmtDate(d.due) : "");
+  if (r.kind === "asset") facts.push(d.code, d.cat, d.place, d.cond, r.holderKind ? "العهدة: " + drHolderName(r) + (r.holderKind !== "other" ? (r.ack === r.holder ? " ✓ أكّد الاستلام" : " ⏳ ما أكّد") : "") : "");
+  if (r.kind === "contract") facts.push(d.party, d.ctype, d.value ? SAR(d.value) : "", d.start && "من " + d.start, r.end && "إلى " + r.end);
+  if (r.kind === "license") facts.push(d.issuer, d.no && "رقم " + d.no, r.end && "ينتهي " + r.end);
+  if (r.kind === "case") facts.push(d.party, d.ctype, d.court, d.ref && "رقم " + d.ref, d.amount ? SAR(d.amount) : "", r.end && "الموعد " + r.end);
+  const warn = left !== null && !["ended", "closed", "retired"].includes(r.status) ? (left < 0 ? `<span class="pill a">${r.kind === "case" ? "فات الموعد" : "منتهي"} من ${-left} يوم</span>` : left <= 30 ? `<span class="pill ${left <= 7 ? "a" : "l"}">${left ? `باقي ${left} يوم` : "اليوم"}</span>` : "") : "";
+  const desk = ctx === "desk", mine = ctx === "mine" || (r.by === drMe() && !desk);
+  const reqKinds = ["maint", "opinion", "purchase", "room"];
+  const btn = [];
+  if (desk && ["maint", "opinion"].includes(r.kind) && !["done", "rejected", "cancel"].includes(r.status)) { if (r.status !== "doing") btn.push(`<button class="btn sm" data-drs="${esc(r.id)}:doing">قيد العمل</button>`); btn.push(`<button class="btn sm gold" data-drs="${esc(r.id)}:done">انتهى ✓</button>`, `<button class="btn sm danger" data-drs="${esc(r.id)}:rejected">رفض</button>`); }
+  if (r.kind === "purchase") {
+    const amt = Number(d.amount) || 0, nq = (r.files || []).length;
+    if (desk && S.adminRole === "admaff" && r.status === "review") btn.push(`<label class="btn sm" style="cursor:pointer">📎 إضافة عرض سعر (${nq})<input type="file" data-drinv="${esc(r.id)}" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" multiple hidden></label>`, `<button class="btn sm pri" data-drp="${esc(r.id)}:exec" ${amt > DR_LIM.one && nq < 3 ? `title="فوق ${DR_LIM.one} لازم ٣ عروض أسعار"` : ""}>إرسال للمدير التنفيذي</button>`, `<button class="btn sm" data-drp="${esc(r.id)}:returned">إرجاع للطالب</button>`, `<button class="btn sm danger" data-drp="${esc(r.id)}:rejected">رفض</button>`);
+    if (S.adminRole === "admin" && S.role === "admin" && r.status === "exec") btn.push(amt > DR_LIM.exec ? `<button class="btn sm pri" data-drp="${esc(r.id)}:owner">موافقة ورفع للمالك (فوق ${DR_LIM.exec.toLocaleString("en")})</button>` : `<button class="btn sm pri" data-drp="${esc(r.id)}:fin">اعتماد وتحويل للمالية</button>`, `<button class="btn sm" data-drp="${esc(r.id)}:returned">إرجاع</button>`, `<button class="btn sm danger" data-drp="${esc(r.id)}:rejected">رفض</button>`);
+    if (ctx === "owner" && r.status === "owner") btn.push(`<button class="btn sm pri" data-drp="${esc(r.id)}:fin">اعتماد المالك</button>`, `<button class="btn sm" data-drp="${esc(r.id)}:returned">إرجاع</button>`, `<button class="btn sm danger" data-drp="${esc(r.id)}:rejected">رفض</button>`);
+    if (ctx === "fin" && r.status === "fin") btn.push(`<label class="btn sm" style="cursor:pointer">📎 فاتورة<input type="file" data-drinv="${esc(r.id)}" accept=".pdf,image/*" hidden></label>`, `<button class="btn sm pri" data-drp="${esc(r.id)}:recv">تم الشراء والسداد</button>`);
+    if (desk && S.adminRole === "admaff" && r.status === "recv") btn.push(`<button class="btn sm gold" data-drp="${esc(r.id)}:done">تم الاستلام ✓</button>`);
+    if (mine && r.status === "returned") btn.push(`<button class="btn sm" data-dre="${esc(r.id)}">تعديل</button>`, `<button class="btn sm pri" data-drp="${esc(r.id)}:review">إعادة إرسال</button>`);
+    if (mine && ["review", "returned"].includes(r.status)) btn.push(`<button class="btn sm danger" data-drs="${esc(r.id)}:cancel">إلغاء الطلب</button>`);
+  }
+  if (r.kind === "room" && r.status === "booked" && (mine || desk)) btn.push(`<button class="btn sm danger" data-drs="${esc(r.id)}:cancel">إلغاء الحجز</button>`);
+  if (mine && ["maint", "opinion"].includes(r.kind) && r.status === "open" && !(r.replies || []).length) btn.push(`<button class="btn sm danger" data-drs="${esc(r.id)}:cancel">إلغاء</button>`);
+  if (desk && !reqKinds.includes(r.kind)) btn.push(`<button class="btn sm" data-dre="${esc(r.id)}">تعديل</button>`, `<button class="btn sm danger" data-drdel="${esc(r.id)}">حذف</button>`);
+  if (ctx === "held" && r.holder === drMe() && r.ack !== drMe()) btn.push(`<button class="btn sm gold" data-drack="${esc(r.id)}">استلمت العهدة ✓</button>`);
+  const thread = ["maint", "opinion", "purchase"].includes(r.kind) && (desk || mine || ctx === "owner" || ctx === "fin");
+  return `<div class="card" style="margin:8px 0;padding:12px" data-drid="${esc(r.id)}">
+    <div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>${k.ic} ${esc(r.title || k.n)}</b> <span class="muted" style="font-size:12px">${reqKinds.includes(r.kind) && !mine ? "من " + esc(drWho(r.byKind, r.by, r.byName)) + " · " : ""}${esc(fmtIso(r.at))}</span></div>
+      <div class="row" style="gap:6px">${warn}<span class="pill ${DR_PILL[r.status] || ""}">${esc(DR_ST[r.status] || r.status || "")}</span></div></div>
+    ${facts.filter(Boolean).length ? `<div class="muted" style="margin-top:4px">${facts.filter(Boolean).map(esc).join(" · ")}</div>` : ""}
+    ${d.text || d.why || d.note ? `<div style="white-space:pre-wrap;margin:6px 0">${linkify(esc(d.text || d.why || d.note))}</div>` : ""}
+    ${(r.files || []).length ? `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">${drFiles(r)}</div>` : ""}
+    ${(r.steps || []).length ? `<div class="muted" style="font-size:12px;margin-top:6px">${(r.steps || []).map(s => `${esc(ROLES[s.role] || s.role)}: ${esc(s.act)}${s.note ? ` («${esc(s.note)}»)` : ""} · ${esc(fmtIso(s.at))}`).join("<br>")}</div>` : ""}
+    ${r.kind === "asset" && (r.log || []).length && desk ? `<details style="margin-top:6px"><summary class="muted">سجل التسليم والاستلام (${r.log.length})</summary><div class="muted" style="font-size:12px">${r.log.slice().reverse().map(l => `${esc(l.act)} · ${esc(fmtIso(l.at))}`).join("<br>")}${r.ackAt ? `<br>آخر تأكيد استلام: ${esc(fmtIso(r.ackAt))}` : ""}</div></details>` : ""}
+    ${thread ? (r.replies || []).map(x => `<div style="margin:8px 0 0;padding:8px 10px;border-radius:10px;background:${x.by === r.dept ? "rgba(31,81,54,.08)" : "var(--bg)"}"><div class="muted" style="font-size:12px">${esc(x.by === r.by ? drWho(r.byKind, r.by, r.byName) : ROLES[x.by] || x.by)} · ${esc(fmtIso(x.at))}</div><div style="white-space:pre-wrap">${linkify(esc(x.text))}</div></div>`).join("") : ""}
+    ${thread && (desk || mine) && !["done", "rejected", "cancel"].includes(r.status) ? `<div class="row" style="margin-top:8px;gap:6px"><input type="text" class="grow" data-drr="${esc(r.id)}" maxlength="1000" placeholder="اكتب رد أو ملاحظة…" style="min-width:160px"><button class="btn sm pri" data-drsend="${esc(r.id)}">إرسال</button></div>` : ""}
+    ${btn.length ? `<div class="row" style="margin-top:8px;gap:6px;flex-wrap:wrap">${btn.join("")}</div>` : ""}</div>`;
+}
+/* wires the buttons of drCard. L = the records shown, again() re-renders after a change, editBox(r) opens the edit form */
+function drBind(root, L, again, editBox, ctx){
+  const find = id => L.find(x => x.id === id);
+  const save = async (r, upd, msg, push = true) => {
+    try { await setDoc(ref("dreg/" + r.id), {...upd, updatedAt: new Date().toISOString()}, {merge: true}); if (push) notify("dreg", r.id); Object.keys(S.dr).forEach(k => { S.dr[k].t = 0; }); if (msg) toast(msg); again(); }
+    catch (e) { handleWriteErr(e); }
+  };
+  root.querySelectorAll("[data-drf]").forEach(b => b.onclick = async () => { const [id, i] = b.dataset.drf.split(":"), f = (find(id).files || [])[+i]; if (!f) return;
+    try { if (/\.(pdf|png|jpe?g)$/i.test(f.name || "")) { const w = window.open("", "_blank"); const u = await srvUrl(f.m, true); if (w) w.location = u; else location.href = u; } else await srvOpen(f.m); } catch { toast("تعذّر فتح الملف", 1); } });
+  root.querySelectorAll("[data-drsend]").forEach(b => b.onclick = () => { const r = find(b.dataset.drsend), inp = root.querySelector(`[data-drr="${CSS.escape(r.id)}"]`), text = inp.value.trim(); if (!text) return toast("اكتب الرد");
+    b.disabled = true; const me = ctx === "desk" ? r.dept : drMe();
+    save(r, {replies: [...(r.replies || []), {by: me, text: text.slice(0, 1000), at: new Date().toISOString()}], ...(ctx === "desk" && r.status === "open" ? {status: "doing"} : {})}, "انرسل ✓"); });
+  root.querySelectorAll("[data-drr]").forEach(inp => inp.onkeydown = e => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); root.querySelector(`[data-drsend="${CSS.escape(inp.dataset.drr)}"]`).click(); } });
+  root.querySelectorAll("[data-drs]").forEach(b => b.onclick = () => { const [id, st] = b.dataset.drs.split(":"), r = find(id);
+    if (["cancel", "rejected"].includes(st) && !b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟"; return; }
+    if (st === "cancel" && r.kind === "room" && ctx === "desk" && r.by !== drMe()) return save(r, {status: "cancel", replies: [...(r.replies || []), {by: r.dept, text: "انلغى الحجز من الشؤون الإدارية", at: new Date().toISOString()}]}, "انلغى الحجز");
+    save(r, {status: st}, st === "done" ? "انقفل ✓" : st === "cancel" ? "انلغى" : "تمام", st !== "cancel"); });
+  root.querySelectorAll("[data-drp]").forEach(b => b.onclick = async () => { const [id, st] = b.dataset.drp.split(":"), r = find(id), amt = Number((r.d || {}).amount) || 0;
+    if (st === "exec" && amt > DR_LIM.one && (r.files || []).length < 3) return toast(`المبلغ فوق ${DR_LIM.one.toLocaleString("en")} ريال: لازم ٣ عروض أسعار مرفقة`, 1);
+    if (st === "done" && r.by === "admaff") toast("تنبيه: حسب الدليل، المستلم يكون غير الطالب. سجّل مين استلم في الملاحظة.");
+    let note = "";
+    if (["returned", "rejected"].includes(st)) { note = (prompt(st === "returned" ? "وش المطلوب تعديله؟" : "سبب الرفض؟") || "").trim(); if (!note) return; }
+    const act = {exec: "راجع وأرسل للاعتماد", owner: "وافق ورفع للمالك", fin: ctx === "owner" ? "اعتمد (المالك)" : "اعتمد", recv: "تم الشراء والسداد", done: "استلم", returned: "أرجع للتعديل", rejected: "رفض", review: "أعاد الإرسال"}[st];
+    const role = ctx === "owner" ? "auditor" : S.adminRole || "trainer";
+    b.disabled = true;
+    save(r, {status: st, steps: [...(r.steps || []), {role, act, ...(note ? {note: note.slice(0, 300)} : {}), at: new Date().toISOString()}]}, "تمام ✓");
+    if (S.role === "admin") logAction("طلب شراء: " + act, `${r.title} · ${SAR(amt)}`); });
+  root.querySelectorAll("[data-drinv]").forEach(inp => inp.onchange = async () => { const r = find(inp.dataset.drinv); try { toast("جاري الرفع…"); const add = await drUpFiles(inp); save(r, {files: [...(r.files || []), ...add].slice(0, 8)}, ctx === "fin" ? "انرفعت الفاتورة ✓" : "انضاف المرفق ✓", false); } catch { toast("تعذّر الرفع", 1); } });
+  root.querySelectorAll("[data-dre]").forEach(b => b.onclick = () => editBox(find(b.dataset.dre)));
+  root.querySelectorAll("[data-drdel]").forEach(b => b.onclick = async () => { if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟"; return; }
+    const r = find(b.dataset.drdel); try { await deleteDoc(ref("dreg/" + r.id)); logAction("حذف " + (DR_K[r.kind] || {}).n, r.title); Object.keys(S.dr).forEach(k => { S.dr[k].t = 0; }); toast("انحذف"); again(); } catch (e) { handleWriteErr(e); } });
+  root.querySelectorAll("[data-drack]").forEach(b => b.onclick = () => { const r = find(b.dataset.drack); save(r, {ack: drMe(), ackAt: new Date().toISOString()}, "تم تأكيد استلام العهدة ✓", false); });
+}
+/* a department page (one section). Used by the department itself, by the executive director and (read + purchase approvals) by the owner */
+function drSection(el, dept, kind, ctx){
+  const F = S._drF = S._drF || {};
+  const key = "dept:" + dept;
+  el.innerHTML = `<div class="card"><div class="muted">جاري التحميل…</div></div>`;
+  drGet(key, drDeptQ(dept), F.force).then(async all => {
+    F.force = false;
+    const L0 = all.filter(r => r.kind === kind), filt = F[kind] || (DR_K[kind].req ? "active" : "all"), q = String(F["q_" + kind] || "").trim();
+    const isActive = r => !["done", "rejected", "cancel", "ended", "closed", "retired"].includes(r.status) && !(r.kind === "room" && (r.day || "") < today());
+    let L = L0.filter(r => filt === "all" ? true : filt === "active" ? isActive(r) : !isActive(r));
+    if (q) L = L.filter(r => JSON.stringify([r.title, r.d, r.byName, r.holderName]).includes(q));
+    if (kind === "room") L.sort((a, b) => (a.day + (a.d || {}).from).localeCompare(b.day + (b.d || {}).from));
+    if (["contract", "license", "case"].includes(kind)) L.sort((a, b) => (a.end || "9999").localeCompare(b.end || "9999"));
+    const canAdd = ctx === "desk" && (!DR_K[kind].req || kind === "room");
+    const soon = ["contract", "license"].includes(kind) ? L0.filter(r => r.end && !["ended"].includes(r.status) && drLeft(r.end) <= 30).length : kind === "case" ? L0.filter(r => r.end && r.status !== "closed" && drLeft(r.end) <= 7 && drLeft(r.end) >= 0).length : 0;
+    el.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h2 style="margin:0">${DR_TAB_N[kind]}</h2>
+      <div class="row" style="gap:6px;flex-wrap:wrap">${[["active", "الحالية"], ["old", "المنتهية"], ["all", "الكل"]].map(([k, v]) => `<button class="btn sm ${filt === k ? "pri" : ""}" data-drfl="${k}">${v}</button>`).join("")}
+      <button class="btn sm" id="drRe">↻ تحديث</button>${canAdd ? `<button class="btn sm gold" id="drAdd">+ إضافة</button>` : ""}${kind === "room" && ctx === "desk" ? `<button class="btn sm" id="drRm">القاعات</button>` : ""}${kind === "asset" ? `<button class="btn sm" id="drX">Excel</button>` : ""}</div></div>
+      ${soon ? `<div class="notice err" style="margin-top:8px">${kind === "case" ? `⚖️ ${soon} موعد خلال أسبوع` : `⏰ ${soon} ${kind === "contract" ? "عقد" : "ترخيص"} ينتهي خلال ٣٠ يوم أو منتهي`}</div>` : ""}
+      <p class="muted" style="margin:6px 0 0">${{maint: "طلبات الصيانة توصل من الإدارات والمدربين عن طريق زر «📋 الطلبات».", purchase: "طلبات الشراء من الإدارات: الشؤون الإدارية تراجعها وتكمّل عروض الأسعار (٣ عروض فوق ٥ آلاف)، ثم يعتمدها المدير التنفيذي، وفوق ٢٠ ألف يعتمدها المالك، ثم المالية تشتري وتسدد، والشؤون الإدارية تستلم.", room: "حجوزات القاعات من اليوم وطالع. الكل يقدر يحجز من «📋 الطلبات» والنظام يمنع التعارض.", asset: "كل أصل وعند مين عهدته. اللي على البوابة (إدارة أو مدرب) يوصله إشعار ويأكد الاستلام.", contract: "سجل العقود. الدليل التنظيمي يمنع توقيع أي عقد بدون مراجعة مكتوبة من الشؤون القانونية. ويوصلك تنبيه قبل الانتهاء بـ ٦٠ و٣٠ و٧ أيام.", license: "التراخيص والوثائق الرسمية مع تنبيه قبل انتهائها.", opinion: "أسئلة ومستندات ترسلها الإدارات للمراجعة القانونية.", case: "القضايا والشكاوى والمطالبات، مع تنبيه قبل كل موعد."}[kind]}</p>
+      <input type="text" id="drQ" placeholder="🔍 بحث…" value="${esc(q)}" style="margin-top:8px;width:100%"></div>
+      <div id="drFormBox"></div><div id="drList">${L.map(r => drCard(r, ctx)).join("") || `<div class="card empty">ما فيه شي هنا.</div>`}</div>`;
+    const again = () => { if (S.view === "admin" && $("#ab") && $("#ab").contains(el)) render(); else drSection(el, dept, kind, ctx); };
+    const box = el.querySelector("#drFormBox"), openForm = r => { drForm(box, kind, r, ok => { box.innerHTML = ""; if (ok) again(); }); box.scrollIntoView({block: "nearest"}); };
+    el.querySelectorAll("[data-drfl]").forEach(b => b.onclick = () => { F[kind] = b.dataset.drfl; again(); });
+    el.querySelector("#drRe").onclick = () => { F.force = true; again(); };
+    el.querySelector("#drQ").oninput = e => { F["q_" + kind] = e.target.value; clearTimeout(S._drQt); S._drQt = setTimeout(again, 350); };
+    if (el.querySelector("#drAdd")) el.querySelector("#drAdd").onclick = () => openForm(null);
+    if (el.querySelector("#drRm")) el.querySelector("#drRm").onclick = async () => {
+      const cur = await drRooms(true), v = prompt("أسماء القاعات، افصل بينها بفاصلة (،)", cur.join("، "));
+      if (v == null) return; const list = [...new Set(v.split(/[،,]/).map(x => x.trim()).filter(Boolean))].slice(0, 40);
+      try { await setDoc(ref("dcfg/rooms"), {list, at: new Date().toISOString()}); S.drRooms = list; toast("انحفظت القاعات ✓"); logAction("تعديل القاعات", list.join("، ")); } catch (e) { handleWriteErr(e); } };
+    if (el.querySelector("#drX")) el.querySelector("#drX").onclick = async () => { try { const X = await loadXLSX(); const wb = X.utils.book_new();
+      X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([["الأصل", "رقم الأصل", "الفئة", "الموقع", "الرقم التسلسلي", "القيمة", "تاريخ الشراء", "الحالة", "الوضع", "العهدة عند", "أكّد الاستلام"],
+        ...L0.map(r => { const d = r.d || {}; return [r.title, d.code || "", d.cat || "", d.place || "", d.serial || "", d.value || "", d.date || "", d.cond || "", DR_ST[r.status] || "", drHolderName(r), r.holderKind && r.holderKind !== "other" ? (r.ack === r.holder ? "نعم" : "لا") : ""]; })]), "العهد والأصول");
+      X.writeFile(wb, `العهد-والأصول-${today()}.xlsx`); } catch (e) { console.error(e); toast("تعذّر التصدير", 1); } };
+    drBind(el, L, again, openForm, ctx);
+  }).catch(e => { console.error(e); el.innerHTML = `<div class="card"><div class="notice err">تعذّر التحميل. ${/permission/i.test(String(e.message)) ? "ارفع ملف القواعد (firestore.rules) الجديد." : ""}</div></div>`; });
+}
+/* the department's own tabs (admaff / legal): pick the section from S.drSec */
+function drDeptTab(el, dept){
+  const ks = DR_DEPT_K[dept], k = ks.includes(S.drSec) ? S.drSec : ks[0];
+  drSection(el, dept, k, "desk");
+}
+/* the executive director and the owner: both departments under one tab */
+function drOverTab(el){
+  const ctx = S.adminRole === "auditor" ? "owner" : "desk";
+  const sec = S.drOver || "purchase", all = [...DR_DEPT_K.admaff, ...DR_DEPT_K.legal];
+  el.innerHTML = `<div class="card" style="padding:10px 12px"><div class="row" style="gap:6px;flex-wrap:wrap"><b style="align-self:center">🏢</b>${DR_DEPT_K.admaff.map(k => `<button class="btn sm ${sec === k ? "pri" : ""}" data-dro="${k}">${DR_TAB_N[k]}</button>`).join("")}
+    <b style="align-self:center;margin-inline-start:8px">⚖️</b>${DR_DEPT_K.legal.map(k => `<button class="btn sm ${sec === k ? "pri" : ""}" data-dro="${k}">${DR_TAB_N[k]}</button>`).join("")}</div></div><div id="drOv"></div>`;
+  el.querySelectorAll("[data-dro]").forEach(b => b.onclick = () => { S.drOver = b.dataset.dro; render(); });
+  drSection(el.querySelector("#drOv"), DR_K[all.includes(sec) ? sec : "purchase"].dept, all.includes(sec) ? sec : "purchase", ctx);
+}
+/* finance: approved purchases waiting to be bought and paid */
+function drFinCard(el){
+  drGet("fin", query(collection(db, "dreg"), where("kind", "==", "purchase"))).then(all => {
+    const L = all.filter(r => r.status === "fin");
+    if (!L.length) { el.innerHTML = ""; return; }
+    el.innerHTML = `<div class="card"><h2 style="margin:0">🛒 طلبات شراء معتمدة بانتظار التنفيذ (${L.length})</h2><p class="muted" style="margin:4px 0 0">اشترِ وسدّد، وارفع الفاتورة، واضغط «تم الشراء والسداد». الاستلام عند الشؤون الإدارية.</p></div><div id="drFinL">${L.map(r => drCard(r, "fin")).join("")}</div>`;
+    drBind(el, L, () => { S.dr.fin && (S.dr.fin.t = 0); drFinCard(el); }, () => {}, "fin");
+  }).catch(e => { console.error(e); el.innerHTML = ""; });
+}
+/* «📋 الطلبات»: anyone (departments and trainers) asks الشؤون الإدارية / القانونية, follows their requests and confirms custody */
+async function drModal(tab){
+  S._drTab = tab || S._drTab || "new";
+  const t = S._drTab, kinds = Object.keys(DR_K).filter(k => DR_K[k].req && drCanAsk(k));
+  $("#modalBox").innerHTML = `<div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">📋 الطلبات</h2><button class="btn sm" id="drX">إغلاق</button></div>
+    <div class="tabs" style="margin:8px 0">${[["new", "طلب جديد"], ["mine", "طلباتي"], ["held", "عهدتي"], ["rooms", "حجوزات القاعات"]].map(([k, v]) => `<button class="tab ${t === k ? "on" : ""}" data-drt="${k}">${v}</button>`).join("")}</div><div id="drMB"><div class="muted">جاري التحميل…</div></div>`;
+  $("#modal").classList.add("on");
+  $("#drX").onclick = () => closeModal();
+  $("#modalBox").querySelectorAll("[data-drt]").forEach(b => b.onclick = () => drModal(b.dataset.drt));
+  const box = $("#drMB"), again = () => drModal(t);
+  try {
+    if (t === "new") {
+      box.innerHTML = `<p class="muted" style="margin:0 0 8px">اختر نوع الطلب:</p><div class="row" style="gap:8px;flex-wrap:wrap">${kinds.map(k => `<button class="btn" data-drnew="${k}">${DR_K[k].ic} ${DR_K[k].n}<div class="muted" style="font-size:11px">${ROLES[DR_K[k].dept]}</div></button>`).join("")}</div><div id="drNF" style="margin-top:10px"></div>`;
+      box.querySelectorAll("[data-drnew]").forEach(b => b.onclick = () => drForm(box.querySelector("#drNF"), b.dataset.drnew, null, ok => { if (ok) drModal("mine"); else box.querySelector("#drNF").innerHTML = ""; }));
+    }
+    if (t === "mine") {
+      const L = (await drGet("mine", drMineQ())).filter(r => DR_K[r.kind] && DR_K[r.kind].req);
+      box.innerHTML = L.map(r => drCard(r, "mine")).join("") || `<div class="empty">ما أرسلت طلبات للحين.</div>`;
+      drBind(box, L, again, r => drForm(box, r.kind, r, () => again()), "mine");
+    }
+    if (t === "held") {
+      const L = (await drGet("held", drHeldQ())).filter(r => r.kind === "asset" && r.status !== "retired");
+      box.innerHTML = `<p class="muted" style="margin:0 0 8px">الأصول المسجّلة عهدة باسمك عند الشؤون الإدارية. أكّد استلام أي عهدة جديدة.</p>` + (L.map(r => drCard(r, "held")).join("") || `<div class="empty">ما عليك عهد مسجّلة.</div>`);
+      drBind(box, L, again, () => {}, "held");
+    }
+    if (t === "rooms") {
+      const [L, rooms] = await Promise.all([drBookings(), drRooms()]), act = L.filter(r => r.status === "booked").sort((a, b) => (a.day + (a.d || {}).from).localeCompare(b.day + (b.d || {}).from));
+      box.innerHTML = `<p class="muted" style="margin:0 0 8px">القاعات: ${rooms.map(esc).join("، ") || "ما فيه قاعات مضافة"}. للحجز: «طلب جديد» ← «حجز قاعة».</p>` + (act.map(r => drCard(r, r.by === drMe() ? "mine" : "view")).join("") || `<div class="empty">ما فيه حجوزات قادمة.</div>`);
+      drBind(box, act, again, () => {}, "mine");
+    }
+  } catch (e) { console.error(e); box.innerHTML = `<div class="notice err">تعذّر التحميل${/permission/i.test(String(e.message)) ? ": ارفع ملف القواعد الجديد" : ""}.</div>`; }
+}
+/* the department's badge: open requests waiting on it (only when its records were loaded already) */
+const drBadge = (dept, kind) => { const c = S.dr["dept:" + dept]; if (!c) return ""; const n = c.L.filter(r => r.kind === kind && (kind === "purchase" ? ["review", "recv"].includes(r.status) : ["maint", "opinion"].includes(kind) ? r.status === "open" : ["contract", "license"].includes(kind) ? r.end && r.status !== "ended" && drLeft(r.end) <= 30 : kind === "case" ? r.end && r.status !== "closed" && drLeft(r.end) <= 7 && drLeft(r.end) >= 0 : false)).length; return n ? ` (${n})` : ""; };
+
 /* ---------- technical support: anyone reports a problem (text + screenshot) to the tech department, which answers in the ticket ---------- */
 const TK_ST = {open: "جديد", doing: "قيد العمل", done: "انحلت ✓"}, TK_PILL = {open: "a", doing: "l", done: "p"};
 const tkMe = () => S.role === "student" ? (S.myNum ? "st-" + S.myNum : "") : S.role === "trainer" ? (S.me || "") : S.role === "admin" ? S.adminRole : "";
@@ -1003,8 +1331,8 @@ function techTicketsTab(el){
 }
 
 /* ---------- meetings: the general administration or the auditor invites every department or chosen ones ---------- */
-const MEET_DEPTS = ["admin", "academic", "finance", "hr", "admission", "business", "auditor", "tech"];
-const MEET_N = {admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", hr: "الموارد البشرية", admission: "القبول والتسجيل", business: "الشراكات", auditor: "الجهة الرقابية", tech: "القسم التقني"};
+const MEET_DEPTS = ["admin", "academic", "finance", "hr", "admission", "business", "auditor", "tech", "admaff", "legal"];
+const MEET_N = {admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", hr: "الموارد البشرية", admission: "القبول والتسجيل", business: "التسويق والعلاقات العامة", auditor: "الجهة الرقابية", tech: "القسم التقني", admaff: "الشؤون الإدارية", legal: "الشؤون القانونية"};
 const meetBoss = () => S.role === "admin" && ["admin", "auditor"].includes(S.adminRole);
 const meetWhen = m => `${m.date || ""}T${m.time || "00:00"}`;
 const meetUpcoming = () => (S.meetings || []).filter(m => m.status !== "cancelled" && meetWhen(m) >= today() + "T00:00");
@@ -1760,11 +2088,12 @@ function renderTop(){
     if (S.role === "trainer" && S.trainers[S.me]) who = trainerTitle(S.trainers[S.me]);
     if (S.role === "admin") who = ROLES[S.adminRole];
     if (S.role === "student" && S.myStudent) who = S.myStudent.name;
-    w.innerHTML = `<span>${esc(who)}</span>${S.role ? `<button class="btn ghost sm" id="guideBtn">📘 الأدلة</button>${S.role === "trainer" || S.role === "student" ? `<button class="btn ghost sm" id="corrBtn">📢 التعاميم${corrBadge()}</button>` : ""}${S.adminRole === "tech" && S.role === "admin" ? "" : `<button class="btn ghost sm" id="tkBtn">🛠️ الدعم التقني${tkMineBadge()}</button>`}` : ""}${S.site && S.site.vapid && !pushOn() ? `<button class="btn ghost sm" id="pushBtn">تفعيل الإشعارات</button>` : ""}<button class="btn ghost sm" id="out">خروج</button>`;
+    w.innerHTML = `<span>${esc(who)}</span>${S.role ? `<button class="btn ghost sm" id="guideBtn">📘 الأدلة</button>${S.role === "trainer" || S.role === "student" ? `<button class="btn ghost sm" id="corrBtn">📢 التعاميم${corrBadge()}</button>` : ""}${(S.role === "trainer" || (S.role === "admin" && S.adminRole !== "auditor")) ? `<button class="btn ghost sm" id="drBtn">📋 الطلبات</button>` : ""}${S.adminRole === "tech" && S.role === "admin" ? "" : `<button class="btn ghost sm" id="tkBtn">🛠️ الدعم التقني${tkMineBadge()}</button>`}` : ""}${S.site && S.site.vapid && !pushOn() ? `<button class="btn ghost sm" id="pushBtn">تفعيل الإشعارات</button>` : ""}<button class="btn ghost sm" id="out">خروج</button>`;
     if ($("#pushBtn")) $("#pushBtn").onclick = () => enablePush(false);
     if ($("#guideBtn")) $("#guideBtn").onclick = () => guidesModal();
     if ($("#corrBtn")) $("#corrBtn").onclick = () => { watchCorr(); S._corrOpen = null; S._corrList = true; corrModal(); };
     if ($("#tkBtn")) $("#tkBtn").onclick = () => ticketsModal();
+    if ($("#drBtn")) $("#drBtn").onclick = () => drModal("new");
     $("#out").onclick = () => { S.view = "home"; logout(); };
   } else if (S.view !== "home") {
     w.innerHTML = `<button class="btn ghost sm" id="homeBtn">الرئيسية</button>`;
@@ -3991,33 +4320,34 @@ function writeGroup(gid, d){
 
 function renderAdmin(app){
   if (RO()) {
-    const tabsRO = [["tasks", "المهام" + taskBadge()], ["corr", "الصادر والوارد"], ["meet", "الاجتماعات" + meetBadge()], ["memos", "المراسلات" + memoBadge()], ["weekly", "التقرير الأسبوعي"], ["dash", "لوحة اليوم"], ["kpi", "المؤشرات"], ["follow", "المتابعة"], ["report", "التقارير"], ["finance", "المالية"], ["hr", "الموارد البشرية"], ["trmsgs", "رسائل المدربين"], ["sreq", "طلبات الإجازة"], ["logs", "سجل الإدارات"], ["archive", "الأرشيف"]];
+    const tabsRO = [["tasks", "المهام" + taskBadge()], ["corr", "الصادر والوارد"], ["meet", "الاجتماعات" + meetBadge()], ["memos", "المراسلات" + memoBadge()], ["dradm", "🏢⚖️ الإدارية والقانونية"], ["weekly", "التقرير الأسبوعي"], ["dash", "لوحة اليوم"], ["kpi", "المؤشرات"], ["follow", "المتابعة"], ["report", "التقارير"], ["finance", "المالية"], ["hr", "الموارد البشرية"], ["trmsgs", "رسائل المدربين"], ["sreq", "طلبات الإجازة"], ["logs", "سجل الإدارات"], ["archive", "الأرشيف"]];
     if (!tabsRO.some(([k]) => k === S.aTab)) S.aTab = "tasks";
     app.innerHTML = `<div class="notice">بوابة الجهة الرقابية: تطّلع على كل أعمال المعهد وتصدّرها، وترسل مهام للإدارات وتستلم تقاريرها. التعديل على البيانات يبقى عند الإدارات.</div><div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabsRO.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
     app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
-    ({corr: corrTab, tasks: tasksTab, meet: meetingsTab, memos: memosTab, weekly: weeklyTab, dash: adminDash, kpi: adminKpi, follow: adminFollow, report: adminReport, finance: adminFinance, hr: hrTab, trmsgs: adminTrMsgs, sreq: staffReqsView, logs: adminLogs, archive: adminArchive})[S.aTab]($("#ab"));
+    ({dradm: drOverTab, corr: corrTab, tasks: tasksTab, meet: meetingsTab, memos: memosTab, weekly: weeklyTab, dash: adminDash, kpi: adminKpi, follow: adminFollow, report: adminReport, finance: adminFinance, hr: hrTab, trmsgs: adminTrMsgs, sreq: staffReqsView, logs: adminLogs, archive: adminArchive})[S.aTab]($("#ab"));
     if (["finance", "hr", "logs"].includes(S.aTab)) ownerReadOnly($("#ab"));
     if (RO()) app.querySelectorAll("#ab [data-issue], #issueAll, #cIssue, [data-rc], [data-twa], [data-wabs], [data-warn]").forEach(x => x.remove());
     return;
   }
   if (FIN()) {
-    app.innerHTML = `<div id="ab"></div>`; adminFinance($("#ab")); return;
+    app.innerHTML = `<div id="drFin"></div><div id="ab"></div>`; adminFinance($("#ab")); drFinCard($("#drFin")); return;
   }
   if (MAILONLY()) {
-    const mt = [...(S.adminRole === "admission" ? [["adm", "القبول والتسجيل" + appBadge()]] : []), ...(S.adminRole === "hr" ? [["hr", "الموارد البشرية"]] : []), ...(S.adminRole === "tech" ? [["tickets", "البلاغات التقنية" + tkBadge()]] : []), ["memos", "المراسلات" + memoBadge()], ["meet", "الاجتماعات" + meetBadge()], ["corr", "الصادر والوارد" + corrBadge()], ["mail", "البريد" + mailBadge()], ["tasks", "مهام الجهة الرقابية" + taskBadge()], ["sreq", "طلبات الإجازة" + srBadge()]];
+    const mt = [...(S.adminRole === "admission" ? [["adm", "القبول والتسجيل" + appBadge()]] : []), ...(S.adminRole === "hr" ? [["hr", "الموارد البشرية"]] : []), ...(S.adminRole === "tech" ? [["tickets", "البلاغات التقنية" + tkBadge()]] : []), ...((DR_DEPT_K[S.adminRole] || []).map(k => ["dr_" + k, DR_TAB_N[k] + drBadge(S.adminRole, k)])), ["memos", "المراسلات" + memoBadge()], ["meet", "الاجتماعات" + meetBadge()], ["corr", "الصادر والوارد" + corrBadge()], ["mail", "البريد" + mailBadge()], ["tasks", "مهام الجهة الرقابية" + taskBadge()], ["sreq", "طلبات الإجازة" + srBadge()]];
     if (!mt.some(([k]) => k === S.aTab)) S.aTab = mt[0][0];
     app.innerHTML = `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${mt.map(([k, v]) => `<button class="tab ${S.aTab === k ? "on" : ""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
     app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
+    if (S.aTab.startsWith("dr_")) { S.drSec = S.aTab.slice(3); drDeptTab($("#ab"), S.adminRole); return; }
     ({corr: corrTab, adm: admTab, hr: hrTab, tickets: techTicketsTab, meet: meetingsTab, memos: memosTab, mail: mailTab, tasks: tasksTab, sreq: staffReqsView})[S.aTab]($("#ab")); return;
   }
-  const tabs = [["dash","لوحة اليوم"],["corr","الصادر والوارد" + corrBadge()],...(["admin", "academic"].includes(S.adminRole) ? [["adm","القبول والتسجيل" + appBadge()]] : []),["kpi","المؤشرات"],["groups","المقررات والطلاب"],["students","الطلاب"],["msgs","الرسائل الجماعية"],["trainers","المدربين والرموز"],["grades","الدرجات"],["exams","الاختبارات"],["camp","المعسكر"],["follow","المتابعة"],["excuses","الأعذار"],["areqs","طلبات الطلاب" + ((S.aReqs || []).some(r => r.status === "new") ? ` (${S.aReqs.filter(r => r.status === "new").length})` : "")],["evals","التقييمات"],["report","التقارير"],["courses","الدورات والشهادات"],["sign","طلبات التوقيع"],["tasks","مهام الجهة الرقابية" + taskBadge()],["trmsgs","رسائل المدربين" + trmBadge()],["sreq","طلبات الإجازة" + srBadge()],["memos","المراسلات" + memoBadge()],["meet","الاجتماعات" + meetBadge()],...(S.adminRole === "admin" ? [["tickets","البلاغات التقنية" + tkBadge()]] : []),["mail","البريد" + mailBadge()],...(MEET() ? [["live","المحاضرات والتسجيلات"]] : []),["system","النظام"],...(S.adminRole === "admin" ? [["hr","الموارد البشرية"]] : []),...(SEES_FIN() ? [["finance","المالية" + ((S.fReqs || []).some(r => r.status === "fin_signed") ? ` (${(S.fReqs || []).filter(r => r.status === "fin_signed").length})` : "")]] : []),["archive","الأرشيف"],...(S.adminRole === "admin" ? [["weekly","التقرير الأسبوعي"],["logs","السجل"]] : [])];
+  const tabs = [["dash","لوحة اليوم"],["corr","الصادر والوارد" + corrBadge()],...(["admin", "academic"].includes(S.adminRole) ? [["adm","القبول والتسجيل" + appBadge()]] : []),["kpi","المؤشرات"],["groups","المقررات والطلاب"],["students","الطلاب"],["msgs","الرسائل الجماعية"],["trainers","المدربين والرموز"],["grades","الدرجات"],["exams","الاختبارات"],["camp","المعسكر"],["follow","المتابعة"],["excuses","الأعذار"],["areqs","طلبات الطلاب" + ((S.aReqs || []).some(r => r.status === "new") ? ` (${S.aReqs.filter(r => r.status === "new").length})` : "")],["evals","التقييمات"],["report","التقارير"],["courses","الدورات والشهادات"],["sign","طلبات التوقيع"],["tasks","مهام الجهة الرقابية" + taskBadge()],["trmsgs","رسائل المدربين" + trmBadge()],["sreq","طلبات الإجازة" + srBadge()],["memos","المراسلات" + memoBadge()],["meet","الاجتماعات" + meetBadge()],...(S.adminRole === "admin" ? [["tickets","البلاغات التقنية" + tkBadge()]] : []),["mail","البريد" + mailBadge()],...(MEET() ? [["live","المحاضرات والتسجيلات"]] : []),["system","النظام"],...(S.adminRole === "admin" ? [["hr","الموارد البشرية"],["dradm","الإدارية والقانونية" + ((c => c ? ` (${c})` : "")(((S.dr["dept:admaff"] || {}).L || []).filter(r => r.kind === "purchase" && r.status === "exec").length))]] : []),...(SEES_FIN() ? [["finance","المالية" + ((S.fReqs || []).some(r => r.status === "fin_signed") ? ` (${(S.fReqs || []).filter(r => r.status === "fin_signed").length})` : "")]] : []),["archive","الأرشيف"],...(S.adminRole === "admin" ? [["weekly","التقرير الأسبوعي"],["logs","السجل"]] : [])];
   if (!tabs.some(([k]) => k === S.aTab)) S.aTab = "dash";
   const waiting = Object.values(S.grades).filter(x => x.status === "submitted").length;
   app.innerHTML = `${backupNag()}${quotaNag()}${absNag()}${S.sys && S.sys.maintenance ? `<div class="notice err">وضع الصيانة شغّال: الموقع مقفل على الكل ما عدا الإدارة. تطفيه من تبويب "النظام".</div>` : ""}<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}${k === "grades" && waiting ? ` (${waiting})` : ""}${k === "follow" && S.allAtt && ["academic", "admin"].includes(S.adminRole) ? (n => n ? ` (${n})` : "")(absAlerts().alerts.filter(alertWaiting).length) : ""}${k === "excuses" && (S.excuses || []).filter(x => x.status === "pending").length ? ` (${S.excuses.filter(x => x.status === "pending").length})` : ""}</button>`).join("")}</div></div><div id="ab"></div>`;
   app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
   if ($("#nagAbs")) $("#nagAbs").onclick = () => { S.aTab = "follow"; render(); };
   if ($("#nagBk")) $("#nagBk").onclick = async e => { e.target.disabled = true; try { await backupAll(); toast("نزلت النسخة الاحتياطية"); render(); } catch (x) { console.error(x); toast("تعذّر أخذ النسخة"); e.target.disabled = false; } };
-  ({corr: corrTab, adm: admTab, meet: meetingsTab, tickets: techTicketsTab, dash: adminDash, kpi: adminKpi, groups: adminGroups, students: adminStudents, msgs: adminMessages, trainers: adminTrainers, grades: adminGrades, exams: adminExams, camp: campTab, hr: hrTab, follow: adminFollow, excuses: adminExcuses, areqs: adminAcReqs, evals: adminEvals, report: adminReport, courses: adminCourses, sign: signRequests, tasks: tasksTab, weekly: weeklyTab, trmsgs: adminTrMsgs, sreq: staffReqsView, memos: memosTab, mail: mailTab, live: liveTab, system: el => { adminSystem(el); attArchiveCard(el); }, archive: adminArchive, finance: adminFinance, logs: adminLogs})[S.aTab]($("#ab"));
+  ({dradm: drOverTab, corr: corrTab, adm: admTab, meet: meetingsTab, tickets: techTicketsTab, dash: adminDash, kpi: adminKpi, groups: adminGroups, students: adminStudents, msgs: adminMessages, trainers: adminTrainers, grades: adminGrades, exams: adminExams, camp: campTab, hr: hrTab, follow: adminFollow, excuses: adminExcuses, areqs: adminAcReqs, evals: adminEvals, report: adminReport, courses: adminCourses, sign: signRequests, tasks: tasksTab, weekly: weeklyTab, trmsgs: adminTrMsgs, sreq: staffReqsView, memos: memosTab, mail: mailTab, live: liveTab, system: el => { adminSystem(el); attArchiveCard(el); }, archive: adminArchive, finance: adminFinance, logs: adminLogs})[S.aTab]($("#ab"));
 }
 
 function adminDash(el){
@@ -4698,7 +5028,7 @@ function adminMessages(el){
   M.epick = M.epick || []; M.depts = M.depts || [];
   const EMP_OK = S.adminRole === "admin" || S.adminRole === "hr"; if (EMP_OK) hrSubs();   // the institute's employees (HR list) reach them on WhatsApp
   const emps = () => (S.hrStaff || []).filter(e => e.active !== false), empById = id => (S.hrStaff || []).find(e => e.id === id);
-  const ROLE_N = {admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", auditor: "المراجع", admission: "القبول والتسجيل", business: "الأعمال", hr: "الموارد البشرية"};
+  const ROLE_N = {admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", auditor: "المراجع", admission: "القبول والتسجيل", business: "التسويق والعلاقات العامة", hr: "الموارد البشرية", tech: "القسم التقني", admaff: "الشؤون الإدارية", legal: "الشؤون القانونية"};
   const KINDS = [["st_all", "كل الطلاب"], ["st_m", "الطلاب (ذكور)"], ["st_f", "الطالبات"], ["st_group", "طلاب مقرر أو شعبة"], ["st_pick", "طلاب أختارهم بالاسم"], ["st_warn", "الطلاب اللي عليهم إنذار"], ["st_abs", "الطلاب اللي غيابهم عالي"], ...(SEES_FIN() && S.finAcc ? [["st_fee", "الطلاب اللي عليهم رسوم متبقية"]] : []), ["tr_all", "كل المدربين"], ["tr_pick", "مدربين أختارهم"], ["staff", "موظفي الإدارات (حسابات البوابة)"], ...(EMP_OK ? [["emp_all", "👥 كل موظفي المنشأة"], ["emp_dept", "👥 موظفي قسم"], ["emp_pick", "👥 موظفين أختارهم"]] : [])];
   const stName = n => (S.students[n] || {}).name || n, trName = t => (S.trainers[t] && trainerTitle(S.trainers[t])) || t;
   el.innerHTML = `
@@ -5239,14 +5569,14 @@ function adminFollow(el){
    Messages arrive through Cloudflare Email Routing into the push service, which stores them in mbox/{role}/m (list) and mbox/{role}/b (body). */
 const MAIL_DOMAIN = "osustl.com";
 const MBOXES = {ceo: ["admin", "الإدارة العامة"], info: ["admin", "الإيميل العام"], academic: ["academic", "الشؤون الأكاديمية"], finance: ["finance", "المالية"],
-  admission: ["admission", "القبول والتسجيل"], support: ["admission", "خدمة العملاء"], hr: ["hr", "الموارد البشرية"], business: ["business", "قطاع الشركات"], tech: ["tech", "القسم التقني"]};
+  admission: ["admission", "القبول والتسجيل"], support: ["admission", "خدمة العملاء"], hr: ["hr", "الموارد البشرية"], business: ["business", "التسويق والعلاقات العامة"], tech: ["tech", "القسم التقني"], "admin-affairs": ["admaff", "الشؤون الإدارية"], legal: ["legal", "الشؤون القانونية"]};
 const MAIL_ROLES_ALL = ["admin", "academic", "finance", ...MAIL_STAFF];
 // a trainer's own mailbox: tr{number}@osustl.com, kept under mbox/{trainer id}
 // the address is the name the administration chose (t.mail), else tr{number}; tr{number} keeps working as a second address
 const trLocal = t => t ? (t.mail || (t.num ? "tr" + t.num : "")) : "";
 const trMe = () => S.role === "trainer" && S.me && S.trainers && S.trainers[S.me] && trLocal(S.trainers[S.me]) ? S.trainers[S.me] : null;
 const trAddr = t => trLocal(t) ? `${trLocal(t)}@${MAIL_DOMAIN}` : "";
-const MAIL_RESERVED = ["tech", "it", "ceo", "info", "academic", "finance", "admission", "support", "hr", "business", "admin", "postmaster", "abuse", "noreply", "no-reply", "root", "webmaster", "hostmaster", "security", "mail", "contact", "sales"];
+const MAIL_RESERVED = ["tech", "it", "ceo", "info", "academic", "finance", "admission", "support", "hr", "business", "admin-affairs", "legal", "admin", "postmaster", "abuse", "noreply", "no-reply", "root", "webmaster", "hostmaster", "security", "mail", "contact", "sales"];
 const myMailRoles = () => trMe() ? [S.me] : S.adminRole === "admin" ? MAIL_ROLES_ALL : MAIL_ROLES_ALL.includes(S.adminRole) ? [S.adminRole] : [];
 const myBoxes = () => trMe() ? [trLocal(trMe())] : Object.keys(MBOXES).filter(b => S.adminRole === "admin" || MBOXES[b][0] === S.adminRole);
 const mailAll = () => Object.values(S.mail || {}).flat().sort((a, b) => (b.at || "").localeCompare(a.at || ""));
@@ -5477,9 +5807,9 @@ function mailCompose(el){
 /* ---------- department chat (WhatsApp-like): one conversation with each department, and a group for all of them.
    memos/{id}: from, to (a department, or "all"), text, at, readAt (direct messages). The general administration
    and the auditor can read every message; the others only their own and the group's. */
-const CHAT_ROLES = ["admin", "academic", "finance", "hr", "admission", "business", "auditor", "tech"];
+const CHAT_ROLES = ["admin", "academic", "finance", "hr", "admission", "business", "auditor", "tech", "admaff", "legal"];
 const CHAT_TOP = ["admin", "auditor"];                                   // reached only by the departments, never by trainers
-const CHAT_TR_DEPTS = ["academic", "finance", "hr", "admission", "business", "tech"];
+const CHAT_TR_DEPTS = ["academic", "finance", "hr", "admission", "business", "tech", "admaff", "legal"];
 const chatMe = () => S.role === "trainer" ? S.me : S.adminRole;
 const chatName = k => CHAT_N[k] || (S.trainers && S.trainers[k] ? trainerTitle(S.trainers[k]) : /^t-/.test(k) ? "مدرب" : k);
 const chatTrainers = () => Object.values(S.trainers || {}).filter(t => t.id !== chatMe() && !(S.disabled || {})[t.id] && !t.disabled).sort((a, b) => String(a.name).localeCompare(String(b.name), "ar")).map(t => t.id);
@@ -5489,7 +5819,7 @@ function chatContacts(){
   if (CHAT_TOP.includes(me)) return ["all", ...CHAT_ROLES.filter(r => r !== me)];
   return ["all", ...CHAT_ROLES.filter(r => r !== me), ...chatTrainers()];
 }
-const CHAT_N = {tech: "🛠️ القسم التقني", all: "👥 كل الإدارات", admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", hr: "الموارد البشرية", admission: "القبول والتسجيل", business: "الشراكات وقطاع الشركات", auditor: "الجهة الرقابية"};
+const CHAT_N = {tech: "🛠️ القسم التقني", all: "👥 كل الإدارات", admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", hr: "الموارد البشرية", admission: "القبول والتسجيل", business: "التسويق والعلاقات العامة", auditor: "الجهة الرقابية", admaff: "🏢 الشؤون الإدارية", legal: "⚖️ الشؤون القانونية"};
 const MEMO_ROLES = CHAT_ROLES;
 const memoSeenKey = () => "memoSeenAll_" + chatMe();
 const memoSeenAll = () => { try { return localStorage.getItem(memoSeenKey()) || ""; } catch { return ""; } };
@@ -5678,7 +6008,7 @@ function adminTrMsgs(el){
    staffReqs/{id}: the request moves along roles[] (cur = whose turn); each step approves or rejects with a note.
    trainer → academic affairs → human resources → general administration; department head → human resources → general administration */
 const SR_CHAIN = r => r === "trainer" ? ["academic", "hr", "admin"] : r === "hr" ? ["admin"] : ["hr", "admin"];
-const SR_CAN = () => S.role === "trainer" ? !!S.me : S.role === "admin" && ["academic", "finance", "hr", "admission", "business", "tech"].includes(S.adminRole);
+const SR_CAN = () => S.role === "trainer" ? !!S.me : S.role === "admin" && ["academic", "finance", "hr", "admission", "business", "tech", "admaff", "legal"].includes(S.adminRole);
 const SR_APPROVER = () => S.role === "admin" && ["academic", "hr", "admin"].includes(S.adminRole);
 const SR_ROLE_N = {academic: "الشؤون الأكاديمية", hr: "الموارد البشرية", admin: "الإدارة العامة"};
 const SR_KIND = {leave: "طلب إجازة", sick: "عذر طبي"};
@@ -6549,7 +6879,7 @@ function adminLogs(el){
 /* ---------- owner's portal: tasks to the departments and the weekly report ----------
    The owner (the oversight account) sends a task to one department. Only that department, the general administration
    and the owner see it. The department reports back (text + an optional file); the owner approves it or returns it. */
-const TASK_TO = {tech: "القسم التقني", admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", admission: "القبول والتسجيل وخدمة العملاء", business: "الشراكات وقطاع الشركات", hr: "الموارد البشرية"};
+const TASK_TO = {tech: "القسم التقني", admin: "الإدارة العامة", academic: "الشؤون الأكاديمية", finance: "المالية", admission: "القبول والتسجيل وخدمة العملاء", business: "التسويق والعلاقات العامة", hr: "الموارد البشرية", admaff: "الشؤون الإدارية", legal: "الشؤون القانونية"};
 const TASK_ST = {new: "جديدة", seen: "قيد التنفيذ", done: "منجزة · بانتظار اعتماد الجهة الرقابية", returned: "معادة للاستكمال", closed: "معتمدة ✓"};
 const TASK_PILL = {new: "l", seen: "", done: "l", returned: "a", closed: "p"};
 const TASK_MAX = 760 * 1024;
