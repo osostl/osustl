@@ -4722,6 +4722,100 @@ function fillMount(el, k){
   };
 }
 
+/* ---------- link phones and emails to finance accounts by NAME (a sheet with no academic numbers) ----------
+   names are normalized (hamza, taa marbuta, alif maqsura, عبد ال, بن/ابن/بنت), then each row is matched:
+   sure = same full name, or a unique account whose name contains the row's names in order with the same first and last name;
+   check = more than one candidate, or two rows on one account; none = no account. Nothing is written before review,
+   and only empty fields are filled (finAccounts phone/email; studentSecrets phone/email too for the executive director). */
+const nlToks = s => norm(s).replace(/[^ء-ي\s]/g, " ").split(" ").filter(t => t && !["بن", "ابن", "بنت"].includes(t));
+function nlScore(E, C){   // symmetric: the shorter name must fit inside the longer one
+  if (!E.length || !C.length) return 0;
+  if (E.join(" ") === C.join(" ")) return 100;
+  const [A, B] = E.length <= C.length ? [E, C] : [C, E], strip = t => t.replace(/^ال/, ""), eq = (x, y) => x === y || strip(x) === strip(y);
+  if (!eq(A[0], B[0])) return 0;
+  if (A.length < 2) return 55;   // one name only: never sure, offered for review
+  if (A.every((t, k) => eq(t, B[k]))) return 90;   // «لجين عادل» ↔ «لجين عادل محمد العنزي»
+  const lastOk = eq(A[A.length - 1], B[B.length - 1]);
+  let j = 1, inOrder = true; for (const t of A.slice(1)) { while (j < B.length && !eq(B[j], t)) j++; if (j >= B.length) { inOrder = false; break; } j++; }
+  if (inOrder && lastOk) return 85;   // «محمد سالم القويزان» ↔ «محمد سالم عبدالله القويزان»
+  if (inOrder) return 60;
+  return lastOk ? 50 : 0;
+}
+function nameLinkCard(el){
+  if (!["admin", "finance"].includes(S.adminRole) || RO()) return;
+  el.insertAdjacentHTML("beforeend", `<div class="card" id="nlCard"><h2 style="margin-top:0">🔗 ربط الجوال والإيميل بالأسماء</h2>
+    <p class="muted" style="margin-top:0">لملف Excel ما فيه أرقام أكاديمية: عمود <b>الاسم</b>، ومعه <b>الجوال</b> و/أو <b>الإيميل</b>. البوابة تطابق الأسماء مع الحسابات المالية والمتدربين وتعرض لك النتيجة قبل الحفظ، وتعبّي الخانات الفاضية بس${S.adminRole === "admin" ? " (في الحساب المالي وملف المتدرب)" : " في الحساب المالي"}.</p>
+    <label class="btn sm pri" style="cursor:pointer">⬆️ اختيار ملف Excel<input type="file" id="nlF" accept=".xlsx,.xls,.csv" hidden></label><div id="nlOut"></div></div>`);
+  $("#nlF").onchange = async e => {
+    const file = e.target.files[0]; e.target.value = ""; if (!file) return;
+    const out = $("#nlOut"); out.innerHTML = `<p class="muted">جاري القراءة والمطابقة…</p>`;
+    let rows; try { const X = await loadXLSX(); const wb = X.read(await file.arrayBuffer()); rows = X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header: 1, defval: "", raw: false}); }
+    catch { out.innerHTML = ""; return toast("تعذّر قراءة الملف", 1); }
+    const H = (rows[0] || []).map(x => norm(String(x)));
+    const ci = re => H.findIndex(h => re.test(h));
+    const cN = ci(/اسم/), cP = ci(/جوال|هاتف|موبايل|phone|mobile/i), cE = ci(/ايميل|بريد|email|mail/i);
+    if (cN < 0 || (cP < 0 && cE < 0)) { out.innerHTML = ""; return toast("لازم الملف فيه عمود «الاسم» وعمود «الجوال» أو «الإيميل» في أول صف", 1); }
+    // candidates: every finance account and every student
+    const nums = [...new Set([...Object.keys(S.finAcc || {}), ...Object.keys(S.students || {})])];
+    const nameOf = n => ((S.students || {})[n] || {}).name || ((S.finAcc || {})[n] || {}).name || "";
+    const C = nums.map(n => ({n, name: nameOf(n), t: nlToks(nameOf(n))})).filter(c => c.t.length);
+    const mailOk = v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim()) ? String(v).trim().toLowerCase().slice(0, 120) : null;
+    const R = rows.slice(1).map((r, i) => ({i: i + 2, name: String(r[cN] || "").trim(), phone: cP >= 0 && String(r[cP]).trim() ? phoneOk(r[cP]) : "", phoneRaw: cP >= 0 ? String(r[cP]).trim() : "", email: cE >= 0 && String(r[cE]).trim() ? mailOk(r[cE]) : "", emailRaw: cE >= 0 ? String(r[cE]).trim() : ""})).filter(r => r.name);
+    R.forEach(r => {
+      const E = nlToks(r.name), sc = C.map(c => ({c, s: nlScore(E, c.t)})).filter(x => x.s >= 50).sort((a, b) => b.s - a.s);
+      r.cands = sc.slice(0, 6);
+      const top = sc[0], tie = sc.filter(x => top && x.s === top.s).length;
+      if (top && tie === 1 && top.s >= 85) { r.st = "sure"; r.pick = top.c.n; }
+      else if (top) { r.st = "check"; r.pick = tie === 1 && top.s >= 60 ? top.c.n : ""; }
+      else { r.st = "none"; r.pick = ""; }
+    });
+    const dup = {}; R.forEach(r => { if (r.pick) dup[r.pick] = (dup[r.pick] || 0) + 1; });
+    R.forEach(r => { if (r.pick && dup[r.pick] > 1) { r.st = "check"; r.dup = true; } });
+    const all = C.slice().sort((a, b) => a.name.localeCompare(b.name, "ar"));
+    const opts = (r) => `<option value="">— تجاهل —</option>${(r.st === "none" ? all.map(c => ({c, s: 0})) : r.cands).map(x => `<option value="${esc(x.c.n)}" ${x.c.n === r.pick ? "selected" : ""}>${esc(x.c.name)} · ${esc(x.c.n)}${(S.finAcc || {})[x.c.n] ? "" : " (بدون حساب مالي)"}</option>`).join("")}${r.st !== "none" ? `<option value="*">… اختيار من الكل</option>` : ""}`;
+    const cnt = k => R.filter(r => r.st === k).length;
+    const curOf = n => ({fin: (S.finAcc || {})[n] || {}, st: (S.stProf || {})[n] || {}});
+    const draw = () => {
+      out.innerHTML = `<div style="margin-top:10px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="pill p">✅ مطابق أكيد: ${cnt("sure")}</span><span class="pill l">⚠️ يحتاج تأكيدك: ${cnt("check")}</span><span class="pill a">❌ ما له مقابل: ${cnt("none")}</span>
+        <span class="muted">${R.filter(r => r.phoneRaw && !r.phone).length ? `· ${R.filter(r => r.phoneRaw && !r.phone).length} جوال غير صحيح` : ""} ${R.filter(r => r.emailRaw && !r.email).length ? `· ${R.filter(r => r.emailRaw && !r.email).length} إيميل غير صحيح` : ""}</span></div>
+        <p class="muted" style="margin:6px 0">راجع «يحتاج تأكيدك» و«ما له مقابل»: اختر المتدرب الصحيح أو «تجاهل». الأكيد تقدر تغيّره بعد.</p>
+        <div style="max-height:480px;overflow:auto;border:1px solid var(--line);border-radius:10px"><table class="tbl" style="width:100%;font-size:13px"><thead><tr><th>#</th><th>الاسم في الملف</th><th>الجوال</th><th>الإيميل</th><th>يرتبط بـ</th></tr></thead><tbody>
+        ${["check", "none", "sure"].flatMap(k => R.filter(r => r.st === k)).map(r => `<tr style="background:${r.st === "sure" ? "transparent" : r.st === "check" ? "rgba(201,165,76,.12)" : "rgba(179,38,30,.06)"}"><td>${r.i}</td><td>${esc(r.name)}${r.dup ? ` <span class="pill a" title="أكثر من صف على نفس المتدرب">مكرر</span>` : ""}</td>
+          <td dir="ltr">${r.phone ? esc("0" + r.phone.slice(3)) : r.phoneRaw ? `<span style="color:var(--abs)">${esc(r.phoneRaw)} ✗</span>` : "—"}</td><td dir="ltr" style="font-size:12px">${r.email ? esc(r.email) : r.emailRaw ? `<span style="color:var(--abs)">${esc(r.emailRaw)} ✗</span>` : "—"}</td>
+          <td><select data-nl="${r.i}" style="min-width:220px">${opts(r)}</select></td></tr>`).join("")}</tbody></table></div>
+        <div class="row" style="margin-top:8px;gap:8px"><button class="btn pri" id="nlGo">حفظ الربط</button><button class="btn" id="nlNo">إلغاء</button><span class="muted" id="nlSum"></span></div></div>`;
+      const sum = () => { const p = plan(); $("#nlSum").textContent = `بيتعبّى ${p.nF} خانة لـ ${p.list.length} متدرب${p.skip ? ` · ${p.skip} خانة موجودة أصلاً ما بتتغير` : ""}`; };
+      out.querySelectorAll("[data-nl]").forEach(s => s.onchange = () => { const r = R.find(x => x.i === +s.dataset.nl); if (s.value === "*") { r.st = "none"; r.pick = ""; draw(); return; } r.pick = s.value; sum(); });
+      $("#nlNo").onclick = () => { out.innerHTML = ""; };
+      $("#nlGo").onclick = async ev => {
+        const p = plan(); if (!p.list.length) return toast("ما فيه شي جديد ينحفظ");
+        const twice = Object.entries(p.list.reduce((a, x) => (a[x.n] = (a[x.n] || 0) + 1, a), {})).filter(([, v]) => v > 1);
+        if (twice.length) return toast(`فيه ${twice.length} متدرب مربوط بأكثر من صف، عدّلها أول`, 1);
+        ev.target.disabled = true; ev.target.textContent = "جاري الحفظ…";
+        try {
+          for (let i = 0; i < p.list.length; i += 200) { const b = writeBatch(db); p.list.slice(i, i + 200).forEach(x => { if (Object.keys(x.fin).length && (S.finAcc || {})[x.n]) b.set(ref("finAccounts/" + x.n), x.fin, {merge: true}); if (Object.keys(x.st).length) b.set(ref("studentSecrets/" + x.n), x.st, {merge: true}); }); await b.commit(); }
+          p.list.forEach(x => { if ((S.finAcc || {})[x.n]) Object.assign(S.finAcc[x.n], x.fin); if (Object.keys(x.st).length) { S.stProf[x.n] = {...(S.stProf[x.n] || {}), ...x.st}; if (x.st.phone) S.stPhones[x.n] = x.st.phone; } });
+          logAction("ربط جوال وإيميل بالأسماء", `${p.nF} خانة لـ ${p.list.length} متدرب من ملف ${file.name}`);
+          toast(`✓ انربط ${p.list.length} متدرب (${p.nF} خانة)`); out.innerHTML = `<div class="notice ok" style="margin-top:8px">✓ انحفظ. ${R.filter(r => !r.pick).length ? `${R.filter(r => !r.pick).length} صف ما انربط.` : ""}</div>`;
+        } catch (x) { ev.target.disabled = false; ev.target.textContent = "حفظ الربط"; handleWriteErr(x); }
+      };
+      sum();
+    };
+    const plan = () => {
+      const list = []; let nF = 0, skip = 0;
+      R.filter(r => r.pick).forEach(r => {
+        const n = r.pick, cur = curOf(n), fin = {}, st = {};
+        if (r.phone) { if (fillEmpty(cur.fin.phone)) fin.phone = r.phone; else if (cur.fin.phone !== r.phone) skip++; }
+        if (r.email) { if (fillEmpty(cur.fin.email)) fin.email = r.email; else if (cur.fin.email !== r.email) skip++; }
+        if (S.adminRole === "admin") { if (r.phone && fillEmpty(cur.st.phone)) st.phone = r.phone; if (r.email && fillEmpty(cur.st.email)) st.email = r.email; }
+        if (!(S.finAcc || {})[n]) { delete fin.phone; delete fin.email; }
+        const k = Object.keys(fin).length + Object.keys(st).length; if (k) { list.push({n, fin, st}); nF += k; }
+      });
+      return {list, nF, skip};
+    };
+    draw();
+  };
+}
 function adminStudents(el){ adminStudents0(el); fillMount(el, "st"); }
 function adminStudents0(el){
   const list = Object.values(S.students).sort((a,b) => a.num.localeCompare(b.num));
@@ -7878,6 +7972,7 @@ function openFinAccount(num){
       ${acc.plan === "qasima" ? `<p class="muted">الطالب يقسّط مع قسيمة بلس، والمعهد يستلم المبلغ كامل. سجّل الدفعة بطريقة "قسيمة بلس" لما يوصل المبلغ.</p>` : ""}
       <div class="row" style="margin-top:8px">
         <label class="f grow" for="fPh">جوال للتذكير (الطالب أو ولي الأمر)<input type="tel" id="fPh" dir="ltr" value="${esc(acc.phone || "")}" placeholder="05xxxxxxxx"></label>
+        <label class="f grow" for="fEm">الإيميل<input type="email" id="fEm" dir="ltr" maxlength="120" value="${esc(acc.email || "")}" placeholder="name@example.com"></label>
         <label class="f grow" for="fPar">سجّل عن طريق (للعمولة)<select id="fPar"><option value="">بدون شريك</option>${(S.finSet.partners || []).map(p => `<option value="${esc(p.id)}" ${acc.partner === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>
       </div>
       <div class="tbl" style="margin-top:10px"><table><thead><tr><th title="حدد أكثر من قسط وسجّلهم بدفعة وحدة">دفع</th><th>القسط</th><th>الاستحقاق (تقدر تغيّره)</th><th>المبلغ</th><th>الحالة</th><th>الإيصال</th></tr></thead><tbody>
@@ -7909,7 +8004,7 @@ function openFinAccount(num){
       ${rcptBtns("payments", p)}<button class="btn sm" data-prc="${esc(p.id)}">السند</button>${p.void ? `<button class="btn sm gold" data-pres="${esc(p.id)}">استرجاع</button>` : `<button class="btn sm danger" data-pv="${esc(p.id)}">إلغاء</button>`}</div>`).join("") || `<span class="muted">ما فيه دفعات</span>`}</div></div>
     <div class="row"><button class="btn sm" id="fStmt">كشف حساب PDF</button>${acc.phone ? `<a class="btn sm gold" target="_blank" rel="noopener" href="https://wa.me/${normPhone(acc.phone)}?text=${encodeURIComponent(finReminder(s, st))}">تذكير واتساب</a>` : ""}</div>`;
     $("#fx").onclick = () => { S._finModal = null; closeModal(); };
-    const readForm = () => { acc.program = $("#fP").value; acc.fee = Number($("#fFee").value) || 0; acc.discount = Number($("#fDis").value) || 0; acc.discountNote = $("#fDisN").value.trim(); acc.plan = $("#fPl").value; acc.start = $("#fSt").value; acc.months = Number($("#fMo").value) || 4; acc.second = $("#fSec").value; acc.phone = $("#fPh").value.trim(); acc.partner = $("#fPar").value;
+    const readForm = () => { acc.program = $("#fP").value; acc.fee = Number($("#fFee").value) || 0; acc.discount = Number($("#fDis").value) || 0; acc.discountNote = $("#fDisN").value.trim(); acc.plan = $("#fPl").value; acc.start = $("#fSt").value; acc.months = Number($("#fMo").value) || 4; acc.second = $("#fSec").value; acc.phone = $("#fPh").value.trim(); acc.email = ($("#fEm") ? $("#fEm").value.trim().toLowerCase().slice(0, 120) : acc.email || ""); acc.partner = $("#fPar").value;
       document.querySelectorAll("[data-idue]").forEach(x => { const k = Number(x.dataset.idue); if (acc.installments[k]) acc.installments[k].due = x.value; });
       document.querySelectorAll("[data-iamt]").forEach(x => { const k = Number(x.dataset.iamt); if (acc.installments[k]) acc.installments[k].amount = Number(x.value) || 0; }); };
     /* the installment total always follows the net: change one amount and the unpaid installments after it share the difference */
@@ -8127,7 +8222,7 @@ const daysAgo = d => Math.max(0, Math.round((new Date(today()) - new Date(d)) / 
 function finSoonText(s, st){
   return `السلام عليكم ${s.name}\nالرقم الأكاديمي: ${s.num}\n\nنذكّركم بموعد القسط القادم:\n${SAR(st.next.amount)} بتاريخ ${st.next.due}\nالمتبقي الكلي: ${SAR(st.remaining)}\n\nالمالية\n${INST_AR}`;
 }
-function finSettings(el){ finSettings0(el); fillMount(el, "fin"); }
+function finSettings(el){ finSettings0(el); nameLinkCard(el); fillMount(el, "fin"); }
 function finSettings0(el){
   const progs = S.finSet.programs || [], canPay = ["admin", "academic"].includes(S.adminRole);
   el.innerHTML = `<div class="card"><h2>👁️ المالية عند الطلاب</h2>
