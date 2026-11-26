@@ -810,7 +810,7 @@ function startData(){
     watchMemos(); watchTickets(); watchMeetings(); if (S.adminRole === "admission") watchApps(); watchCorr();
     if (!FIN()) S.subs.push(onSnapshot(collection(db, "acReqs"), snap => { S.aReqs = snap.docs.map(d => ({id: d.id, ...d.data()})); afterData(); }, () => {}));
     if (!FIN()) S.subs.push(onSnapshot(collection(db, "waivers"), snap => { S.waivers = {}; snap.docs.forEach(d => S.waivers[d.id] = d.data()); afterData(); }, () => {}));
-    if (SEES_FIN()) startFinance();
+    if (S.adminRole === "finance") ensureFin();   // the general administration loads finance only when a finance screen opens (Firebase daily reads)
     if (!RO()) S.subs.push(onSnapshot(collection(db, "finClear"), snap => { S.finClear = {}; snap.docs.forEach(d => S.finClear[d.id] = d.data()); S.finClearLoaded = true; afterData(); }, () => {}));
     if (FIN()) {
       S.subs.push(onSnapshot(collection(db, "students"), snap => { S.students = {}; snap.docs.forEach(d => S.students[d.id] = d.data()); afterData(); }, () => {}));
@@ -1709,7 +1709,7 @@ async function appSet(a, patch, note, ev){
   if (ev) notify("app", a.id);
 }
 const appWa = (a, txt) => { const wa = normPhone(a.phone || ""); return wa ? `https://wa.me/${wa}?text=${encodeURIComponent(txt)}` : ""; };
-function appModal(id){
+function appModal(id){ ensureFin();
   const a = (S.apps || []).find(x => x.id === id); if (!a) { S._appOpen = null; return; }
   S._appOpen = id; S._modalGroup = null; S._finModal = null;
   const st = a.status, done = st === "enrolled", progs = appProgs(), prog = appProgOf(a), lk = appLink(prog ? prog.id : "");
@@ -1882,7 +1882,7 @@ async function appEnroll(a, gids){
   toast(`انسجّل ${a.name} برقم ${d.num}${names.length ? ` وانضاف لـ ${names.length} شعبة` : ""}. أرسل له بيانات الدخول من زر «إرسال بيانات الدخول واتساب».`, true);
 }
 // finance opens the trainee's account from the fees and plan it approved, and records the first payment with its receipt
-async function appOpenFin(a){
+async function appOpenFin(a){ ensureFin();
   if (!appCan("finance") || !a.num) return;
   const f = a.fin || {}, plan = f.plan || a.plan || "full", start = f.start || today(), months = f.months || 4, net = Math.max(0, (Number(f.fee) || 0) - (Number(f.discount) || 0)), first = f.first || {};
   let acc = (S.finAcc || {})[a.num];
@@ -1922,7 +1922,7 @@ function appContract(a){
     <div class="sig"><div>المتدرب: ${esc(a.name)}<br><br>التوقيع: ..................</div><div>القبول والتسجيل</div><div>الإدارة المالية</div><div>الشؤون الأكاديمية</div></div>`;
   fillPrint(w, `عقد تسجيل ${a.name}`, [{html}], false, "القبول والتسجيل");
 }
-function appForm(F){
+function appForm(F){ ensureFin();
   const progs = appProgs().filter(p => p.open !== false || p.id === F.program), parts = ((S.finSet || {}).partners || []);
   const inp = (id, label, v, extra = "") => `<label class="f grow" for="${id}">${label}<input type="text" id="${id}" value="${esc(v || "")}" ${extra}></label>`;
   return `<div class="row">${inp("apN", "الاسم الرباعي *", F.name, 'maxlength="80"')}<label class="f" for="apG" style="width:130px">الجنس *<select id="apG"><option value="m" ${F.gender !== "f" ? "selected" : ""}>ذكر</option><option value="f" ${F.gender === "f" ? "selected" : ""}>أنثى</option></select></label></div>
@@ -1970,7 +1970,7 @@ function admNew(el){
     } catch (x) { e.target.disabled = false; e.target.textContent = "حفظ الطلب"; if (x && x.message === "big") return toast("الملف أكبر من 10 ميجا"); console.error(x); if (x && x.code) handleWriteErr(x); else toast("تعذّر رفع المرفق، تأكد إن السيرفر شغّال"); }
   };
 }
-function admStats(el){
+function admStats(el){ ensureFin();
   const apps = S.apps || [], by = (fn) => { const m = {}; apps.forEach(a => { const k = fn(a) || "غير محدد"; m[k] = m[k] || []; m[k].push(a); }); return Object.entries(m).sort((x, y) => y[1].length - x[1].length); };
   const pct = (n, d) => d ? Math.round(n / d * 100) + "%" : "—";
   const enr = l => l.filter(a => a.status === "enrolled").length, parts = ((S.finSet || {}).partners || []);
@@ -2034,7 +2034,7 @@ function admSettings(el){
   };
 }
 // each department ties the admission programs to its own: finance to a fee program, academic affairs to its courses
-function admLinks(el){
+function admLinks(el){ ensureFin();
   const progs = appProgs(), links = (S.admPub || {}).links || {}, fprogs = ((S.finSet || {}).programs || []), cFin = appCan("finance"), cAc = appCan("academic");
   const courses = [...new Set(Object.values(S.groups || {}).map(g => g.course).filter(Boolean))].sort((x, y) => x.localeCompare(y, "ar"));
   el.innerHTML = `<div class="card"><h2 style="margin-top:0">ربط برامج التقديم</h2><p class="muted" style="margin-top:0">${cFin && !cAc ? "اربط كل برنامج تقديم ببرنامجه في المالية، وتنعبّى الرسوم تلقائي لما يوصلك المتقدم." : cAc && !cFin ? "اختر مقررات كل برنامج، وتطلع لك شعبها جاهزة لما تصدر معلومات المتدرب." : "المالية تربط برنامج الرسوم، والشؤون الأكاديمية تربط المقررات."}</p>
@@ -4690,7 +4690,7 @@ function openGroup(id){
     else { b.dataset.sure = "1"; b.textContent = "متأكد؟ اضغط مرة ثانية للحذف"; }
   };
 }
-function renderModalStudents(){
+function renderModalStudents(){ ensureFin();
   const g = S.groups[S._modalGroup]; const st = (g && g.students) || []; const ss = (g && g.sessions) || [];
   const box = $("#mstu"); if (!box) return;
   $("#mcount").textContent = st.length;
@@ -4801,7 +4801,7 @@ function nlScore(E, C){   // symmetric: the shorter name must fit inside the lon
   if (inOrder) return 60;
   return lastOk ? 50 : 0;
 }
-function nameLinkCard(el){
+function nameLinkCard(el){ ensureFin();
   if (!["admin", "finance"].includes(S.adminRole) || RO()) return;
   el.insertAdjacentHTML("beforeend", `<div class="card" id="nlCard"><h2 style="margin-top:0">🔗 ربط الجوال والإيميل بالأسماء</h2>
     <p class="muted" style="margin-top:0">لملف Excel ما فيه أرقام أكاديمية: عمود <b>الاسم</b>، ومعه <b>الجوال</b> و/أو <b>الإيميل</b>. البوابة تطابق الأسماء مع الحسابات المالية والمتدربين وتعرض لك النتيجة قبل الحفظ، وتعبّي الخانات الفاضية بس${S.adminRole === "admin" ? " (في الحساب المالي وملف المتدرب)" : " في الحساب المالي"}.</p>
@@ -5269,7 +5269,7 @@ function fillTrainerVars(tpl, tid){
   return tpl.replace(/\{الاسم\}/g, t.name ? trainerTitle(t) : "").replace(/\{الرقم\}/g, t.num || "—").replace(/\{الرمز\}/g, S.secrets[tid] || "—")
             .replace(/\{الرابط\}/g, location.href.split("#")[0].split("?")[0]);
 }
-function adminMessages(el){
+function adminMessages(el){ ensureFin();
   const q = S.msgQ;
   const gs = sortedGroups();
   if (q && q.items.length) {
@@ -6557,7 +6557,7 @@ function adminEvals(el){
 
 
 /* ---------- indicators dashboard ---------- */
-function adminKpi(el){
+function adminKpi(el){ ensureFin();
   if (!S.kpiAtt) {
     el.innerHTML = `<div class="card"><p class="muted" style="margin:0">جاري حساب المؤشرات…</p></div>`;
     Promise.all([loadAllAtt(S._kpiForce), S.evalsAll || RO() ? null : getDocs(collection(db, "evals")).catch(() => null)]).then(([a, e]) => {
@@ -6647,7 +6647,7 @@ function stuDocsBind(num){
     } catch (x) { console.error(x); if (pg) pg.textContent = ""; toast("تعذّر رفع الملف"); }
   };
 }
-function printStudentFile(num){
+function printStudentFile(num){ ensureFin();
   const st = S.students[num]; if (!st) return;
   const w = openPrint(); if (!w) return;
   const p = (S.stProf || {})[num] || {}, files = (S.stDocs || {})[num] || [];
@@ -7112,7 +7112,7 @@ function openCourse(id){
 
 /* ---------- audit log tab ---------- */
 function adminLogs(el){
-  S.logLimit = S.logLimit || 300;
+  S.logLimit = S.logLimit || 100;
   if (!S.unsubLogs) {
     S.unsubLogs = onSnapshot(query(collection(db, "logs"), orderBy("at", "desc"), limit(S.logLimit)), snap => {
       S.logs = snap.docs.map(d => d.data()); S.logsFull = snap.size < S.logLimit; if (S.view === "admin" && S.aTab === "logs" && !busyEditing()) render();
@@ -7129,8 +7129,8 @@ function adminLogs(el){
     $("#lbody").innerHTML = rows.map(l => `<tr><td>${esc(fmtAt(l.at))}</td><td class="nm">${esc(l.who)}</td><td class="nm">${esc(l.action)}</td><td class="nm" style="white-space:normal">${esc(l.details)}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">ما فيه عمليات بعد</td></tr>`;
   };
   draw(""); $("#lq").oninput = e => draw(e.target.value);
-  if (!S.logsFull && (S.logs || []).length >= S.logLimit) el.insertAdjacentHTML("beforeend", `<div class="row" style="justify-content:center;margin-top:10px"><button class="btn" id="lMore">عرض ${300} عملية أقدم</button></div>`);
-  if ($("#lMore")) $("#lMore").onclick = () => { S.logLimit += 300; if (S.unsubLogs) { S.unsubLogs(); S.unsubLogs = null; } render(); };
+  if (!S.logsFull && (S.logs || []).length >= S.logLimit) el.insertAdjacentHTML("beforeend", `<div class="row" style="justify-content:center;margin-top:10px"><button class="btn" id="lMore">عرض ${200} عملية أقدم</button></div>`);
+  if ($("#lMore")) $("#lMore").onclick = () => { S.logLimit += 200; if (S.unsubLogs) { S.unsubLogs(); S.unsubLogs = null; } render(); };
   $("#lAll").onclick = async e => {
     e.target.disabled = true; toast("جاري تجهيز السجل…");
     try {
@@ -7717,6 +7717,8 @@ const PLANS = {full: "كامل المبلغ", half: "50% / 50%", monthly: "أق�
 const METHODS = ["تحويل بنكي", "نقد", "مدى / شبكة", "قسيمة بلس", "دفع إلكتروني"];
 const SAR = n => (Math.round((Number(n) || 0) * 100) / 100).toLocaleString("en-US", {maximumFractionDigits: 2}) + " ر.س";
 const addMonths = (d, k) => { const [y, m, dd] = d.split("-").map(Number); const t = new Date(Date.UTC(y, m - 1 + k, 1)); const last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate(); return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}-${String(Math.min(dd, last)).padStart(2, "0")}`; };
+/* finance data: always for the finance office; for the general administration only once a screen that shows money opens */
+function ensureFin(){ if (S._finOn || !SEES_FIN()) return; S._finOn = true; startFinance(); S.subs.push(() => { S._finOn = false; }); }
 function startFinance(){
   S.subs.push(onSnapshot(ref("fin/settings"), snap => { S.finSet = snap.exists() ? snap.data() : {programs: []}; afterData(); }, () => {}));
   S.subs.push(onSnapshot(collection(db, "finAccounts"), snap => { S.finAcc = {}; snap.docs.forEach(d => S.finAcc[d.id] = d.data()); afterData(); }, () => {}));
@@ -7765,7 +7767,7 @@ async function finImportRead(f){
   list.sort((a, b) => (a.num ? 1 : 0) - (b.num ? 1 : 0) || a.i - b.i);
   S._fi = list; finImportDraw();
 }
-function finImportPlan(x){
+function finImportPlan(x){ ensureFin();
   const st = S.students[x.num]; if (!st) return null;
   const prof = (S.stProf || {})[x.num] || {}, canProf = S.adminRole === "admin";
   const ph = x.phone ? normPhone(x.phone) : "";
@@ -7794,7 +7796,7 @@ function finImportDraw(){
   out.querySelectorAll("[data-fich]").forEach(b => b.onclick = () => { list[Number(b.dataset.fich)].num = ""; finImportDraw(); });
   $("#fiGo").onclick = finImportRun;
 }
-async function finImportRun(){
+async function finImportRun(){ ensureFin();
   const list = (S._fi || []).filter(x => x.num), btn = $("#fiGo"), log = t => { const l = $("#fiLog"); if (l) l.textContent = t; };
   const dup = {}; list.forEach(x => dup[x.num] = (dup[x.num] || 0) + 1);
   const twice = Object.keys(dup).filter(n => dup[n] > 1); if (twice.length) return toast(`نفس الطالب مربوط بأكثر من صف: ${twice.map(n => S.students[n].name).join("، ")}`);
@@ -7874,7 +7876,7 @@ function studentFinReq(el){
     e.target.disabled = true; try { await add({type: "inquiry", text: text.slice(0, 800), phone: ph}); toast("انرسل استفسارك"); } catch (x) { e.target.disabled = false; handleWriteErr(x); }
   };
 }
-function finReqTab(el){
+function finReqTab(el){ ensureFin();
   const all = (S.fReqs || []).slice().sort((a, b) => (b.at || "").localeCompare(a.at || ""));
   const invs = all.filter(r => r.type === "invoice"), inq = all.filter(r => r.type === "inquiry");
   const isDir = S.adminRole === "admin", isFin = FIN() || isDir;
@@ -7949,7 +7951,7 @@ const INST_ST = {paid: "مدفوع", late: "متأخر", part: "مدفوع جز�
 const INST_PILL = {paid: "p", late: "a", part: "l", due: ""};
 const paysOf = num => (S.pays || []).filter(p => p.num === num);
 
-function adminFinance(el){
+function adminFinance(el){ ensureFin();
   let t = S.finTab || "sum";
   const nW = fReqWaiting();
   const tabs = [["sum", "الملخص"], ...(FIN() ? [["adm", "القبول والتسجيل" + appBadge()]] : []), ["req", "طلبات الطلاب" + (nW ? ` (${nW})` : "")], ["acc", "حسابات الطلاب"], ["pay", "الدفعات"], ["rcpt", "الإيصالات"], ["late", "المتأخرين"], ["exp", "المصروفات"], ["sal", "رواتب المدربين"], ["part", "الشركاء والعمولات"], ["rep", "التقرير الشهري"], ["hrpay", "رواتب الموظفين"], ...(FIN() ? [["corr", "الصادر والوارد" + corrBadge()], ["meet", "الاجتماعات" + meetBadge()], ["tasks", "مهام الجهة الرقابية" + taskBadge()], ["sreq", "طلبات الإجازة" + srBadge()], ["sign", "طلبات التوقيع"], ["memo", "المراسلات" + memoBadge()], ["mail", "البريد" + mailBadge()]] : []), ...(RO() ? [] : [["set", "الإعدادات"]])];
@@ -7978,10 +7980,10 @@ function finHrPay(el){
   el.querySelectorAll("[data-fpp]").forEach(b => b.onclick = async () => { const p = L.find(x => x.id === b.dataset.fpp); if (!confirm(`تأكيد صرف رواتب ${p.month} (${SAR(p.total)})؟`)) return;
     try { const v = {status: "paid", paidAt: new Date().toISOString(), paidBy: ROLES[S.adminRole] || S.adminRole}; await setDoc(ref("hrPayroll/" + p.id), v, {merge: true}); Object.assign(p, v); logAction("صرف رواتب الموظفين", `${p.month} · ${SAR(p.total)}`); toast("تم ✓"); render(); } catch (x) { handleWriteErr(x); } });
 }
-function finRows(){
+function finRows(){ ensureFin();
   return Object.values(S.students).map(s => { const acc = (S.finAcc || {})[s.num]; return {s, acc, st: acc ? accStatus(acc, paysOf(s.num)) : {net: 0, paid: 0, remaining: 0, overdue: 0, status: "none"}}; });
 }
-function finSummary(el){
+function finSummary(el){ ensureFin();
   const rows = finRows(), m = today().slice(0, 7);
   const sum = k => rows.reduce((a, r) => a + r.st[k], 0);
   const monthPaid = (S.pays || []).filter(p => !p.void && (p.date || "").startsWith(m)).reduce((a, p) => a + Number(p.amount), 0);
@@ -8001,7 +8003,7 @@ function finSummary(el){
   <div class="card"><h2>حسب البرنامج</h2>${progs.length ? `<div class="tbl"><table><thead><tr><th class="nm">البرنامج</th><th>الطلاب</th><th>المستحق</th><th>المحصّل</th><th>النسبة</th></tr></thead><tbody>${progs.map(x => `<tr><td class="nm">${esc(x.pr.name)}</td><td>${x.n}</td><td>${SAR(x.net)}</td><td>${SAR(x.paid)}</td><td>${x.net ? Math.round(x.paid / x.net * 100) : 0}%</td></tr>`).join("")}</tbody></table></div>` : `<p class="muted" style="margin:0">أضف البرامج ورسومها من "البرامج والرسوم".</p>`}</div>
   <div class="card"><h2>حسب طريقة الدفع</h2>${Object.keys(methods).length ? `<div class="list">${Object.entries(methods).map(([k, v]) => `<div class="item"><span class="grow">${esc(k)}</span><b>${SAR(v)}</b></div>`).join("")}</div>` : `<p class="muted" style="margin:0">ما فيه دفعات بعد.</p>`}</div>`;
 }
-function finAccounts(el){
+function finAccounts(el){ ensureFin();
   const progName = id => ((S.finSet.programs || []).find(p => p.id === id) || {}).name || "—";
   el.innerHTML = `<div class="card"><h2>حسابات الطلاب</h2><div class="row"><input type="text" id="faQ" class="grow" placeholder="ابحث بالاسم أو الرقم"><select id="faF" style="width:auto"><option value="">الكل</option>${Object.entries(FST).map(([k, v]) => `<option value="${k}" ${S.faF === k ? "selected" : ""}>${v}</option>`).join("")}</select></div></div><div class="list" id="faL"></div>`;
   const draw = () => {
@@ -8015,7 +8017,7 @@ function finAccounts(el){
   };
   draw(); $("#faQ").oninput = draw; $("#faF").onchange = draw;
 }
-function openFinAccount(num){
+function openFinAccount(num){ ensureFin();
   const s = S.students[num]; if (!s) return;
   S._modalGroup = null; S._finModal = num;
   const acc = clone((S.finAcc || {})[num] || {num, name: s.name, program: "", fee: 0, discount: 0, discountNote: "", plan: "full", start: today(), months: 4, installments: [], phone: ""});
@@ -8196,7 +8198,7 @@ function finReminder(s, st){
   return `السلام عليكم ${s.name}\nالرقم الأكاديمي: ${s.num}\n\nنذكّركم بسداد المستحقات الدراسية.\nالمتأخر: ${SAR(st.overdue)}\nالمتبقي الكلي: ${SAR(st.remaining)}${st.next ? `\nالدفعة القادمة: ${SAR(st.next.amount)} بتاريخ ${st.next.due}` : ""}\n\nالمالية\n${INST_AR}`;
 }
 /* the receipt shows the account as it stood right after this payment: total, paid so far, remaining */
-function receiptHTML(p, acc, allPays){
+function receiptHTML(p, acc, allPays){ ensureFin();
   const key = x => `${x.date || ""}|${x.receiptNo || ""}`;
   const net = accStatus(acc, []).net;
   const paidSoFar = Math.round((allPays || []).filter(x => !x.void && x.id !== p.id && key(x) <= key(p)).reduce((a, x) => a + Number(x.amount || 0), 0) * 100) / 100 + (p.void ? 0 : Number(p.amount || 0));
@@ -8225,7 +8227,7 @@ function statementHTML(s, acc, st, pays){
   <h3 style="color:#1F5136">الدفعات المستلمة</h3><table><thead><tr><th>السند</th><th>التاريخ</th><th>المبلغ</th><th>الطريقة</th></tr></thead><tbody>${pays.filter(p => !p.void).map(p => `<tr><td>${esc(p.receiptNo)}</td><td>${dH(p.date)}</td><td>${SAR(p.amount)}</td><td>${esc(p.method)}</td></tr>`).join("") || `<tr><td colspan="4">ما فيه دفعات</td></tr>`}</tbody></table>
   <div class="sig">${sigSlot("المالية", "finance")}${sigSlot("الختم", "", true)}</div>`;
 }
-function finPayments(el){
+function finPayments(el){ ensureFin();
   /* period: a month, a date range or everything; method: all or one (cash, transfer…). The Excel follows the filter,
      and «Excel لكل طريقة» gives one sheet per method plus a summary. */
   const F = S.payF = S.payF || {per: "month", m: S.payM || today().slice(0, 7), from: today().slice(0, 8) + "01", to: today(), meth: ""};
@@ -8284,7 +8286,7 @@ function finPayments(el){
   $("#payXM").onclick = () => { if (!byM.length) return toast("ما فيه دفعات بهذي الفترة");
     excelDownload(`الدفعات حسب الطريقة ${fileP}`, [{title: "الملخص", rows: [[INST_AR], [`ملخص الدفعات حسب الطريقة · ${perL}`], [], ["الطريقة", "عدد الدفعات", "المجموع"], ...byM.map(([mt, x]) => [mt, live(x).length, sum(x)]), [], ["الإجمالي", live(inP).length, sum(inP)]], widths: [18, 12, 14]}, ...byM.map(([mt, x]) => sheet(mt, x))]); };
 }
-function finLate(el){
+function finLate(el){ ensureFin();
   const all = finRows(), in3 = new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 10);
   const rows = all.filter(r => r.st.status === "late").sort((a, b) => b.st.overdue - a.st.overdue);
   const soon = all.filter(r => r.st.status === "ok" && r.st.next && r.st.next.due <= in3).sort((a, b) => a.st.next.due.localeCompare(b.st.next.due));
@@ -8304,7 +8306,7 @@ function finSoonText(s, st){
   return `السلام عليكم ${s.name}\nالرقم الأكاديمي: ${s.num}\n\nنذكّركم بموعد القسط القادم:\n${SAR(st.next.amount)} بتاريخ ${st.next.due}\nالمتبقي الكلي: ${SAR(st.remaining)}\n\nالمالية\n${INST_AR}`;
 }
 function finSettings(el){ finSettings0(el); nameLinkCard(el); fillMount(el, "fin"); }
-function finSettings0(el){
+function finSettings0(el){ ensureFin();
   const progs = S.finSet.programs || [], canPay = ["admin", "academic"].includes(S.adminRole);
   el.innerHTML = `<div class="card"><h2>👁️ المالية عند الطلاب</h2>
     <p class="muted" style="margin-top:0">لو شلت الصح، يختفي تبويب «المالية والدفع» من بوابة كل الطلاب (رسومهم، الدفع، الفاتورة النهائية، الاستفسارات) لين ترجّعه — مفيد وقت تعديل الفواتير. بياناتكم ما تتأثر.</p>
@@ -8440,7 +8442,7 @@ function openRcptData(w, d){   // shows a stored receipt in a window opened by t
 
 
 /* ---- receipts register: every attached receipt in one place, with its reference, printable ---- */
-function finReceipts(el){
+function finReceipts(el){ ensureFin();
   const f = S.rcF || {who: "", m: "", kind: "all"};
   const studs = [...new Map((S.pays || []).filter(p => p.hasImg).map(p => [p.num, p.name])).entries()].sort((a, b) => a[1].localeCompare(b[1], "ar"));
   const pays = (S.pays || []).filter(p => p.hasImg && (f.kind !== "exp") && (!f.who || p.num === f.who) && (!f.m || (p.date || "").startsWith(f.m)))
@@ -8495,7 +8497,7 @@ function finReceipts(el){
 /* ---- expenses, partners, monthly report ---- */
 const EXP_CATS = ["إيجار", "كهرباء وماء وإنترنت", "تسويق وإعلان", "مستلزمات وقرطاسية", "صيانة", "رسوم حكومية", "رواتب إدارية", "أخرى"];
 const sumAmt = l => Math.round(l.reduce((a, x) => a + (Number(x.amount != null ? x.amount : x.net) || 0), 0) * 100) / 100;
-function monthFlow(m){
+function monthFlow(m){ ensureFin();
   const inc = (S.pays || []).filter(p => !p.void && (p.date || "").startsWith(m));
   const exp = (S.exps || []).filter(x => !x.void && (x.date || "").startsWith(m));
   const sal = Object.values(S.salPays || {}).filter(x => (x.paidDate || "").startsWith(m));
@@ -8503,7 +8505,7 @@ function monthFlow(m){
   const income = sumAmt(inc), expT = sumAmt(exp), salT = sumAmt(sal), comT = sumAmt(com), out = Math.round((expT + salT + comT) * 100) / 100;
   return {inc, exp, sal, com, income, expT, salT, comT, out, net: Math.round((income - out) * 100) / 100};
 }
-function finExpenses(el){
+function finExpenses(el){ ensureFin();
   const m = S.expM || today().slice(0, 7);
   const list = (S.exps || []).filter(x => (x.date || "").startsWith(m)).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const byCat = {}; list.filter(x => !x.void).forEach(x => byCat[x.category] = (byCat[x.category] || 0) + Number(x.amount));
@@ -8534,7 +8536,7 @@ function finExpenses(el){
     try { await setDoc(ref("expenses/" + b.dataset.exv), {void: true, voidReason: reason.trim(), voidBy: S.adminRole, voidAt: new Date().toISOString()}, {merge: true}); logAction("إلغاء مصروف", reason.trim()); } catch (e) { handleWriteErr(e); }
   });
 }
-function partnerStats(p){
+function partnerStats(p){ ensureFin();
   const rows = Object.values(S.finAcc || {}).filter(a => a.partner === p.id).map(acc => {
     const st = accStatus(acc, paysOf(acc.num));
     const earned = p.kind === "percent" ? Math.round(st.paid * p.value) / 100 : (st.paid > 0 ? Number(p.value) : 0);
@@ -8544,7 +8546,7 @@ function partnerStats(p){
   const paidOut = sumAmt((S.commPays || []).filter(x => !x.void && x.partnerId === p.id));
   return {rows, earned, paidOut, balance: Math.round((earned - paidOut) * 100) / 100};
 }
-function finPartners(el){
+function finPartners(el){ ensureFin();
   const ps = S.finSet.partners || [];
   if (!ps.length) { el.innerHTML = `<div class="card empty">أضف الشركاء من "الإعدادات"، وبعدها اختر الشريك في حساب كل طالب سجّل عن طريقه.</div>`; return; }
   const all = ps.map(p => ({p, ...partnerStats(p)}));
@@ -8574,7 +8576,7 @@ function finPartners(el){
     };
   });
 }
-function partnerHTML(x){
+function partnerHTML(x){ ensureFin();
   const pays = (S.commPays || []).filter(c => !c.void && c.partnerId === x.p.id).sort((a, b) => a.date.localeCompare(b.date));
   return `<h1>كشف عمولات شريك</h1><div class="info"><div><b>الشريك:</b> ${esc(x.p.name)} (${esc(x.p.type)})</div><div><b>العمولة:</b> ${x.p.kind === "percent" ? x.p.value + "% من المحصّل" : SAR(x.p.value) + " عن كل طالب"}</div></div>
   <table><thead><tr><th>الطالب</th><th>المدفوع</th><th>العمولة</th></tr></thead><tbody>${x.rows.map(r => `<tr><td>${esc(r.acc.name)}</td><td>${SAR(r.st.paid)}</td><td>${SAR(r.earned)}</td></tr>`).join("") || `<tr><td colspan="3">ما فيه طلاب</td></tr>`}</tbody></table>
@@ -8608,7 +8610,7 @@ function finReport(el){
     {title: "السنة", rows: [[`سنة ${y}`], [], ["الشهر", "الإيرادات", "المصروفات", "الصافي"], ...months.map(x => [x.k, x.income, x.out, x.net])], widths: [12, 14, 14, 14]}]);
 }
 
-function finSalaries(el){
+function finSalaries(el){ ensureFin();
   const m = S.salM || today().slice(0, 7), rates = (S.finSet && S.finSet.salaries) || {};
   const ts = Object.values(S.trainers).sort((a, b) => a.name.localeCompare(b.name, "ar"));
   const rec = t => (S.salPays || {})[`${m}_${t.id}`];
@@ -8633,7 +8635,7 @@ function finSalaries(el){
   });
   $("#salX").onclick = () => excelDownload(`رواتب المدربين ${m}`, [{title: "الرواتب", rows: [[INST_AR], [`رواتب المدربين · ${m}`], [], ["المدرب", "الراتب", "إضافي", "خصم", "الصافي", "تاريخ الصرف", "الطريقة", "ملاحظة"], ...ts.map(t => { const r = rec(t); return [t.name, Number(rates[t.id]) || 0, r ? r.bonus || 0 : "", r ? r.deduct || 0 : "", r ? r.net : "", r ? r.paidDate : "لم يُصرف", r ? r.method : "", r ? r.note || "" : ""]; })], widths: [26, 11, 10, 10, 11, 13, 14, 24]}]);
 }
-function openSalaryPay(tid, m){
+function openSalaryPay(tid, m){ ensureFin();
   const t = S.trainers[tid], base = Number(((S.finSet && S.finSet.salaries) || {})[tid]) || 0;
   S._modalGroup = null; S._finModal = null;
   $("#modalBox").innerHTML = `<div class="row" style="justify-content:space-between"><h2 style="margin:0;font-family:var(--display);color:var(--green);font-weight:600">صرف راتب · ${esc(trainerTitle(t))}</h2><button class="btn sm" id="sx">إغلاق</button></div>
