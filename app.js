@@ -275,7 +275,7 @@ function loadJitsi(domain){
   return _jitsiP;
 }
 async function meetLoad(domain){   // people in all rooms right now; 0 when unknown
-  try { const c = new AbortController(); setTimeout(() => c.abort(), 3000); const j = await (await fetch(`https://${domain}/osos-load`, {signal: c.signal, cache: "no-store"})).json(); return Number(j.participants ?? j.endpoints ?? 0) || 0; } catch { return 0; }
+  try { const c = new AbortController(); setTimeout(() => c.abort(), 3000); const j = await (await fetch(`https://${domain}/osos-load`, {signal: c.signal, cache: "no-store"})).json(); const up = Array.isArray(j.bridges) ? Math.max(1, j.bridges.filter(b => !b.down).length) : 1; return Math.round((Number(j.participants ?? j.endpoints ?? 0) || 0) / up); } catch { return 0; }   // per video server
 }
 async function meetToken(gid){
   const url = ((S.site || {}).pushUrl || "").replace(/\/+$/, ""); if (!url) throw new Error("no service");
@@ -312,7 +312,7 @@ async function startLecture(g, btn){
     let why = "", tok = null;
     try { await loadJitsi(d); } catch { why = "قاعة المعهد ما تستجيب الحين"; }
     if (!why && await meetLoad(d) >= (Number(site.meetMax) || 180)) why = "قاعة المعهد عليها ضغط الحين";
-    if (!why) { const h = await srvHealth(); if (h && !h.down && (srvNetPct(h) >= 80 || (h.cpu || 0) >= 90)) why = "إنترنت سيرفر القاعة عليه ضغط الحين"; }
+    if (!why) { const h = await srvHealth(); if (h && !h.down && (srvNetPct(h) >= 80 || srvCpu(h) >= 90)) why = "إنترنت سيرفر القاعة عليه ضغط الحين"; }
     if (!why) { try { tok = await meetToken(g.id); } catch (e) { console.error(e); why = "تعذّر فتح قاعة المعهد"; } }
     if (why) { await setLive(g, "teams"); return teamsPrompt(g, why); }
     if (await setLive(g, "osos")) openRoom(g, tok);
@@ -560,11 +560,16 @@ async function srvHealth(){
 const srvMax = () => Number((S.site || {}).meetMax) || 180;
 /* the server's internet capacity: what the director typed in, else the network card's speed, else 500 Mbit/s */
 const srvCap = x => Number((S.site || {}).meetMbps) || (x && x.linkMbps > 0 && x.linkMbps <= 10000 ? x.linkMbps : 500);
-const srvNetPct = x => x && x.netOut != null ? Math.round(x.netOut / srvCap(x) * 100) : 0;
+/* with a second video server (x.bridges), a new lecture goes to the less busy one: room is left while either has room */
+const srvBr = x => x && Array.isArray(x.bridges) && x.bridges.length > 1 ? x.bridges : null;
+const srvUp = x => { const b = srvBr(x); return b ? Math.max(1, b.filter(y => !y.down).length) : 1; };
+const netPct1 = x => x && x.netOut != null ? Math.round(x.netOut / srvCap(x) * 100) : 0;
+const srvNetPct = x => { const b = srvBr(x), ok = b && b.filter(y => !y.down && y.netOut != null); return ok && ok.length ? Math.min(...ok.map(netPct1)) : netPct1(x); };
+const srvCpu = x => { const b = srvBr(x), ok = b && b.filter(y => !y.down && y.cpu != null); return ok && ok.length ? Math.min(...ok.map(y => y.cpu)) : (x && x.cpu) || 0; };
 function srvLevel(x){   // 0 fine, 1 watch, 2 act now
   if (!x) return 0; if (x.down) return 2;
-  const p = (x.participants || 0) / srvMax() * 100;
-  const worst = Math.max(p, x.cpu || 0, x.mem || 0, x.disk || 0, srvNetPct(x) * 85 / 80);   // internet: red from 80%
+  const p = (x.participants || 0) / (srvMax() * srvUp(x)) * 100;
+  const worst = Math.max(p, srvCpu(x), x.mem || 0, x.disk || 0, srvNetPct(x) * 85 / 80);   // internet: red from 80%
   return worst >= 85 ? 2 : worst >= 65 ? 1 : 0;
 }
 const SRV_COL = ["#1F7A4D", "#C98A00", "#C0392B"];
@@ -575,10 +580,17 @@ function srvCard(){
   const head = !x ? `<p class="muted">جاري القراءة…</p>` : x.down ? `<div class="notice" style="background:#fdecea;border-color:#f5c2c0">⚠️ سيرفر القاعة ما يرد. أي محاضرة جديدة تتحول لـ Teams تلقائياً، وانقل الشغالة الحين.</div>`
     : lv === 2 ? `<div class="notice" style="background:#fdecea;border-color:#f5c2c0">⚠️ الضغط عالي على السيرفر. انقل المحاضرات لـ Teams قبل ما يتأثر الصوت والصورة.</div>`
     : lv === 1 ? `<div class="notice">انتبه: السيرفر قرّب من حده. راقبه، وإذا زاد انقل بعض المحاضرات لـ Teams.</div>` : `<div class="muted">✓ السيرفر مرتاح.</div>`;
-  const pp = x && !x.down ? Math.round((x.participants || 0) / srvMax() * 100) : 0;
+  const br = srvBr(x), cap = srvMax() * srvUp(x), pp = x && !x.down ? Math.round((x.participants || 0) / cap * 100) : 0;
+  const one = (y, t) => y.down ? `<div class="notice" style="margin:8px 0;background:#fdecea;border-color:#f5c2c0">⚠️ ${t} ما يرد. المحاضرات الجديدة تروح للسيرفر الثاني.</div>`
+    : `<div style="margin-top:10px;padding:8px 10px;border:1px dashed var(--line);border-radius:10px"><b>${t}</b> <span class="muted">· ${y.participants || 0} مشارك${y.conferences ? ` · ${y.conferences} محاضرة` : ""}</span>`
+      + (y.netOut != null ? bar("الإنترنت الطالع", netPct1(y) * 85 / 80, `${y.netOut} من ${srvCap(y)} ميغابت · ${netPct1(y)}%`) : "")
+      + (y.cpu != null ? bar("المعالج", y.cpu, y.cpu + "%") : "") + (y.mem != null ? bar("الذاكرة", y.mem, y.mem + "%") : "") + `</div>`;
   return `<div class="card" id="srvCard" style="border-color:${SRV_COL[lv]}"><div class="row" style="justify-content:space-between"><h2 style="margin:0">حالة سيرفر القاعة</h2><span class="muted" style="font-size:13px">${x ? "آخر قراءة " + esc(new Date(x.at).toLocaleTimeString("ar-SA-u-nu-latn", {hour: "numeric", minute: "2-digit", second: "2-digit"})) : ""} <a href="#" id="srvRe">تحديث</a></span></div>
     <div style="margin-top:8px">${head}</div>
-    ${x && !x.down ? bar("الموجودين في القاعة الحين", pp, `${x.participants || 0} من ${srvMax()}${x.conferences ? ` · ${x.conferences} محاضرة` : ""}`)
+    ${x && !x.down && br ? bar("الموجودين في القاعة الحين (السيرفرين)", pp, `${x.participants || 0} من ${cap}${x.conferences ? ` · ${x.conferences} محاضرة` : ""}`)
+      + br.map((y, i) => one(y, i ? "سيرفر الفيديو " + (i + 1) : "السيرفر الرئيسي")).join("")
+      + (x.disk != null ? bar("التخزين (التسجيلات والمرفقات، على الرئيسي)", x.disk, `${x.disk}% · باقي ${x.diskFreeGB} من ${x.diskGB} جيجا`) : "") : ""}
+    ${x && !x.down && !br ? bar("الموجودين في القاعة الحين", pp, `${x.participants || 0} من ${srvMax()}${x.conferences ? ` · ${x.conferences} محاضرة` : ""}`)
       + (x.netOut != null ? bar("الإنترنت الطالع (أول شي ينضغط)", srvNetPct(x) * 85 / 80, `${x.netOut} من ${srvCap(x)} ميغابت · ${srvNetPct(x)}%`) + `<div class="muted" style="font-size:12.5px;margin-top:-4px">الداخل: ${x.netIn ?? 0} ميغابت</div>` : `<div class="muted" style="font-size:12.5px">الإنترنت: يظهر بعد تحديث سكربت السيرفر (meet-rec.sh)</div>`)
       + (x.cpu != null ? bar("المعالج", x.cpu, x.cpu + "%") : "") + (x.mem != null ? bar("الذاكرة", x.mem, x.mem + "%") : "")
       + (x.disk != null ? bar("التخزين (التسجيلات والمرفقات)", x.disk, `${x.disk}% · باقي ${x.diskFreeGB} من ${x.diskGB} جيجا`) : "") : ""}
