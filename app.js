@@ -2015,6 +2015,7 @@ function corrAud(to){
 }
 const corrKey = () => S.role === "student" ? "st-" + S.myNum : S.role === "trainer" ? S.me : S.adminRole;
 const corrStaff = () => S.role === "admin" && !!S.adminRole;
+const circIssuer = () => S.role === "admin" && ["admin", "academic"].includes(S.adminRole) && !RO();
 const corrMine = c => { if (S.role === "student") return (c.to || []).includes("students"); if (S.role === "trainer") return (c.to || []).includes("trainers") || (c.to || []).includes(S.me);
   return c.by !== S.adminRole && ((c.to || []).includes("staff") || (c.to || []).includes(S.adminRole)); };
 const corrUnread = () => (S.corr || []).filter(c => c.kind !== "out" && corrMine(c) && !(c.seen || {})[corrKey()]);
@@ -2043,14 +2044,14 @@ function corrHTML(c){
   const sig = c.sign || {}, to = c.kind === "out" ? c.party : c.kind === "circ" ? corrAud(c.to || []) : (c.to || []).map(corrToN).join("، ");
   const row = (k, v) => v ? `<div><b>${k}:</b> ${esc(v)}</div>` : "";
   const T = {circ: ["تعميم داخلي", "رقم التعميم", `( ${c.no} ) لعام ${c.year}م`], out: ["خطاب صادر", "رقم الصادر", `${c.no} / ${c.year}`], in: ["قيد وارد", "رقم الوارد", `${c.no} / ${c.year}`]}[c.kind];
-  const sgn = sig.director && okImg((S.sigs || {}).director) ? `<img class="sgi" src="${S.sigs.director}" alt="">` : "", stp = sig.stamp && okImg(S.stamp) ? `<img class="stp" src="${S.stamp}" alt="">` : "";
+  const sgn = sig.director && okImg((S.sigs || {}).director) ? `<img class="sgi" src="${S.sigs.director}" alt="">` : sig.academic && okImg((S.sigs || {}).academic) ? `<img class="sgi" src="${S.sigs.academic}" alt="">` : "", stp = sig.stamp && okImg(S.stamp) ? `<img class="stp" src="${S.stamp}" alt="">` : "";
   return `<h1>${T[0]}</h1>
     <div class="info">${row(T[1], T[2])}${row("التاريخ", bothDates(c.date || today()))}${row("الموضوع", c.subject)}${to ? `<div style="grid-column:1/-1"><b>${c.kind === "in" ? "محال إلى" : "إلى"}:</b> ${esc(to)}</div>` : ""}
       ${c.kind === "in" ? row("الجهة المرسلة", c.party) + row("رقم خطابهم وتاريخه", [c.theirNo, c.theirDate].filter(Boolean).join(" · ")) + row("التوجيه", c.action) : ""}${row("نسخة إلى", c.cc)}</div>
     <div style="line-height:2;font-size:13.5px;margin-top:14px;min-height:60mm">${String(c.body || "").split(/\n\s*\n/).map(p => `<p style="margin:0 0 10px;white-space:pre-wrap">${esc(p.trim())}</p>`).join("")}</div>
-    ${c.kind === "in" ? "" : `<div class="sig" style="margin-top:80px"><div>${sgn}<b>${esc(c.signer || (c.kind === "circ" ? "إدارة المعهد" : MEET_N[c.by] || ""))}</b>${c.signerName ? `<br>${esc(c.signerName)}` : ""}</div><div>${stp}الختم</div></div>`}`;
+    ${c.kind === "in" ? "" : `<div class="sig" style="margin-top:80px"><div>${sgn}<b>${esc(c.signer || (c.kind === "circ" ? (c.by === "academic" ? "الشؤون الأكاديمية" : "إدارة المعهد") : MEET_N[c.by] || ""))}</b>${c.signerName ? `<br>${esc(c.signerName)}` : ""}</div><div>${stp}الختم</div></div>`}`;
 }
-function corrPrint(c){ const w = openPrint(); if (!w) return; fillPrint(w, corrTitle(c), [{html: corrHTML(c)}], false, c.kind === "circ" ? "إدارة المعهد" : MEET_N[c.by] || ""); }
+function corrPrint(c){ const w = openPrint(); if (!w) return; fillPrint(w, corrTitle(c), [{html: corrHTML(c)}], false, c.kind === "circ" && c.by !== "academic" ? "إدارة المعهد" : MEET_N[c.by] || ""); }
 async function corrSave(F){
   const year = corrYear(F.date), seq = ref(`corrSeq/${F.kind}_${year}`), id = "c" + Date.now().toString(36) + uid();
   const files = [];
@@ -2069,21 +2070,21 @@ async function corrSave(F){
 function corrTab(el){
   watchCorr();
   const boss = S.adminRole === "admin", ro = RO();
-  const T = S._corrT = S._corrT && (S._corrT !== "set" || boss) ? S._corrT : (boss ? "circ" : "inbox");
+  const T = S._corrT = S._corrT && (S._corrT !== "set" || boss) ? S._corrT : (circIssuer() ? "circ" : "inbox");
   const sub = [...(corrStaff() && !boss ? [["inbox", "الوارد إلينا" + corrBadge()]] : []), ["circ", "التعاميم"], ["out", "الصادر"], ["in", "الوارد"], ...(boss ? [["set", "الترقيم والتوقيع"]] : [])];
   el.innerHTML = `<div class="card" style="padding:8px 12px"><div class="tabs" style="border:0;padding:0">${sub.map(([k, v]) => `<button class="tab ${T === k ? "on" : ""}" data-crt="${k}">${CORR_K[k] ? CORR_K[k][2] + " " : ""}${v}</button>`).join("")}</div></div><div id="crB"></div>`;
   el.querySelectorAll("[data-crt]").forEach(b => b.onclick = () => { S._corrT = b.dataset.crt; S._corrF = null; render(); });
   const B = $("#crB"); if (!S.corr) { B.innerHTML = `<div class="card muted">جاري التحميل…</div>`; return; }
   if (T === "set") return corrSettings(B);
   if (T === "inbox") return corrList(B, (S.corr || []).filter(c => c.kind !== "out" && corrMine(c)), "ما وصلكم تعاميم ولا وارد محال.");
-  const canNew = !ro && (T !== "circ" || boss);
+  const canNew = !ro && (T !== "circ" || circIssuer());
   const list = (S.corr || []).filter(c => c.kind === T && (boss || ro || T !== "circ" || true));
   B.innerHTML = `${canNew ? `<div id="crNew"></div>` : ""}<div id="crL"></div>`;
   if (canNew) corrForm($("#crNew"), T);
   corrList($("#crL"), list, `ما فيه ${CORR_K[T][1]} مسجّلة.`);
 }
 function corrForm(el, kind){
-  const F = S._corrF = S._corrF && S._corrF.kind === kind ? S._corrF : {kind, date: today(), subject: "", body: CORR_BODY[kind] || "", to: kind === "circ" ? ["staff", "trainers"] : [], party: "", cc: "", theirNo: "", theirDate: "", action: CORR_ACT[0], signer: S.adminRole === "admin" ? "إدارة المعهد" : MEET_N[S.adminRole] || "", signerName: S.adminRole === "admin" ? "خالد الحسيني" : "", sign: S.adminRole === "admin" ? {director: okImg((S.sigs || {}).director), stamp: okImg(S.stamp)} : {}, open: false};
+  const F = S._corrF = S._corrF && S._corrF.kind === kind ? S._corrF : {kind, date: today(), subject: "", body: CORR_BODY[kind] || "", to: kind === "circ" ? ["staff", "trainers"] : [], party: "", cc: "", theirNo: "", theirDate: "", action: CORR_ACT[0], signer: S.adminRole === "admin" ? "إدارة المعهد" : MEET_N[S.adminRole] || "", signerName: S.adminRole === "admin" ? "خالد الحسيني" : "", sign: S.adminRole === "admin" ? {director: okImg((S.sigs || {}).director), stamp: okImg(S.stamp)} : S.adminRole === "academic" && kind === "circ" ? {academic: okImg((S.sigs || {}).academic), stamp: okImg(S.stamp)} : {}, open: !!(S._corrF && S._corrF.openNow)};
   const year = corrYear(F.date), boss = S.adminRole === "admin";
   if (!F.open) { el.innerHTML = `<div class="card" style="padding:10px"><button class="btn pri" id="crOpen">+ ${kind === "in" ? "تسجيل وارد جديد" : kind === "out" ? "صادر جديد" : "تعميم جديد"}</button> <span class="muted">الرقم يتولّد تلقائياً</span></div>`; $("#crOpen").onclick = () => { F.open = true; render(); }; return; }
   const tos = kind === "circ" ? [["staff", "كل الإدارات"], ...MEET_DEPTS.filter(r => r !== "admin").map(r => [r, MEET_N[r]]), ["students", "المتدربين والمتدربات"]]
@@ -2100,11 +2101,11 @@ function corrForm(el, kind){
         ${!F.to.includes("trainers") && (pick.length || F.trSome) ? `<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:6px">${trs.map(t => `<label class="row" style="gap:4px"><input type="checkbox" data-ctr="${esc(t.id)}" ${pick.includes(t.id) ? "checked" : ""}> ${esc(trainerTitle(t))}</label>`).join("") || `<span class="muted">ما فيه مدربين</span>`}</div>` : ""}</div>`; })() : ""}
     ${kind === "in" ? `<label class="f" style="margin-top:6px;max-width:260px">التوجيه<select id="crA">${CORR_ACT.map(a => `<option ${F.action === a ? "selected" : ""}>${a}</option>`).join("")}</select></label>` : ""}
     <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px;align-items:flex-end"><label class="f grow">${kind === "in" ? "صورة الخطاب الوارد" : "مرفقات"} (اختياري، حتى 20 ميجا)<input type="file" id="crF" multiple accept="image/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx"></label>
-      ${kind !== "in" ? `<label class="f" style="min-width:180px">جهة التوقيع<input type="text" id="crSg" maxlength="80" value="${esc(F.signer)}"></label><label class="f" style="min-width:160px">الاسم<input type="text" id="crSgN" maxlength="80" value="${esc(F.signerName || "")}"></label>${boss ? `<label class="row" style="gap:4px" title="${okImg((S.sigs || {}).director) ? "" : "ارفعه أول من النظام ← توقيع مدير المعهد"}"><input type="checkbox" id="crSd" ${F.sign.director ? "checked" : ""} ${okImg((S.sigs || {}).director) ? "" : "disabled"}> التوقيع</label><label class="row" style="gap:4px" title="${okImg(S.stamp) ? "" : "ارفعه أول من النظام ← الختم الإلكتروني"}"><input type="checkbox" id="crSt" ${F.sign.stamp ? "checked" : ""} ${okImg(S.stamp) ? "" : "disabled"}> الختم</label>` : ""}` : ""}</div>
+      ${kind !== "in" ? `<label class="f" style="min-width:180px">جهة التوقيع<input type="text" id="crSg" maxlength="80" value="${esc(F.signer)}"></label><label class="f" style="min-width:160px">الاسم<input type="text" id="crSgN" maxlength="80" value="${esc(F.signerName || "")}"></label>${boss ? `<label class="row" style="gap:4px" title="${okImg((S.sigs || {}).director) ? "" : "ارفعه أول من النظام ← توقيع مدير المعهد"}"><input type="checkbox" id="crSd" ${F.sign.director ? "checked" : ""} ${okImg((S.sigs || {}).director) ? "" : "disabled"}> التوقيع</label><label class="row" style="gap:4px" title="${okImg(S.stamp) ? "" : "ارفعه أول من النظام ← الختم الإلكتروني"}"><input type="checkbox" id="crSt" ${F.sign.stamp ? "checked" : ""} ${okImg(S.stamp) ? "" : "disabled"}> الختم</label>` : S.adminRole === "academic" && kind === "circ" ? `<label class="row" style="gap:4px" title="${okImg((S.sigs || {}).academic) ? "" : "ارفع توقيع الشؤون الأكاديمية أول"}"><input type="checkbox" id="crSa" ${F.sign.academic ? "checked" : ""} ${okImg((S.sigs || {}).academic) ? "" : "disabled"}> توقيعي</label><label class="row" style="gap:4px" title="${okImg(S.stamp) ? "" : "الختم ما انرفع بعد"}"><input type="checkbox" id="crSt" ${F.sign.stamp ? "checked" : ""} ${okImg(S.stamp) ? "" : "disabled"}> الختم</label>` : ""}` : ""}</div>
     <div class="row" style="gap:8px;margin-top:10px"><button class="btn pri" id="crSave">${kind === "in" ? "تسجيل الوارد" : "حفظ وإصدار"}${kind !== "in" ? " وطباعة" : ""}</button><button class="btn" id="crCancel">إلغاء</button></div></div>`;
   const read = () => { F.date = $("#crD").value || today(); F.subject = $("#crS").value.trim(); F.body = $("#crBody").value; F.party = $("#crP") ? $("#crP").value.trim() : ""; F.cc = $("#crCC") ? $("#crCC").value.trim() : "";
     F.theirNo = $("#crTN") ? $("#crTN").value.trim() : ""; F.theirDate = $("#crTD") ? $("#crTD").value : ""; F.action = $("#crA") ? $("#crA").value : ""; F.signer = $("#crSg") ? $("#crSg").value.trim() : F.signer; F.signerName = $("#crSgN") ? $("#crSgN").value.trim() : F.signerName || "";
-    F.sign = {director: !!($("#crSd") && $("#crSd").checked), stamp: !!($("#crSt") && $("#crSt").checked)}; F.to = [...el.querySelectorAll("[data-cto]")].filter(x => x.checked).map(x => x.dataset.cto);
+    F.sign = {director: !!($("#crSd") && $("#crSd").checked), academic: !!($("#crSa") && $("#crSa").checked), stamp: !!($("#crSt") && $("#crSt").checked)}; F.to = [...el.querySelectorAll("[data-cto]")].filter(x => x.checked).map(x => x.dataset.cto);
     const tr = (el.querySelector("[name=crTr]:checked") || {}).value;
     if (tr === "all") F.to.push("trainers"); else if (tr === "some") F.to.push(...[...el.querySelectorAll("[data-ctr]")].filter(x => x.checked).map(x => x.dataset.ctr)); };
   el.querySelectorAll("[name=crTr]").forEach(x => x.addEventListener("change", () => { read(); F.trSome = x.value === "some"; render(); }));
@@ -2201,10 +2202,11 @@ function renderTop(){
     if (S.role === "trainer" && S.trainers[S.me]) who = trainerTitle(S.trainers[S.me]);
     if (S.role === "admin") who = ROLES[S.adminRole];
     if (S.role === "student" && S.myStudent) who = S.myStudent.name;
-    w.innerHTML = `<span>${esc(who)}</span>${S.role ? `<button class="btn ghost sm" id="guideBtn">📘 الأدلة</button>${S.role === "trainer" || S.role === "student" ? `<button class="btn ghost sm" id="corrBtn">📢 التعاميم${corrBadge()}</button>` : ""}${(S.role === "trainer" || (S.role === "admin" && S.adminRole !== "auditor")) ? `<button class="btn ghost sm" id="drBtn">📋 الطلبات</button>` : ""}${S.adminRole === "tech" && S.role === "admin" ? "" : `<button class="btn ghost sm" id="tkBtn">🛠️ الدعم التقني${tkMineBadge()}</button>`}` : ""}${S.site && S.site.vapid && !pushOn() ? `<button class="btn ghost sm" id="pushBtn">تفعيل الإشعارات</button>` : ""}<button class="btn ghost sm" id="out">خروج</button>`;
+    w.innerHTML = `<span>${esc(who)}</span>${S.role ? `<button class="btn ghost sm" id="guideBtn">📘 الأدلة</button>${S.role === "trainer" || S.role === "student" ? `<button class="btn ghost sm" id="corrBtn">📢 التعاميم${corrBadge()}</button>` : ""}${S.role === "admin" && S.adminRole === "academic" && !RO() ? `<button class="btn ghost sm" id="acCircBtn">📢 تعميم أكاديمي</button>` : ""}${(S.role === "trainer" || (S.role === "admin" && S.adminRole !== "auditor")) ? `<button class="btn ghost sm" id="drBtn">📋 الطلبات</button>` : ""}${S.adminRole === "tech" && S.role === "admin" ? "" : `<button class="btn ghost sm" id="tkBtn">🛠️ الدعم التقني${tkMineBadge()}</button>`}` : ""}${S.site && S.site.vapid && !pushOn() ? `<button class="btn ghost sm" id="pushBtn">تفعيل الإشعارات</button>` : ""}<button class="btn ghost sm" id="out">خروج</button>`;
     if ($("#pushBtn")) $("#pushBtn").onclick = () => enablePush(false);
     if ($("#guideBtn")) $("#guideBtn").onclick = () => guidesModal();
     if ($("#corrBtn")) $("#corrBtn").onclick = () => { watchCorr(); S._corrOpen = null; S._corrList = true; corrModal(); };
+    if ($("#acCircBtn")) $("#acCircBtn").onclick = () => { watchCorr(); S.view = "admin"; S.aTab = "corr"; S._corrT = "circ"; S._corrF = {openNow: true}; render(); window.scrollTo(0, 0); };
     if ($("#tkBtn")) $("#tkBtn").onclick = () => ticketsModal();
     if ($("#drBtn")) $("#drBtn").onclick = () => drModal("new");
     $("#out").onclick = () => { S.view = "home"; logout(); };
