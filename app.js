@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, doc, collection, query, where, onSnapshot, setDoc, deleteDoc, writeBatch, getDoc, getDocs, getDocsFromCache, documentId, addDoc, orderBy, limit, serverTimestamp, runTransaction, getCountFromServer, Timestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, doc, collection, query, where, onSnapshot as _onSnap, setDoc, deleteDoc, writeBatch, getDoc as _getDoc, getDocs as _getDocs, getDocsFromCache, increment, documentId, addDoc, orderBy, limit, serverTimestamp, runTransaction, getCountFromServer, Timestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./config.js";
 
 /* ---------- constants ---------- */
@@ -86,6 +86,55 @@ async function cachedDocs(key, q, ttl){
   const sn = await getDocs(q);
   try { localStorage.setItem("qc_" + key, JSON.stringify({t: Date.now(), n: sn.size})); } catch {}
   return sn;
+}
+/* ---------- read meter: roughly how many Firestore reads this device makes, by collection, added up per day in usage/{date}
+   (one small write every 15 minutes at most). It shows the administration where the daily read limit goes. ---------- */
+const RM = {}; let RM_T = 0;
+const rmCol = r => { try { const p = r.path || (r._query && r._query.path && r._query.path.toArray().join("/")) || ""; const a = p.split("/"); return (a.length > 2 ? a[0] + "_" + a[2] : a[0]) || "?"; } catch { return "?"; } };
+const rmAdd = (c, n) => { if (n > 0) { RM[c] = (RM[c] || 0) + n; RM_T += n; } };
+const onSnapshot = (r, next, err) => { let first = true; const c = rmCol(r);
+  return _onSnap(r, snap => { try { if (!snap.metadata.fromCache) { rmAdd(c, snap.docs ? (first ? Math.max(snap.size, 1) : snap.docChanges().length) : 1); first = false; } } catch {} next(snap); }, err); };
+const getDocs = async q => { const sn = await _getDocs(q); try { if (!sn.metadata.fromCache) rmAdd(rmCol(q), Math.max(sn.size, 1)); } catch {} return sn; };
+const getDoc = async r => { const sn = await _getDoc(r); try { if (!sn.metadata.fromCache) rmAdd(rmCol(r), 1); } catch {} return sn; };
+function rmFlush(){
+  if (!RM_T || !S.authUser || !S.role) return;
+  const who = S.role === "admin" ? S.adminRole : S.role, part = {}; Object.entries(RM).forEach(([c, n]) => { part[c] = increment(n); delete RM[c]; });
+  const n = RM_T; RM_T = 0;
+  setDoc(ref("usage/" + today()), {[who]: part, n: increment(n)}, {merge: true}).catch(() => {});
+}
+setInterval(rmFlush, 15 * 60e3);
+document.addEventListener("visibilitychange", () => { if (document.hidden) rmFlush(); });
+/* ---------- public documents, cached on the device (Firebase daily read limit) ---------- */
+const PUB_H = {
+  "public/site": [30, snap => { S.site = snap.exists() ? snap.data() : {}; licQR(); if (!S.authUser && S.view === "home") render(); }],
+  "public/admission": [30, snap => { S.admPub = snap.exists() ? snap.data() : {}; if (!S.authUser && S.view === "home") render(); else if (S.aTab === "adm" && !busyEditing()) render(); }],
+  "public/stats": [60, snap => { S.stats = snap.exists() ? snap.data() : null; if (!S.authUser && S.view === "home") render(); }],
+  "public/survey": [30, snap => { S.survey = snap.exists() ? snap.data() : null; if (S.role === "student" && !busyEditing()) render(); }],
+  "public/system": [10, snap => { S.sys = snap.exists() ? snap.data() : {}; render(); }],
+  "ann/all": [15, snap => { S.ann.all = (snap.exists() && snap.data().items) || []; renderAnn(); }],
+};
+const PUB_IMG = {"public/stamp": snap => { S.stamp = snap.exists() ? snap.data().img || "" : ""; }, "sigs/director": snap => { S.sigs.director = snap.exists() ? snap.data().img || "" : ""; }, "sigs/academic": snap => { S.sigs.academic = snap.exists() ? snap.data().img || "" : ""; }};
+const fakeSnap = d => ({exists: () => d !== null && d !== undefined, data: () => d});
+async function pubGet(path, mins, fn){
+  const k = "pc_" + path; let c = null; try { c = JSON.parse(localStorage.getItem(k) || "null"); } catch {}
+  if (c && Date.now() - c.t < mins * 60e3) { fn(fakeSnap(c.d)); return; }
+  if (c) fn(fakeSnap(c.d));   // show the old copy at once, then refresh
+  try { const sn = await getDoc(ref(path)); const d = sn.exists() ? sn.data() : null; try { localStorage.setItem(k, JSON.stringify({t: Date.now(), d})); } catch {} fn(fakeSnap(d)); }
+  catch (e) { if (!c) { if (path === "public/system") { S.sys = {}; render(); } else if (path === "public/site") S.site = {}; } }
+}
+function pubBoot(){
+  S.sigs = {};
+  Object.entries(PUB_H).forEach(([p, [m, fn]]) => pubGet(p, m, fn));
+  setTimeout(() => { if (S.verify || S.idv) pubImgs(); }, 0);   // set just after boot reads the address
+}
+let _pubImgs = false;
+function pubImgs(){ if (_pubImgs) return; _pubImgs = true; Object.entries(PUB_IMG).forEach(([p, fn]) => pubGet(p, 360, fn)); }
+// staff see their own and each other's changes live; this runs after sign-in and stops with the other listeners
+function pubLive(){
+  pubImgs();
+  if (S.role !== "admin") return;
+  Object.entries({...Object.fromEntries(Object.entries(PUB_H).map(([p, [, fn]]) => [p, fn])), ...PUB_IMG}).forEach(([p, fn]) =>
+    S.subs.push(onSnapshot(ref(p), snap => { try { localStorage.setItem("pc_" + p, JSON.stringify({t: Date.now(), d: snap.exists() ? snap.data() : null})); } catch {} fn(snap); }, () => {})));
 }
 /* staff sessions: they end when the browser closes (login above), and after 30 minutes without any activity */
 const IDLE_MS = 60 * 60e3; let _lastAct = Date.now();
@@ -651,17 +700,12 @@ const S = {
 if (!configured) {
   $("#app").innerHTML = `<div class="notice err">البوابة تحتاج إعدادات Firebase في ملف config.js.</div>`;
 } else {
-  onSnapshot(ref("public/stamp"), snap => { S.stamp = snap.exists() ? snap.data().img || "" : ""; }, () => {});
-  S.sigs = {}; ["director", "academic"].forEach(k => onSnapshot(ref("sigs/" + k), snap => { S.sigs[k] = snap.exists() ? snap.data().img || "" : ""; }, () => {}));
-  onSnapshot(ref("public/site"), snap => { S.site = snap.exists() ? snap.data() : {}; licQR(); if (!S.authUser && S.view === "home") render(); }, () => { S.site = {}; });
-  onSnapshot(ref("public/admission"), snap => { S.admPub = snap.exists() ? snap.data() : {}; if (!S.authUser && S.view === "home") render(); else if (S.aTab === "adm" && !busyEditing()) render(); }, () => {});
-  onSnapshot(ref("public/stats"), snap => { S.stats = snap.exists() ? snap.data() : null; if (!S.authUser && S.view === "home") render(); }, () => {});
-  onSnapshot(ref("public/survey"), snap => { S.survey = snap.exists() ? snap.data() : null; if (S.role === "student" && !busyEditing()) render(); }, () => {});
+  /* public documents: every page load used to open 9 live listeners (visitors included). Now they come from this device's copy
+     for a while, and only signed-in staff keep them live (pubLive). Signatures and the stamp load only when something needs them. */
+  pubBoot();
   S.policy = new URLSearchParams(location.search).has("policy");
   S.idv = (new URLSearchParams(location.search).get("id") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 24) || null;
   S.verify = (new URLSearchParams(location.search).get("verify") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20) || null;
-  onSnapshot(ref("public/system"), snap => { S.sys = snap.exists() ? snap.data() : {}; render(); }, () => { S.sys = {}; render(); });
-  onSnapshot(ref("ann/all"), snap => { S.ann.all = (snap.exists() && snap.data().items) || []; renderAnn(); }, () => {});
   onAuthStateChanged(auth, user => {
     stopAll();
     S.authUser = user; S.role = null; S.adminRole = null; S.me = null; S.myNum = null; S.authReady = true;
@@ -696,6 +740,7 @@ function watchStaffLock(){
 }
 function startData(){
   S.loaded = {trainers: false, groups: false};
+  pubLive();
   if (S.role === "admin" && MAILONLY()) { S.loaded = {trainers: true, groups: true}; watchStaffLock(); S.mail = null; mailSubs(); watchMemos(); watchTickets(); watchMeetings(); if (S.adminRole === "admission") watchApps(); watchCorr();
     S.subs.push(onSnapshot(collection(db, "trainers"), snap => { S.trainers = {}; snap.docs.forEach(d => S.trainers[d.id] = {id: d.id, ...d.data()}); if (isChatTab() && $("#mmList")) memoPaint(); }, () => {}));
     return; }
@@ -2023,7 +2068,7 @@ const corrBadge = () => { const n = corrUnread().length; return n ? ` (${n})` : 
 function watchCorr(){
   if (S._corrSub || !S.authUser || (S.role === "trainer" && !S.me)) return; S._corrSub = true;
   const all = S.role === "admin" && ["admin", "auditor"].includes(S.adminRole);
-  const qs = all ? {a: collection(db, "corr")} : S.role === "student" ? {s: query(collection(db, "corr"), where("to", "array-contains", "students"))}
+  const qs = all ? {a: query(collection(db, "corr"), orderBy("at", "desc"), limit(300))} : S.role === "student" ? {s: query(collection(db, "corr"), where("to", "array-contains", "students"))}
     : S.role === "trainer" ? {t: query(collection(db, "corr"), where("to", "array-contains", "trainers")), u: query(collection(db, "corr"), where("to", "array-contains", S.me))}
     : {m: query(collection(db, "corr"), where("to", "array-contains", S.adminRole)), g: query(collection(db, "corr"), where("to", "array-contains", "staff")), b: query(collection(db, "corr"), where("by", "==", S.adminRole))};
   const parts = {}, seenQ = {}; let ready = false;
@@ -4462,7 +4507,7 @@ function renderAdmin(app){
   app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
   if ($("#nagAbs")) $("#nagAbs").onclick = () => { S.aTab = "follow"; render(); };
   if ($("#nagBk")) $("#nagBk").onclick = async e => { e.target.disabled = true; try { await backupAll(); toast("نزلت النسخة الاحتياطية"); render(); } catch (x) { console.error(x); toast("تعذّر أخذ النسخة"); e.target.disabled = false; } };
-  ({dradm: drOverTab, corr: corrTab, adm: admTab, meet: meetingsTab, tickets: techTicketsTab, dash: adminDash, kpi: adminKpi, groups: adminGroups, students: adminStudents, msgs: adminMessages, trainers: adminTrainers, grades: adminGrades, exams: adminExams, camp: campTab, hr: hrTab, follow: adminFollow, excuses: adminExcuses, areqs: adminAcReqs, evals: adminEvals, report: adminReport, courses: adminCourses, sign: signRequests, tasks: tasksTab, weekly: weeklyTab, trmsgs: adminTrMsgs, sreq: staffReqsView, memos: memosTab, mail: mailTab, live: liveTab, system: el => { adminSystem(el); attArchiveCard(el); }, archive: adminArchive, finance: adminFinance, logs: adminLogs})[S.aTab]($("#ab"));
+  ({dradm: drOverTab, corr: corrTab, adm: admTab, meet: meetingsTab, tickets: techTicketsTab, dash: adminDash, kpi: adminKpi, groups: adminGroups, students: adminStudents, msgs: adminMessages, trainers: adminTrainers, grades: adminGrades, exams: adminExams, camp: campTab, hr: hrTab, follow: adminFollow, excuses: adminExcuses, areqs: adminAcReqs, evals: adminEvals, report: adminReport, courses: adminCourses, sign: signRequests, tasks: tasksTab, weekly: weeklyTab, trmsgs: adminTrMsgs, sreq: staffReqsView, memos: memosTab, mail: mailTab, live: liveTab, system: el => { adminSystem(el); readMeterCard(el); attArchiveCard(el); }, archive: adminArchive, finance: adminFinance, logs: adminLogs})[S.aTab]($("#ab"));
 }
 
 function adminDash(el){
@@ -6161,7 +6206,7 @@ function watchTrMsgs(){
   if (S._trmSub || !S.authUser) return;
   let q = null;
   if (S.role === "trainer" && S.me) q = query(collection(db, "trMsgs"), where("tid", "==", S.me));
-  else if (S.role === "admin" && ["admin", "academic", "auditor"].includes(S.adminRole)) q = collection(db, "trMsgs");
+  else if (S.role === "admin" && ["admin", "academic", "auditor"].includes(S.adminRole)) q = query(collection(db, "trMsgs"), orderBy("at", "desc"), limit(400));
   if (!q) return; S._trmSub = true;
   S.subs.push(onSnapshot(q, snap => { S.trMsgs = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => String(a.at || "").localeCompare(String(b.at || ""))); if (!busyEditing()) render(); }, e => console.error(e)));
   S.subs.push(() => { S._trmSub = false; S.trMsgs = null; });
@@ -7094,7 +7139,7 @@ const TASK_PILL = {new: "l", seen: "", done: "l", returned: "a", closed: "p"};
 const TASK_MAX = 760 * 1024;
 function watchTasks(){
   if (S._taskSub || !S.authUser || S.role !== "admin" || !S.adminRole) return; S._taskSub = true;
-  const q = RO() || S.adminRole === "admin" ? collection(db, "tasks") : query(collection(db, "tasks"), where("to", "==", S.adminRole));
+  const q = RO() || S.adminRole === "admin" ? query(collection(db, "tasks"), orderBy("at", "desc"), limit(300)) : query(collection(db, "tasks"), where("to", "==", S.adminRole));
   S.subs.push(onSnapshot(q, snap => { S.tasks = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => String(b.at || "").localeCompare(String(a.at || ""))); if (!busyEditing()) render(); }, e => console.error(e)));
   S.subs.push(() => { S._taskSub = false; S.tasks = null; S.weeks = null; });
 }
@@ -7250,6 +7295,27 @@ async function archCollect(days){
       if (r.status === "signed") out.push({kind: "طلب توقيع", dept: ROLES[r.from] || r.from || "", label: r.title + " — الموقّع", date: r.at, path: `signFiles/${r.id}_signed`, fname: r.title + " - موقّع", sign: r.id}); });
   } catch (e) { console.error(e); }
   return out;
+}
+/* where the Firestore reads go: the totals the devices sent today and yesterday, by account type and collection (estimate) */
+const RM_N = {trainer: "المدربين", student: "المتدربين"};
+const RM_C = {students: "الطلاب", studentSecrets: "رموز الطلاب", groups: "المقررات", grades: "الدرجات", trainers: "المدربين", att: "الحضور", joins: "دخول المحاضرات", memos: "المراسلات", corr: "الصادر والوارد",
+  msgs: "الرسائل", msgReads: "قراءة الرسائل", payments: "الدفعات", finAccounts: "حسابات الطلاب", idcards: "البطاقات", certs: "الشهادات", warnings: "الإنذارات", excuses: "الأعذار", public: "إعدادات عامة", ann: "الإعلانات",
+  exams: "الاختبارات", examSubs: "إجابات الاختبارات", examQs: "أسئلة الاختبارات", tickets: "البلاغات", meetings: "الاجتماعات", tasks: "المهام", trMsgs: "رسائل المدربين", hrAtt: "بصمة الموظفين", mbox_m: "البريد", logs: "السجل", apps: "طلبات القبول", secrets: "رموز المدربين"};
+function readMeterCard(el){
+  if (S.adminRole !== "admin") return;
+  el.insertAdjacentHTML("beforeend", `<div class="card" id="rmCard"><h2>أين تذهب قراءات Firebase؟</h2><p class="muted" style="margin-top:0">تقدير من الأجهزة نفسها (يتجمع كل ربع ساعة)، يوضح أي حسابات وأي بيانات تستهلك الحد اليومي (50 ألف قراءة في الخطة المجانية).</p><div id="rmB" class="muted">جاري التحميل…</div></div>`);
+  const d0 = today(), d1 = new Date(Date.now() - 864e5).toLocaleDateString("en-CA", {timeZone: TZ});
+  Promise.all([d0, d1].map(d => getDoc(ref("usage/" + d)).then(x => [d, x.exists() ? x.data() : null]).catch(() => [d, null]))).then(rows => {
+    const box = $("#rmB"); if (!box) return;
+    box.classList.remove("muted");
+    box.innerHTML = rows.map(([d, u]) => { if (!u) return `<p class="muted">${d}: ما فيه بيانات بعد.</p>`;
+      const who = Object.entries(u).filter(([k]) => k !== "n").map(([k, v]) => [k, v, Object.values(v).reduce((a, b) => a + b, 0)]).sort((a, b) => b[2] - a[2]);
+      const cols = {}; who.forEach(([, v]) => Object.entries(v).forEach(([c, n]) => cols[c] = (cols[c] || 0) + n));
+      const top = Object.entries(cols).sort((a, b) => b[1] - a[1]).slice(0, 10);
+      return `<h3 style="margin:10px 0 4px">${d} · المجموع ${(u.n || 0).toLocaleString("en")}</h3>
+        <table class="tbl"><tr><th>الحساب</th><th>القراءات</th></tr>${who.map(([k, , t]) => `<tr><td>${esc(RM_N[k] || MEET_N[k] || k)}</td><td>${t.toLocaleString("en")}</td></tr>`).join("")}</table>
+        <table class="tbl" style="margin-top:6px"><tr><th>البيانات</th><th>القراءات</th></tr>${top.map(([c, n]) => `<tr><td>${esc(RM_C[c] || c)}</td><td>${n.toLocaleString("en")}</td></tr>`).join("")}</table>`; }).join("");
+  });
 }
 function attArchiveCard(el){
   if (S.adminRole !== "admin") return;
