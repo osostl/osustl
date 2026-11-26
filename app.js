@@ -3048,11 +3048,12 @@ const hrLeaveOn = (id, d) => (S.hrLeaves || []).find(l => l.staffId === id && !l
 const LV_T = {annual: "سنوية", sick: "مرضية", emergency: "اضطرارية", unpaid: "بدون راتب", perm: "استئذان", other: "أخرى"};
 function hrAuto(s, r, d){
   const lv = hrLeaveOn(s.id, d || today()); if (lv) return lv.type === "perm" ? "x" : "v";
+  if (r && r.man === "a") return "a";   // marked absent by hand: e.g. left early without leave or without punching out
   if (r && (r.st === "v" || r.st === "x")) return r.st;
   const i = hm(r && r.in); if (i === null) return "a";
   const sh = hrSh(s, d); return i > (hm(sh.from) ?? 480) + sh.grace ? "l" : "p";
 }
-const hrLateMin = (s, r, d) => { if (hrLeaveOn(s.id, d || today())) return 0; const i = hm(r && r.in), sh = hrSh(s, d); return i === null ? 0 : Math.max(0, i - (hm(sh.from) ?? 480) - sh.grace); };
+const hrLateMin = (s, r, d) => { if (hrLeaveOn(s.id, d || today()) || (r && r.man === "a")) return 0; const i = hm(r && r.in), sh = hrSh(s, d); return i === null ? 0 : Math.max(0, i - (hm(sh.from) ?? 480) - sh.grace); };
 const hrWorks = (s, d) => hrSh(s, d).days.includes(new Date(d + "T12:00:00").getDay()) && (!s.start || d >= s.start) && !hrHoliday(d);
 const hrDaysLeft = iso => iso ? Math.round((Date.parse(iso + "T12:00:00") - Date.parse(today() + "T12:00:00")) / 864e5) : null;
 /* papers that end soon: contract and ID / residency, within 30 days or already ended */
@@ -3096,7 +3097,7 @@ function hrAttView(el){
     return `<div class="item" style="flex-wrap:wrap;gap:8px"><div class="grow" style="min-width:160px"><b>${esc(s.name)}</b>${r.src === "bio" ? ` <span title="من جهاز البصمة${(r.punches || []).length ? ": " + esc(r.punches.join("، ")) : ""}">🖐</span>` : ""}<div class="muted">${esc(s.job || "")} · الدوام ${esc(sh.from)}–${esc(sh.to)}${lv ? ` · <b>إجازة ${esc(LV_T[lv.type] || "")}</b>` : ""}${(r.early || []).length && !r.in ? ` · <span style="color:var(--abs)">بصمة مبكرة ما انحسبت ${esc(r.early.join("، "))}</span>` : ""}${r.bOut ? ` · <span title="البريك">☕ ${esc(r.bOut)}–${esc(r.bIn || "…")}${r.bOver ? ` <b style="color:var(--abs)">(+${r.bOver} د)</b>` : ""}</span>` : ""}</div></div>
       <label class="row" style="gap:4px">دخول<input type="time" data-hin="${s.id}" value="${esc(r.in || "")}" style="width:110px"></label>
       <label class="row" style="gap:4px">خروج<input type="time" data-hout="${s.id}" value="${esc(r.out || "")}" style="width:110px"></label>
-      <select data-hst="${s.id}" style="width:auto"><option value="">تلقائي</option>${["v", "x"].map(k => `<option value="${k}" ${r.st === k ? "selected" : ""}>${HR_ST[k]}</option>`).join("")}</select>
+      <select data-hst="${s.id}" style="width:auto" title="«غائب» يحسب اليوم غياب حتى لو بصم دخول، مثل اللي طلع بدون إذن"><option value="">تلقائي</option>${["v", "x"].map(k => `<option value="${k}" ${r.man !== "a" && r.st === k ? "selected" : ""}>${HR_ST[k]}</option>`).join("")}<option value="man_a" ${r.man === "a" ? "selected" : ""}>غائب</option></select>
       <span class="pill ${HR_PILL[st]}">${HR_ST[st]}${st === "l" ? ` ${late} د` : ""}</span>
       <input type="text" data-hnote="${s.id}" value="${esc(r.note || "")}" placeholder="ملاحظة" style="width:150px"></div>`; }).join("") || `<div class="card empty">ما فيه أحد دوامه هذا اليوم.</div>`}</div>
     <div class="row" style="margin:10px 0;gap:6px"><button class="btn pri" id="hrSave">حفظ اليوم</button><button class="btn sm" id="hrNow">سجّل دخول اللي ما سجّلوا بالوقت الحالي</button></div>`}`;
@@ -3104,11 +3105,11 @@ function hrAttView(el){
   const upd = (id, k, v) => { (draft[id] = draft[id] || {})[k] = v; S._hrDraft.dirty = true; };
   el.querySelectorAll("[data-hin]").forEach(x => x.onchange = () => { upd(x.dataset.hin, "in", x.value); render(); });
   el.querySelectorAll("[data-hout]").forEach(x => x.onchange = () => { upd(x.dataset.hout, "out", x.value); });
-  el.querySelectorAll("[data-hst]").forEach(x => x.onchange = () => { upd(x.dataset.hst, "st", x.value); render(); });
+  el.querySelectorAll("[data-hst]").forEach(x => x.onchange = () => { const id = x.dataset.hst; if (x.value === "man_a") { upd(id, "man", "a"); upd(id, "st", ""); } else { upd(id, "man", ""); upd(id, "st", x.value); } render(); });
   el.querySelectorAll("[data-hnote]").forEach(x => x.oninput = () => upd(x.dataset.hnote, "note", x.value.slice(0, 200)));
   if ($("#hrNow")) $("#hrNow").onclick = () => { const n = new Date(), t = hmStr(n.getHours() * 60 + n.getMinutes()); working.forEach(s => { const r = draft[s.id] || {}; if (!r.in && !r.st) upd(s.id, "in", t); }); render(); };
   if ($("#hrSave")) $("#hrSave").onclick = async () => {
-    const out = {}; working.forEach(s => { const r = draft[s.id] || {}; out[s.id] = {in: r.in || "", out: r.out || "", st: hrAuto(s, r, d), note: r.note || "", late: hrLateMin(s, r, d)}; });
+    const out = {}; working.forEach(s => { const r = draft[s.id] || {}; out[s.id] = {in: r.in || "", out: r.out || "", st: hrAuto(s, r, d), man: r.man === "a" ? "a" : "", note: r.note || "", late: hrLateMin(s, r, d)}; });
     try { await setDoc(ref("hrAtt/" + d), {date: d, rec: out, by: S.adminRole, at: new Date().toISOString()}, {merge: true}); logAction("حضور الموظفين", d); S._hrDraft = null; toast("انحفظ حضور اليوم"); }
     catch (e) { handleWriteErr(e); }
   };
@@ -3402,11 +3403,11 @@ function hrRepRows(m){
   for (let i = 1; i <= last; i++) { const d = `${m}-${String(i).padStart(2, "0")}`; if (d <= today() && d >= since) days.push(d); }
   return (S.hrStaff || []).filter(s => s.active !== false || Object.values(S.hrAtt || {}).some(x => (x.rec || {})[s.id])).map(s => { const c = {work: 0, p: 0, l: 0, a: 0, v: 0, x: 0, late: 0, mins: 0, unpaid: 0};
     days.forEach(d => { if (!hrWorks(s, d)) return; c.work++; const r = (((S.hrAtt || {})[d] || {}).rec || {})[s.id], lv = hrLeaveOn(s.id, d);
-      const st = lv ? (lv.type === "perm" ? "x" : "v") : r ? (r.st || hrAuto(s, r, d)) : "a"; c[st]++;
+      const st = lv ? (lv.type === "perm" ? "x" : "v") : r ? (r.man === "a" ? "a" : r.st || hrAuto(s, r, d)) : "a"; c[st]++;
       if (lv && lv.type === "unpaid") c.unpaid++;
       if (st === "l") c.late += r.late ?? hrLateMin(s, r, d);
       if (r && (st === "p" || st === "l")) c.late += Number(r.bOver) || 0;   // coming back late from the break is lateness too
-      const i = hm(r && r.in), o = hm(r && r.out); if (i !== null && o !== null && o > i) c.mins += o - i - (Number(r.bMins) || 0); });
+      const i = hm(r && r.in), o = hm(r && r.out); if (st !== "a" && i !== null && o !== null && o > i) c.mins += o - i - (Number(r.bMins) || 0); });
     return {s, c, pay: hrPayCalc(s, c)}; });
 }
 /* deductions follow «العطل والخصومات»: a day's pay = (salary + allowances) / 30; a late minute = a day's pay / the shift's minutes */
