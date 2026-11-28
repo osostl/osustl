@@ -7752,7 +7752,26 @@ function startFinance(){
 }
 /* what is waiting on the person looking: finance signs and approves, the director stamps */
 const fReqWaiting = () => (S.fReqs || []).filter(r => r.type === "inquiry" ? (r.status === "new" && FIN()) : (S.adminRole === "admin" ? ["new", "fin_signed", "stamped"].includes(r.status) : ["new", "stamped"].includes(r.status))).length + (S.adminRole === "admin" ? (S.fReqs || []).filter(r => r.type === "inquiry" && r.status === "new").length : 0);
-function buildPlan(net, plan, start, months, second){
+/* agreed monthly payment day (1, 10 or 27): unpaid installments fall on that day of their month */
+const PAY_DAYS = [1, 10, 27];
+const onDay = (d, day) => { const [y, m] = String(d).split("-").map(Number); if (!y || !m) return d; const last = new Date(Date.UTC(y, m, 0)).getUTCDate(); return `${y}-${String(m).padStart(2, "0")}-${String(Math.min(day, last)).padStart(2, "0")}`; };
+function applyPayDay(acc, day, pays){
+  if (!day) return acc.installments || [];
+  const paid = new Set(accStatus(acc, pays || []).sched.filter(i => i.xi === undefined && i.st === "paid").map(i => i.ix));
+  return (acc.installments || []).map((x, ix) => paid.has(ix) ? x : {...x, due: onDay(x.due, day)});
+}
+async function setPayDay(num, day){
+  const acc = (S.finAcc || {})[num]; if (!acc || RO()) return;
+  day = acc.payDay === day ? null : day;   // pressing the chosen day again clears it (dates stay as they are)
+  const before = clone(acc), inst = applyPayDay(acc, day, paysOf(num));
+  acc.payDay = day; acc.installments = inst; afterData();
+  try { await setDoc(ref("finAccounts/" + num), {payDay: day, installments: inst}, {merge: true}); logAction("يوم السداد", `${acc.name || num} · ${num} · ${day ? "يوم " + day : "بدون"}`); }
+  catch (e) { S.finAcc[num] = before; afterData(); handleWriteErr(e); }
+}
+function buildPlan(net, plan, start, months, second, day){
+  const L = buildPlan0(net, plan, start, months, second); return day ? L.map(x => ({...x, due: onDay(x.due, day)})) : L;
+}
+function buildPlan0(net, plan, start, months, second){
   if (!net || !start) return [];
   if (plan === "half") { const a = Math.round(net / 2 * 100) / 100; return [{due: start, amount: a}, {due: second || addMonths(start, 2), amount: Math.round((net - a) * 100) / 100}]; }
   if (plan === "monthly") {
@@ -8027,17 +8046,23 @@ function finSummary(el){ ensureFin();
 }
 function finAccounts(el){ ensureFin();
   const progName = id => ((S.finSet.programs || []).find(p => p.id === id) || {}).name || "—";
-  el.innerHTML = `<div class="card"><h2>حسابات الطلاب</h2><div class="row"><input type="text" id="faQ" class="grow" placeholder="ابحث بالاسم أو الرقم"><select id="faF" style="width:auto"><option value="">الكل</option>${Object.entries(FST).map(([k, v]) => `<option value="${k}" ${S.faF === k ? "selected" : ""}>${v}</option>`).join("")}</select></div></div><div class="list" id="faL"></div>`;
+  el.innerHTML = `<div class="card"><h2>حسابات الطلاب</h2><div class="row"><input type="text" id="faQ" class="grow" placeholder="ابحث بالاسم أو الرقم" value="${esc(S.faQ || "")}"><select id="faF" style="width:auto"><option value="">الكل</option>${Object.entries(FST).map(([k, v]) => `<option value="${k}" ${S.faF === k ? "selected" : ""}>${v}</option>`).join("")}</select>
+    <select id="faD" style="width:auto" title="يوم السداد الشهري المتفق عليه"><option value="">كل أيام السداد</option><option value="none" ${S.faD === "none" ? "selected" : ""}>بدون يوم سداد</option>${PAY_DAYS.map(d => `<option value="${d}" ${S.faD === String(d) ? "selected" : ""}>يوم ${d}</option>`).join("")}</select></div>
+    <div class="muted" id="faPD" style="margin-top:6px"></div></div><div class="list" id="faL"></div>`;
   const draw = () => {
-    const q = norm($("#faQ").value), f = $("#faF").value; S.faF = f;
-    const rows = finRows().filter(r => (!q || norm(r.s.name).includes(q) || r.s.num.includes(q)) && (!f || r.st.status === f)).sort((a, b) => a.s.num.localeCompare(b.s.num));
+    S.faQ = $("#faQ").value; const q = norm(S.faQ), f = $("#faF").value, fd = $("#faD").value; S.faF = f; S.faD = fd;
+    const all = finRows(), withAcc = all.filter(r => r.acc), cnt = d => withAcc.filter(r => (r.acc.payDay || null) === d).length;
+    $("#faPD").innerHTML = `يوم السداد: ${PAY_DAYS.map(d => `<b>يوم ${d}</b> ${cnt(d)}`).join(" · ")} · <b>بدون</b> ${cnt(null)} <span>(اضغط الرقم جنب كل طالب، ويتعدّل جدول أقساطه غير المدفوعة على طول)</span>`;
+    const rows = all.filter(r => (!q || norm(r.s.name).includes(q) || r.s.num.includes(q)) && (!f || r.st.status === f) && (!fd || (r.acc && (fd === "none" ? !r.acc.payDay : r.acc.payDay === Number(fd))))).sort((a, b) => a.s.num.localeCompare(b.s.num));
     $("#faL").innerHTML = rows.slice(0, 200).map(r => `<div class="item"><div class="grow"><div class="t">${esc(r.s.name)} <span class="muted">${esc(r.s.num)}</span></div>
       <div class="muted">${r.acc ? `${esc(progName(r.acc.program))} · ${PLANS[r.acc.plan] || ""}` : "ما انفتح له حساب"}</div></div>
+      ${r.acc && !RO() ? `<span class="row" style="gap:2px;align-items:center" title="يوم السداد الشهري"><span class="muted" style="font-size:12px">يوم</span>${PAY_DAYS.map(d => `<button class="btn sm ${r.acc.payDay === d ? "pri" : "ghost"}" style="min-width:34px;padding:2px 6px" data-pd="${esc(r.s.num)}" data-pdd="${d}">${d}</button>`).join("")}</span>` : r.acc && r.acc.payDay ? `<span class="pill">يوم ${r.acc.payDay}</span>` : ""}
       ${r.acc ? `<span class="muted">مدفوع ${SAR(r.st.paid)} من ${SAR(r.st.net)}</span>` : ""}<span class="pill ${FST_PILL[r.st.status]}">${FST[r.st.status]}${r.st.overdue ? " · " + SAR(r.st.overdue) : ""}</span>
       <button class="btn sm ${r.acc ? "" : "gold"}" data-fa="${esc(r.s.num)}">${r.acc ? "فتح" : "فتح حساب"}</button></div>`).join("") || `<div class="card empty">ما فيه نتائج</div>`;
     $("#faL").querySelectorAll("[data-fa]").forEach(b => b.onclick = () => openFinAccount(b.dataset.fa));
+    $("#faL").querySelectorAll("[data-pd]").forEach(b => b.onclick = async () => { await setPayDay(b.dataset.pd, Number(b.dataset.pdd)); draw(); });
   };
-  draw(); $("#faQ").oninput = draw; $("#faF").onchange = draw;
+  draw(); $("#faQ").oninput = draw; $("#faF").onchange = draw; $("#faD").onchange = draw;
 }
 function openFinAccount(num){ ensureFin();
   const s = S.students[num]; if (!s) return;
@@ -8072,6 +8097,7 @@ function openFinAccount(num){ ensureFin();
         <label class="f" for="fSt" style="width:160px">تاريخ أول دفعة<input type="date" id="fSt" value="${esc(acc.start || today())}"></label>
         <label class="f" for="fMo" style="width:110px;${acc.plan === "monthly" ? "" : "display:none"}">عدد الأشهر<input type="number" id="fMo" min="2" max="60" value="${acc.months || 4}"></label>
         <label class="f" for="fSec" style="width:160px;${acc.plan === "half" ? "" : "display:none"}">موعد الدفعة الثانية<input type="date" id="fSec" value="${esc(acc.second || "")}"></label>
+        <label class="f" for="fPd" style="width:130px">يوم السداد الشهري<select id="fPd"><option value="">—</option>${PAY_DAYS.map(d => `<option value="${d}" ${acc.payDay === d ? "selected" : ""}>يوم ${d}</option>`).join("")}</select></label>
         <button class="btn sm" id="fGen" style="align-self:flex-end">توليد الجدول</button>
       </div>
       ${acc.plan === "qasima" ? `<p class="muted">الطالب يقسّط مع قسيمة بلس، والمعهد يستلم المبلغ كامل. سجّل الدفعة بطريقة "قسيمة بلس" لما يوصل المبلغ.</p>` : ""}
@@ -8145,13 +8171,14 @@ function openFinAccount(num){ ensureFin();
     $("#xAdd").onclick = () => { const label = $("#xT").value === "_o" ? $("#xL").value.trim() : $("#xT").value, amount = Number($("#xA").value) || 0; if (!label || amount <= 0) return toast("اختر النوع واكتب المبلغ"); saveExtras([...(acc.extras || []), {label, amount, date: $("#xD").value || today()}], `رسوم إضافية: ${label} ${amount}`); };
     $("#modalBox").querySelectorAll("[data-xdel]").forEach(b => b.onclick = () => { if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "متأكد؟"; return; } const l = [...(acc.extras || [])]; const [x] = l.splice(Number(b.dataset.xdel), 1); saveExtras(l, `حذف رسوم إضافية: ${x.label}`); });
     $("#fP").onchange = () => { readForm(); const p = progs.find(x => x.id === acc.program); if (p) acc.fee = Number(p.fee) || 0; draw(); };
-    $("#fPl").onchange = () => { readForm(); acc.installments = buildPlan(Math.max(0, acc.fee - acc.discount), acc.plan, acc.start, acc.months, acc.second); draw(); };
-    $("#fGen").onclick = () => { readForm(); acc.installments = buildPlan(Math.max(0, acc.fee - acc.discount), acc.plan, acc.start, acc.months, acc.second); draw(); };
+    $("#fPl").onchange = () => { readForm(); acc.installments = buildPlan(Math.max(0, acc.fee - acc.discount), acc.plan, acc.start, acc.months, acc.second, acc.payDay); draw(); };
+    $("#fPd").onchange = () => { readForm(); acc.payDay = Number($("#fPd").value) || null; acc.installments = applyPayDay(acc, acc.payDay, paysOf(num)); draw(); };
+    $("#fGen").onclick = () => { readForm(); acc.installments = buildPlan(Math.max(0, acc.fee - acc.discount), acc.plan, acc.start, acc.months, acc.second, acc.payDay); draw(); };
     $("#fSave").onclick = async () => {
       readForm();
       const net = Math.max(0, acc.fee - acc.discount), sumI = Math.round(acc.installments.reduce((a, i) => a + i.amount, 0) * 100) / 100;
       if (!acc.fee) return toast("حدد الرسوم");
-      if (!acc.installments.length) acc.installments = buildPlan(net, acc.plan, acc.start, acc.months, acc.second);
+      if (!acc.installments.length) acc.installments = buildPlan(net, acc.plan, acc.start, acc.months, acc.second, acc.payDay);
       else if (Math.abs(sumI - net) > 0.01) return toast(`مجموع الدفعات ${SAR(sumI)} لازم يساوي الصافي ${SAR(net)}`);
       acc.num = num; acc.name = s.name; acc.updatedAt = new Date().toISOString();
       try { await setDoc(ref("finAccounts/" + num), acc); S.finAcc[num] = clone(acc); logAction("حفظ حساب مالي", `${s.name} · ${PLANS[acc.plan]} · ${SAR(net)}`); toast("انحفظ الحساب"); draw(); }
