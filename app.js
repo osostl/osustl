@@ -8371,6 +8371,54 @@ function finSoonText(s, st){
   return `السلام عليكم ${s.name}\nالرقم الأكاديمي: ${s.num}\n\nنذكّركم بموعد القسط القادم:\n${SAR(st.next.amount)} بتاريخ ${st.next.due}\nالمتبقي الكلي: ${SAR(st.remaining)}\n\nالمالية\n${INST_AR}`;
 }
 function finSettings(el){ finSettings0(el); nameLinkCard(el); fillMount(el, "fin"); }
+/* program fee → each student's account: the total follows the program, the discount stays, paid installments stay,
+   and what is still unpaid is spread again over the unpaid installments (same dates) so statistics add up */
+function feeDiffs(){
+  const progs = (S.finSet && S.finSet.programs) || [];
+  return Object.values(S.finAcc || {}).map(acc => { const pr = progs.find(p => p.id === acc.program); return pr && Math.abs((Number(acc.fee) || 0) - (Number(pr.fee) || 0)) > 0.001 ? {acc, pr} : null; }).filter(Boolean);
+}
+function refitFee(acc, fee, pays){
+  const net = Math.max(0, Math.round(((Number(fee) || 0) - (Number(acc.discount) || 0)) * 100) / 100);
+  const sched = accStatus(acc, pays || []).sched.filter(i => i.xi === undefined);
+  const paid = new Set(sched.filter(i => i.st === "paid").map(i => i.ix)), L = acc.installments || [];
+  const keep = L.filter((x, ix) => paid.has(ix)), open = L.filter((x, ix) => !paid.has(ix)).sort((a, b) => String(a.due).localeCompare(String(b.due)));
+  let rest = Math.round((net - keep.reduce((a, x) => a + (Number(x.amount) || 0), 0)) * 100) / 100;
+  let out;
+  if (rest <= 0.001) out = keep;
+  else if (!open.length) out = [...keep, {due: acc.payDay ? onDay(today(), acc.payDay) : today(), amount: rest}];
+  else { const a = Math.floor(rest / open.length * 100) / 100; out = [...keep, ...open.map((x, i) => ({...x, amount: i === open.length - 1 ? Math.round((rest - a * (open.length - 1)) * 100) / 100 : a}))]; }
+  return {...acc, fee: Number(fee) || 0, installments: out.sort((a, b) => String(a.due).localeCompare(String(b.due)))};
+}
+function feeSyncModal(){
+  const rows = feeDiffs().sort((a, b) => a.acc.num.localeCompare(b.acc.num));
+  const net = a => Math.max(0, (Number(a.fee) || 0) - (Number(a.discount) || 0));
+  $("#modalBox").innerHTML = `<div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">🔗 ربط الحسابات برسوم البرامج</h2><button class="btn sm" id="fsX">إغلاق</button></div>
+    ${rows.length ? `<p class="muted">كل طالب ياخذ رسوم برنامجه. الخصم يبقى، والأقساط المدفوعة ما تتغيّر، والباقي يتوزّع على الأقساط غير المدفوعة بنفس تواريخها. شيل الصح عن أي طالب رسومه خاصة.</p>
+    <div class="row" style="gap:8px;margin:6px 0"><label class="row" style="gap:4px"><input type="checkbox" id="fsAll" checked> تحديد الكل</label><span class="muted" id="fsSum"></span></div>
+    <div class="tbl" style="max-height:55vh;overflow:auto"><table><thead><tr><th></th><th class="nm">الطالب</th><th class="nm">البرنامج</th><th>الرسوم الحالية</th><th>رسوم البرنامج</th><th>الخصم</th><th>الصافي بعد</th></tr></thead><tbody>
+    ${rows.map(({acc, pr}, i) => `<tr><td><input type="checkbox" data-fs="${i}" checked></td><td class="nm">${esc(acc.name || (S.students[acc.num] || {}).name || "")} <span class="muted">${esc(acc.num)}</span></td><td class="nm">${esc(pr.name)}</td><td>${SAR(acc.fee)}</td><td><b>${SAR(pr.fee)}</b></td><td>${acc.discount ? SAR(acc.discount) : "—"}</td><td>${SAR(Math.max(0, pr.fee - (Number(acc.discount) || 0)))}</td></tr>`).join("")}
+    </tbody></table></div><div class="row" style="gap:8px;margin-top:10px"><button class="btn pri" id="fsGo">تطبيق على المحددين</button></div>`
+    : `<p>كل الحسابات مطابقة لرسوم برامجها ✓</p>`}`;
+  $("#modal").classList.add("on");
+  $("#fsX").onclick = () => closeModal();
+  if (!rows.length) return;
+  const picked = () => [...document.querySelectorAll("[data-fs]")].filter(x => x.checked).map(x => rows[Number(x.dataset.fs)]);
+  const sum = () => { const p = picked(), d = p.reduce((a, r) => a + (Math.max(0, r.pr.fee - (Number(r.acc.discount) || 0)) - net(r.acc)), 0); $("#fsSum").textContent = `${p.length} حساب · فرق الصافي الكلي ${d >= 0 ? "+" : "−"}${SAR(Math.abs(d))}`; };
+  document.querySelectorAll("[data-fs]").forEach(x => x.onchange = sum); $("#fsAll").onchange = e => { document.querySelectorAll("[data-fs]").forEach(x => x.checked = e.target.checked); sum(); }; sum();
+  $("#fsGo").onclick = async e => {
+    const p = picked(); if (!p.length) return toast("حدد طالب واحد على الأقل");
+    if (!e.target.dataset.sure) { e.target.dataset.sure = 1; e.target.textContent = `متأكد؟ تطبيق على ${p.length} حساب`; return; }
+    e.target.disabled = true; let done = 0;
+    try {
+      for (let i = 0; i < p.length; i += 400) {
+        const b = writeBatch(db), part = p.slice(i, i + 400).map(r => ({num: r.acc.num, nw: refitFee(r.acc, r.pr.fee, paysOf(r.acc.num))}));
+        part.forEach(x => b.set(ref("finAccounts/" + x.num), {fee: x.nw.fee, installments: x.nw.installments}, {merge: true}));
+        await b.commit(); part.forEach(x => { S.finAcc[x.num] = {...S.finAcc[x.num], fee: x.nw.fee, installments: x.nw.installments}; }); done += part.length;
+      }
+      logAction("ربط الحسابات برسوم البرامج", `${done} حساب`); toast(`تم تحديث ${done} حساب`); closeModal();
+    } catch (x) { handleWriteErr(x); e.target.disabled = false; if (done) toast(`انحفظ ${done} قبل الخطأ`); }
+  };
+}
 function finSettings0(el){ ensureFin();
   const progs = S.finSet.programs || [], canPay = ["admin", "academic"].includes(S.adminRole);
   el.innerHTML = `<div class="card"><h2>👁️ المالية عند الطلاب</h2>
@@ -8385,7 +8433,8 @@ function finSettings0(el){ ensureFin();
   <div class="card"><h2>البرامج والرسوم</h2>
     <div class="list">${progs.map((p, i) => `<div class="item"><span class="grow"><b>${esc(p.name)}</b></span><input type="number" data-pfee="${i}" value="${p.fee}" style="width:130px"><span class="muted">ر.س</span><button class="btn sm danger" data-pdel="${i}">حذف</button></div>`).join("") || `<span class="muted">ما فيه برامج</span>`}</div>
     <div class="row" style="margin-top:10px"><input type="text" id="prN" class="grow" placeholder="اسم البرنامج، مثل: دبلوم القانون"><input type="number" id="prF" min="0" placeholder="الرسوم" style="width:130px"><button class="btn gold sm" id="prAdd">+ إضافة</button><button class="btn pri sm" id="prSave">حفظ الرسوم</button></div>
-    <p class="muted">تغيير رسوم البرنامج ما يغيّر حسابات الطلاب المفتوحة من قبل.</p></div>
+    ${(n => `<div class="row" style="gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap"><button class="btn ${n ? "gold" : ""}" id="feeSync" ${RO() ? "disabled" : ""}>🔗 ربط حسابات الطلاب برسوم البرامج</button><span class="muted">${n ? `<b>${n}</b> حساب رسومه تختلف عن رسوم برنامجه` : "كل الحسابات مطابقة لرسوم برامجها ✓"}</span></div>`)(feeDiffs().length)}
+    <p class="muted">تعديل رسوم برنامج هنا ما يغيّر الحسابات لحاله. احفظ الرسوم، ثم اضغط «ربط حسابات الطلاب»: تشوف كل طالب قبل وبعد، وتطبّق.</p></div>
   <div class="card"><h2>أنواع الرسوم الإضافية</h2>
     <div class="list">${(S.finSet.extraTypes || []).map((t, i) => `<div class="item"><span class="grow"><b>${esc(t.name)}</b></span><span>${SAR(t.fee)}</span><button class="btn sm danger" data-etdel="${i}">حذف</button></div>`).join("") || `<span class="muted">ما فيه أنواع. مثل: الشهادة، الحقيبة التدريبية، إعادة اختبار.</span>`}</div>
     <div class="row" style="margin-top:10px"><input type="text" id="etN" class="grow" placeholder="مثل: إعادة اختبار"><input type="number" id="etF" min="0" placeholder="المبلغ" style="width:130px"><button class="btn gold sm" id="etAdd">+ إضافة</button></div></div>
@@ -8409,6 +8458,7 @@ function finSettings0(el){ ensureFin();
   $("#prAdd").onclick = () => { const name = $("#prN").value.trim(), fee = Number($("#prF").value); if (!name || !(fee >= 0)) return toast("اكتب الاسم والرسوم"); save([...progs, {id: "pr-" + uid(), name, fee}]); };
   if ($("#finShow") && ["admin", "academic"].includes(S.adminRole)) $("#finShow").onchange = e => saveSite({finStudents: e.target.checked}, e.target.checked ? "إظهار المالية للطلاب" : "إخفاء المالية عن الطلاب");
   if ($("#payOn") && ["admin", "academic"].includes(S.adminRole)) $("#payOn").onchange = e => saveSite({payFees: e.target.checked}, e.target.checked ? "تفعيل الدفع الإلكتروني" : "إيقاف الدفع الإلكتروني");
+  if ($("#feeSync")) $("#feeSync").onclick = () => feeSyncModal();
   $("#prSave").onclick = () => { const list = clone(progs); el.querySelectorAll("[data-pfee]").forEach(x => list[Number(x.dataset.pfee)].fee = Number(x.value) || 0); save(list); };
   el.querySelectorAll("[data-pdel]").forEach(b => b.onclick = () => { const l = clone(progs); l.splice(Number(b.dataset.pdel), 1); save(l); });
 }
