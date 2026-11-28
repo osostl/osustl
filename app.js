@@ -8057,19 +8057,27 @@ function finSummary(el){ ensureFin();
       <div class="stat"><div class="n" style="color:${monthFlow(m).net < 0 ? "var(--abs)" : "var(--green)"}">${SAR(monthFlow(m).net)}</div><div class="l">صافي هذا الشهر</div></div>
       <div class="stat"><div class="n">${rows.filter(r => r.st.status === "none").length}</div><div class="l">طلاب بدون خطة سداد</div></div>
     </div></div>
-  <div class="card"><h2>حسب البرنامج</h2>${progs.length ? `<div class="tbl"><table><thead><tr><th class="nm">البرنامج</th><th>الطلاب</th><th>المستحق</th><th>المحصّل</th><th>النسبة</th></tr></thead><tbody>${progs.map(x => `<tr><td class="nm">${esc(x.pr.name)}</td><td>${x.n}</td><td>${SAR(x.net)}</td><td>${SAR(x.paid)}</td><td>${x.net ? Math.round(x.paid / x.net * 100) : 0}%</td></tr>`).join("")}</tbody></table></div>` : `<p class="muted" style="margin:0">أضف البرامج ورسومها من "البرامج والرسوم".</p>`}</div>
+  <div class="card"><h2>حسب البرنامج</h2>${progs.length ? (() => {
+    const line = (name, x, b) => `<tr${b ? ' style="font-weight:700;background:var(--gold-pale)"' : ""}><td class="nm">${name}</td><td>${x.n}</td><td>${SAR(x.net)}</td><td>${SAR(x.paid)}</td><td>${x.net ? Math.round(x.paid / x.net * 100) : 0}%</td></tr>`;
+    const add = L => L.reduce((a, x) => ({n: a.n + x.n, net: a.net + x.net, paid: a.paid + x.paid}), {n: 0, net: 0, paid: 0});
+    const none = rows.filter(r => r.acc && !progOfAcc(r.acc)), noneX = {n: none.length, net: none.reduce((a, r) => a + r.st.net, 0), paid: none.reduce((a, r) => a + r.st.paid, 0)};
+    const body = PROG_GROUPS.map(g => { const L = progs.filter(x => progGroup(x.pr.name) === g); return L.length ? L.map(x => line(esc(x.pr.name), x)).join("") + line("مجموع " + g, add(L), true) : ""; }).join("")
+      + (noneX.n ? line(`<span style="color:var(--abs)">⚠️ بدون برنامج (اربطهم من الإعدادات)</span>`, noneX) : "") + line("المجموع الكلي", add([...progs, noneX]), true);
+    return `<div class="tbl"><table><thead><tr><th class="nm">البرنامج</th><th>الطلاب</th><th>المستحق</th><th>المحصّل</th><th>النسبة</th></tr></thead><tbody>${body}</tbody></table></div>`; })() : `<p class="muted" style="margin:0">أضف البرامج ورسومها من "البرامج والرسوم".</p>`}</div>
   <div class="card"><h2>حسب طريقة الدفع</h2>${Object.keys(methods).length ? `<div class="list">${Object.entries(methods).map(([k, v]) => `<div class="item"><span class="grow">${esc(k)}</span><b>${SAR(v)}</b></div>`).join("")}</div>` : `<p class="muted" style="margin:0">ما فيه دفعات بعد.</p>`}</div>`;
 }
 function finAccounts(el){ ensureFin();
   const progName = id => ((S.finSet.programs || []).find(p => p.id === id) || {}).name || "—";
   el.innerHTML = `<div class="card"><h2>حسابات الطلاب</h2><div class="row"><input type="text" id="faQ" class="grow" placeholder="ابحث بالاسم أو الرقم" value="${esc(S.faQ || "")}"><select id="faF" style="width:auto"><option value="">الكل</option>${Object.entries(FST).map(([k, v]) => `<option value="${k}" ${S.faF === k ? "selected" : ""}>${v}</option>`).join("")}</select>
+    <select id="faG" style="width:auto"><option value="">كل البرامج</option>${PROG_GROUPS.map(g => `<option value="g:${g}" ${S.faG === "g:" + g ? "selected" : ""}>${g} (الكل)</option>`).join("")}${(S.finSet.programs || []).map(p => `<option value="${esc(p.id)}" ${S.faG === p.id ? "selected" : ""}>— ${esc(p.name)}</option>`).join("")}<option value="none" ${S.faG === "none" ? "selected" : ""}>⚠️ بدون برنامج</option></select>
     <select id="faD" style="width:auto" title="يوم السداد الشهري المتفق عليه"><option value="">كل أيام السداد</option><option value="none" ${S.faD === "none" ? "selected" : ""}>بدون يوم سداد</option>${PAY_DAYS.map(d => `<option value="${d}" ${S.faD === String(d) ? "selected" : ""}>يوم ${d}</option>`).join("")}</select></div>
     <div class="muted" id="faPD" style="margin-top:6px"></div></div><div class="list" id="faL"></div>`;
   const draw = () => {
-    S.faQ = $("#faQ").value; const q = norm(S.faQ), f = $("#faF").value, fd = $("#faD").value; S.faF = f; S.faD = fd;
+    S.faQ = $("#faQ").value; const q = norm(S.faQ), f = $("#faF").value, fd = $("#faD").value, fg = $("#faG").value; S.faF = f; S.faD = fd; S.faG = fg;
+    const gOk = r => { if (!fg) return true; const pr = r.acc && progOfAcc(r.acc); return fg === "none" ? !!r.acc && !pr : fg.startsWith("g:") ? !!pr && progGroup(pr.name) === fg.slice(2) : !!pr && pr.id === fg; };
     const all = finRows(), withAcc = all.filter(r => r.acc), cnt = d => withAcc.filter(r => (r.acc.payDay || null) === d).length;
     $("#faPD").innerHTML = `يوم السداد: ${PAY_DAYS.map(d => `<b>يوم ${d}</b> ${cnt(d)}`).join(" · ")} · <b>بدون</b> ${cnt(null)} <span>(اضغط الرقم جنب كل طالب، ويتعدّل جدول أقساطه غير المدفوعة على طول)</span>`;
-    const rows = all.filter(r => (!q || norm(r.s.name).includes(q) || r.s.num.includes(q)) && (!f || r.st.status === f) && (!fd || (r.acc && (fd === "none" ? !r.acc.payDay : r.acc.payDay === Number(fd))))).sort((a, b) => a.s.num.localeCompare(b.s.num));
+    const rows = all.filter(r => (!q || norm(r.s.name).includes(q) || r.s.num.includes(q)) && (!f || r.st.status === f) && (!fd || (r.acc && (fd === "none" ? !r.acc.payDay : r.acc.payDay === Number(fd)))) && gOk(r)).sort((a, b) => a.s.num.localeCompare(b.s.num));
     $("#faL").innerHTML = rows.slice(0, 200).map(r => `<div class="item"><div class="grow"><div class="t">${esc(r.s.name)} <span class="muted">${esc(r.s.num)}</span></div>
       <div class="muted">${r.acc ? `${esc(progName(r.acc.program))} · ${PLANS[r.acc.plan] || ""}` : "ما انفتح له حساب"}</div></div>
       ${r.acc && !RO() ? `<span class="row" style="gap:2px;align-items:center" title="يوم السداد الشهري"><span class="muted" style="font-size:12px">يوم</span>${PAY_DAYS.map(d => `<button class="btn sm ${r.acc.payDay === d ? "pri" : ""}" style="min-width:34px;padding:2px 6px" data-pd="${esc(r.s.num)}" data-pdd="${d}">${d}</button>`).join("")}</span>` : r.acc && r.acc.payDay ? `<span class="pill">يوم ${r.acc.payDay}</span>` : ""}
@@ -8078,7 +8086,7 @@ function finAccounts(el){ ensureFin();
     $("#faL").querySelectorAll("[data-fa]").forEach(b => b.onclick = () => openFinAccount(b.dataset.fa));
     $("#faL").querySelectorAll("[data-pd]").forEach(b => b.onclick = async () => { await setPayDay(b.dataset.pd, Number(b.dataset.pdd)); draw(); });
   };
-  draw(); $("#faQ").oninput = draw; $("#faF").onchange = draw; $("#faD").onchange = draw;
+  draw(); $("#faQ").oninput = draw; $("#faF").onchange = draw; $("#faD").onchange = draw; $("#faG").onchange = draw;
 }
 function openFinAccount(num){ ensureFin();
   const s = S.students[num]; if (!s) return;
@@ -8377,6 +8385,10 @@ function feeDiffs(){
   const progs = (S.finSet && S.finSet.programs) || [];
   return Object.values(S.finAcc || {}).map(acc => { const pr = progs.find(p => p.id === acc.program); return pr && Math.abs((Number(acc.fee) || 0) - (Number(pr.fee) || 0)) > 0.001 ? {acc, pr} : null; }).filter(Boolean);
 }
+/* programs fall in two families by their name, so statistics can show media and law apart */
+const progGroup = name => /إعلام|اعلام/.test(String(name || "")) ? "الإعلام" : /قانون/.test(String(name || "")) ? "القانون" : "برامج أخرى";
+const PROG_GROUPS = ["القانون", "الإعلام", "برامج أخرى"];
+const progOfAcc = acc => ((S.finSet && S.finSet.programs) || []).find(p => p.id === (acc || {}).program) || null;
 const feeOrphans = () => { const progs = (S.finSet && S.finSet.programs) || []; return Object.values(S.finAcc || {}).filter(a => !progs.some(p => p.id === a.program)); };
 function refitFee(acc, fee, pays){
   const net = Math.max(0, Math.round(((Number(fee) || 0) - (Number(acc.discount) || 0)) * 100) / 100);
@@ -8461,6 +8473,50 @@ function feeOrphModal(orph, progs){
     } catch (x) { handleWriteErr(x); e.target.disabled = false; if (done) toast(`انحفظ ${done} قبل الخطأ`); }
   };
 }
+/* every account with its program, to check the linking and change it: filter by family or program, change one or many, save the changes */
+function progReviewModal(){
+  const progs = (S.finSet && S.finSet.programs) || [];
+  const accs = Object.values(S.finAcc || {}).sort((a, b) => a.num.localeCompare(b.num));
+  const nm = a => a.name || (S.students[a.num] || {}).name || "";
+  const opts = sel => `<option value="">— بدون برنامج —</option>${progs.map(p => `<option value="${esc(p.id)}" ${sel === p.id ? "selected" : ""}>${esc(p.name)} · ${SAR(p.fee)}</option>`).join("")}`;
+  const fam = a => { const p = progOfAcc(a); return p ? progGroup(p.name) : "none"; };
+  $("#modalBox").innerHTML = `<div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">📋 برنامج كل طالب (${accs.length})</h2><button class="btn sm" id="prX">إغلاق</button></div>
+    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0">
+      <select id="prF" style="width:auto"><option value="">الكل</option>${PROG_GROUPS.map(g => `<option value="g:${g}">${g}</option>`).join("")}${progs.map(p => `<option value="${esc(p.id)}">— ${esc(p.name)}</option>`).join("")}<option value="none">⚠️ بدون برنامج</option></select>
+      <input type="text" id="prQ" placeholder="ابحث بالاسم أو الرقم" style="width:200px"><span class="muted" id="prN"></span></div>
+    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 8px"><label class="row" style="gap:4px"><input type="checkbox" id="prAll"> تحديد الظاهرين</label>
+      <select id="prBulk" style="width:auto">${opts("")}</select><button class="btn sm" id="prApply">تطبيق على المحددين</button>
+      <label class="row" style="gap:4px;margin-inline-start:auto"><input type="checkbox" id="prFee" checked> وحدّث رسوم اللي تغيّر برنامجهم</label></div>
+    <div class="tbl" style="max-height:50vh;overflow:auto"><table><thead><tr><th></th><th class="nm">الطالب</th><th>الرسوم</th><th>المدفوع</th><th class="nm">البرنامج</th></tr></thead><tbody>
+    ${accs.map((a, i) => `<tr data-prr="${i}"><td><input type="checkbox" data-prc="${i}"></td><td class="nm">${esc(nm(a))} <span class="muted">${esc(a.num)}</span></td><td>${SAR(a.fee)}</td><td>${SAR(accStatus(a, paysOf(a.num)).paid)}</td><td class="nm"><select data-prs="${i}" style="min-width:230px">${opts(progOfAcc(a) ? a.program : "")}</select></td></tr>`).join("")}
+    </tbody></table></div>
+    <div class="row" style="gap:8px;margin-top:10px;align-items:center"><button class="btn pri" id="prSave">حفظ التغييرات</button><span class="muted" id="prCh"></span></div>`;
+  $("#modal").classList.add("on");
+  const sel = i => document.querySelector(`[data-prs="${i}"]`), changed = () => accs.map((a, i) => ({a, v: sel(i).value})).filter(x => x.v !== (progOfAcc(x.a) ? x.a.program : ""));
+  const vis = () => { const f = $("#prF").value, q = norm($("#prQ").value); let k = 0;
+    accs.forEach((a, i) => { const p = progOfAcc(a), ok = (!f || (f === "none" ? !p : f.startsWith("g:") ? p && progGroup(p.name) === f.slice(2) : p && p.id === f)) && (!q || norm(nm(a)).includes(q) || a.num.includes(q)); document.querySelector(`[data-prr="${i}"]`).style.display = ok ? "" : "none"; if (ok) k++; });
+    $("#prN").textContent = `${k} طالب ظاهر`; };
+  const ch = () => { $("#prCh").textContent = `${changed().length} تغيير ما انحفظ`; };
+  $("#prF").onchange = vis; $("#prQ").oninput = vis; vis(); ch();
+  document.querySelectorAll("[data-prs]").forEach(x => x.onchange = ch);
+  $("#prX").onclick = () => closeModal();
+  $("#prAll").onchange = e => accs.forEach((a, i) => { if (document.querySelector(`[data-prr="${i}"]`).style.display !== "none") document.querySelector(`[data-prc="${i}"]`).checked = e.target.checked; });
+  $("#prApply").onclick = () => { const v = $("#prBulk").value; let k = 0; document.querySelectorAll("[data-prc]").forEach(x => { if (x.checked) { sel(x.dataset.prc).value = v; x.checked = false; k++; } }); $("#prAll").checked = false; ch(); toast(k ? `انطبق على ${k}، اضغط حفظ التغييرات` : "حدد طلاب أول"); };
+  $("#prSave").onclick = async e => {
+    const L = changed(); if (!L.length) return toast("ما فيه تغييرات");
+    const withFee = $("#prFee").checked; e.target.disabled = true; let done = 0;
+    try {
+      for (let i = 0; i < L.length; i += 400) {
+        const b = writeBatch(db), part = L.slice(i, i + 400).map(({a, v}) => { const pr = progs.find(p => p.id === v);
+          if (pr && withFee) { const nw = refitFee({...a, program: v}, pr.fee, paysOf(a.num)); return {num: a.num, d: {program: v, fee: nw.fee, installments: nw.installments}}; }
+          return {num: a.num, d: {program: v}}; });
+        part.forEach(x => b.set(ref("finAccounts/" + x.num), x.d, {merge: true}));
+        await b.commit(); part.forEach(x => { S.finAcc[x.num] = {...S.finAcc[x.num], ...x.d}; }); done += part.length;
+      }
+      logAction("مراجعة برامج الطلاب", `${done} حساب${withFee ? " مع الرسوم" : ""}`); toast(`انحفظ ${done} تغيير`); progReviewModal();
+    } catch (x) { handleWriteErr(x); e.target.disabled = false; if (done) toast(`انحفظ ${done} قبل الخطأ`); }
+  };
+}
 function finSettings0(el){ ensureFin();
   const progs = S.finSet.programs || [], canPay = ["admin", "academic"].includes(S.adminRole);
   el.innerHTML = `<div class="card"><h2>👁️ المالية عند الطلاب</h2>
@@ -8475,7 +8531,7 @@ function finSettings0(el){ ensureFin();
   <div class="card"><h2>البرامج والرسوم</h2>
     <div class="list">${progs.map((p, i) => `<div class="item"><span class="grow"><b>${esc(p.name)}</b></span><input type="number" data-pfee="${i}" value="${p.fee}" style="width:130px"><span class="muted">ر.س</span><button class="btn sm danger" data-pdel="${i}">حذف</button></div>`).join("") || `<span class="muted">ما فيه برامج</span>`}</div>
     <div class="row" style="margin-top:10px"><input type="text" id="prN" class="grow" placeholder="اسم البرنامج، مثل: دبلوم القانون"><input type="number" id="prF" min="0" placeholder="الرسوم" style="width:130px"><button class="btn gold sm" id="prAdd">+ إضافة</button><button class="btn pri sm" id="prSave">حفظ الرسوم</button></div>
-    ${((n, o) => `<div class="row" style="gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap"><button class="btn ${n || o ? "gold" : ""}" id="feeSync" ${RO() ? "disabled" : ""}>🔗 ربط حسابات الطلاب برسوم البرامج</button><span class="muted">${n ? `<b>${n}</b> حساب رسومه تختلف عن رسوم برنامجه` : ""}${n && o ? " · " : ""}${o ? `<b>${o}</b> حساب بدون برنامج` : ""}${!n && !o ? "كل الحسابات مربوطة بمطابقة لرسوم برامجها ✓" : ""}</span></div>`)(feeDiffs().length, feeOrphans().length)}
+    ${((n, o) => `<div class="row" style="gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap"><button class="btn ${n || o ? "gold" : ""}" id="feeSync" ${RO() ? "disabled" : ""}>🔗 ربط حسابات الطلاب برسوم البرامج</button><button class="btn" id="progRev" ${RO() ? "disabled" : ""}>📋 مراجعة برنامج كل طالب</button><span class="muted">${n ? `<b>${n}</b> حساب رسومه تختلف عن رسوم برنامجه` : ""}${n && o ? " · " : ""}${o ? `<b>${o}</b> حساب بدون برنامج` : ""}${!n && !o ? "كل الحسابات مربوطة بمطابقة لرسوم برامجها ✓" : ""}</span></div>`)(feeDiffs().length, feeOrphans().length)}
     <p class="muted">تعديل رسوم برنامج هنا ما يغيّر الحسابات لحاله. احفظ الرسوم، ثم اضغط «ربط حسابات الطلاب»: تشوف كل طالب قبل وبعد، وتطبّق.</p></div>
   <div class="card"><h2>أنواع الرسوم الإضافية</h2>
     <div class="list">${(S.finSet.extraTypes || []).map((t, i) => `<div class="item"><span class="grow"><b>${esc(t.name)}</b></span><span>${SAR(t.fee)}</span><button class="btn sm danger" data-etdel="${i}">حذف</button></div>`).join("") || `<span class="muted">ما فيه أنواع. مثل: الشهادة، الحقيبة التدريبية، إعادة اختبار.</span>`}</div>
@@ -8501,6 +8557,7 @@ function finSettings0(el){ ensureFin();
   if ($("#finShow") && ["admin", "academic"].includes(S.adminRole)) $("#finShow").onchange = e => saveSite({finStudents: e.target.checked}, e.target.checked ? "إظهار المالية للطلاب" : "إخفاء المالية عن الطلاب");
   if ($("#payOn") && ["admin", "academic"].includes(S.adminRole)) $("#payOn").onchange = e => saveSite({payFees: e.target.checked}, e.target.checked ? "تفعيل الدفع الإلكتروني" : "إيقاف الدفع الإلكتروني");
   if ($("#feeSync")) $("#feeSync").onclick = () => feeSyncModal();
+  if ($("#progRev")) $("#progRev").onclick = () => progReviewModal();
   $("#prSave").onclick = () => { const list = clone(progs); el.querySelectorAll("[data-pfee]").forEach(x => list[Number(x.dataset.pfee)].fee = Number(x.value) || 0); save(list); };
   el.querySelectorAll("[data-pdel]").forEach(b => b.onclick = () => { const l = clone(progs); l.splice(Number(b.dataset.pdel), 1); save(l); });
 }
