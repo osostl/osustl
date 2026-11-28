@@ -4495,11 +4495,27 @@ function writeGroup(gid, d){
   S.groups[gid] = {id: gid, ...d}; saveDoc("groups/" + gid, d);
 }
 
+/* staff portals: the sections sit in one menu on the right instead of rows of buttons */
+function tabMenu(tabs, cur, key, title){
+  const c = tabs.find(([k]) => k === cur) || tabs[0] || ["", ""];
+  const waiting = tabs.filter(([k, v]) => k !== c[0] && /\(\d+\)/.test(String(v))).length;
+  return `<div class="card tmenu" style="padding:8px 12px"><div class="row" style="gap:8px;align-items:center;justify-content:flex-start">
+    <button class="btn pri" type="button" data-tmb aria-expanded="false" style="font-size:15px">☰ ${c[1]} <span style="opacity:.8">▾</span>${waiting ? ` <span class="pill a" style="margin-inline-start:4px">${waiting} فيها جديد</span>` : ""}</button>
+    ${title ? `<span class="muted">${esc(title)}</span>` : ""}</div>
+    <div class="tmPanel" hidden>${tabs.map(([k, v]) => `<button type="button" class="tmItem ${k === c[0] ? "on" : ""}" data-${key}="${esc(k)}">${v}</button>`).join("")}</div></div>`;
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest && e.target.closest("[data-tmb]");
+  document.querySelectorAll(".tmPanel").forEach(p => { const mine = b && p.parentElement === b.closest(".tmenu"); p.hidden = mine ? !p.hidden : true; const t = p.parentElement.querySelector("[data-tmb]"); if (t) t.setAttribute("aria-expanded", String(!p.hidden)); });
+});
+(() => { const st = document.createElement("style"); st.textContent = `.tmPanel{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.tmPanel[hidden]{display:none}.tmItem{text-align:right;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 12px;font:inherit;color:inherit;cursor:pointer}
+.tmItem:hover{border-color:var(--green)}.tmItem.on{background:var(--green);color:#fff;border-color:var(--green);font-weight:700}`; document.head.appendChild(st); })();
 function renderAdmin(app){
   if (RO()) {
     const tabsRO = [["tasks", "المهام" + taskBadge()], ["corr", "الصادر والوارد"], ["meet", "الاجتماعات" + meetBadge()], ["memos", "المراسلات" + memoBadge()], ["dradm", "🏢⚖️ الإدارية والقانونية"], ["weekly", "التقرير الأسبوعي"], ["dash", "لوحة اليوم"], ["kpi", "المؤشرات"], ["follow", "المتابعة"], ["report", "التقارير"], ["finance", "المالية"], ["hr", "الموارد البشرية"], ["trmsgs", "رسائل المدربين"], ["sreq", "طلبات الإجازة"], ["logs", "سجل الإدارات"], ["archive", "الأرشيف"]];
     if (!tabsRO.some(([k]) => k === S.aTab)) S.aTab = "tasks";
-    app.innerHTML = `<div class="notice">بوابة الجهة الرقابية: تطّلع على كل أعمال المعهد وتصدّرها، وترسل مهام للإدارات وتستلم تقاريرها. التعديل على البيانات يبقى عند الإدارات.</div><div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabsRO.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
+    app.innerHTML = `<div class="notice">بوابة الجهة الرقابية: تطّلع على كل أعمال المعهد وتصدّرها، وترسل مهام للإدارات وتستلم تقاريرها. التعديل على البيانات يبقى عند الإدارات.</div>${tabMenu(tabsRO, S.aTab, "at")}<div id="ab"></div>`;
     app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
     ({dradm: drOverTab, corr: corrTab, tasks: tasksTab, meet: meetingsTab, memos: memosTab, weekly: weeklyTab, dash: adminDash, kpi: adminKpi, follow: adminFollow, report: adminReport, finance: adminFinance, hr: hrTab, trmsgs: adminTrMsgs, sreq: staffReqsView, logs: adminLogs, archive: adminArchive})[S.aTab]($("#ab"));
     if (["finance", "hr", "logs"].includes(S.aTab)) ownerReadOnly($("#ab"));
@@ -4512,7 +4528,7 @@ function renderAdmin(app){
   if (MAILONLY()) {
     const mt = [...(S.adminRole === "admission" ? [["adm", "القبول والتسجيل" + appBadge()]] : []), ...(S.adminRole === "hr" ? [["hr", "الموارد البشرية"]] : []), ...(S.adminRole === "tech" ? [["tickets", "البلاغات التقنية" + tkBadge()]] : []), ...((DR_DEPT_K[S.adminRole] || []).map(k => ["dr_" + k, DR_TAB_N[k] + drBadge(S.adminRole, k)])), ["memos", "المراسلات" + memoBadge()], ["meet", "الاجتماعات" + meetBadge()], ["corr", "الصادر والوارد" + corrBadge()], ["mail", "البريد" + mailBadge()], ["tasks", "مهام الجهة الرقابية" + taskBadge()], ["sreq", "طلبات الإجازة" + srBadge()]];
     if (!mt.some(([k]) => k === S.aTab)) S.aTab = mt[0][0];
-    app.innerHTML = `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${mt.map(([k, v]) => `<button class="tab ${S.aTab === k ? "on" : ""}" data-at="${k}">${v}</button>`).join("")}</div></div><div id="ab"></div>`;
+    app.innerHTML = `${tabMenu(mt, S.aTab, "at")}<div id="ab"></div>`;
     app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
     if (S.aTab.startsWith("dr_")) { S.drSec = S.aTab.slice(3); drDeptTab($("#ab"), S.adminRole); return; }
     ({corr: corrTab, adm: admTab, hr: hrTab, tickets: techTicketsTab, meet: meetingsTab, memos: memosTab, mail: mailTab, tasks: tasksTab, sreq: staffReqsView})[S.aTab]($("#ab")); return;
@@ -4520,7 +4536,7 @@ function renderAdmin(app){
   const tabs = [["dash","لوحة اليوم"],["corr","الصادر والوارد" + corrBadge()],...(["admin", "academic"].includes(S.adminRole) ? [["adm","القبول والتسجيل" + appBadge()]] : []),["kpi","المؤشرات"],["groups","المقررات والطلاب"],["students","الطلاب"],["msgs","الرسائل الجماعية"],["trainers","المدربين والرموز"],["grades","الدرجات"],["exams","الاختبارات"],["camp","المعسكر"],["follow","المتابعة"],["excuses","الأعذار"],["areqs","طلبات الطلاب" + ((S.aReqs || []).some(r => r.status === "new") ? ` (${S.aReqs.filter(r => r.status === "new").length})` : "")],["evals","التقييمات"],["report","التقارير"],["courses","الدورات والشهادات"],["sign","طلبات التوقيع"],["tasks","مهام الجهة الرقابية" + taskBadge()],["trmsgs","رسائل المدربين" + trmBadge()],["sreq","طلبات الإجازة" + srBadge()],["memos","المراسلات" + memoBadge()],["meet","الاجتماعات" + meetBadge()],...(S.adminRole === "admin" ? [["tickets","البلاغات التقنية" + tkBadge()]] : []),["mail","البريد" + mailBadge()],...(MEET() ? [["live","المحاضرات والتسجيلات"]] : []),["system","النظام"],...(S.adminRole === "admin" ? [["hr","الموارد البشرية"],["dradm","الإدارية والقانونية" + ((c => c ? ` (${c})` : "")(((S.dr["dept:admaff"] || {}).L || []).filter(r => r.kind === "purchase" && r.status === "exec").length))]] : []),...(SEES_FIN() ? [["finance","المالية" + ((S.fReqs || []).some(r => r.status === "fin_signed") ? ` (${(S.fReqs || []).filter(r => r.status === "fin_signed").length})` : "")]] : []),["archive","الأرشيف"],...(S.adminRole === "admin" ? [["weekly","التقرير الأسبوعي"],["logs","السجل"]] : [])];
   if (!tabs.some(([k]) => k === S.aTab)) S.aTab = "dash";
   const waiting = Object.values(S.grades).filter(x => x.status === "submitted").length;
-  app.innerHTML = `${backupNag()}${quotaNag()}${absNag()}${S.sys && S.sys.maintenance ? `<div class="notice err">وضع الصيانة شغّال: الموقع مقفل على الكل ما عدا الإدارة. تطفيه من تبويب "النظام".</div>` : ""}<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k,v]) => `<button class="tab ${S.aTab===k?"on":""}" data-at="${k}">${v}${k === "grades" && waiting ? ` (${waiting})` : ""}${k === "follow" && S.allAtt && ["academic", "admin"].includes(S.adminRole) ? (n => n ? ` (${n})` : "")(absAlerts().alerts.filter(alertWaiting).length) : ""}${k === "excuses" && (S.excuses || []).filter(x => x.status === "pending").length ? ` (${S.excuses.filter(x => x.status === "pending").length})` : ""}</button>`).join("")}</div></div><div id="ab"></div>`;
+  app.innerHTML = `${backupNag()}${quotaNag()}${absNag()}${S.sys && S.sys.maintenance ? `<div class="notice err">وضع الصيانة شغّال: الموقع مقفل على الكل ما عدا الإدارة. تطفيه من تبويب "النظام".</div>` : ""}${tabMenu(tabs.map(([k, v]) => [k, `${v}${k === "grades" && waiting ? ` (${waiting})` : ""}${k === "follow" && S.allAtt && ["academic", "admin"].includes(S.adminRole) ? (n => n ? ` (${n})` : "")(absAlerts().alerts.filter(alertWaiting).length) : ""}${k === "excuses" && (S.excuses || []).filter(x => x.status === "pending").length ? ` (${S.excuses.filter(x => x.status === "pending").length})` : ""}`]), S.aTab, "at")}<div id="ab"></div>`;
   app.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { S.aTab = b.dataset.at; render(); });
   if ($("#nagAbs")) $("#nagAbs").onclick = () => { S.aTab = "follow"; render(); };
   if ($("#nagBk")) $("#nagBk").onclick = async e => { e.target.disabled = true; try { await backupAll(); toast("نزلت النسخة الاحتياطية"); render(); } catch (x) { console.error(x); toast("تعذّر أخذ النسخة"); e.target.disabled = false; } };
@@ -7997,7 +8013,7 @@ function adminFinance(el){ ensureFin();
   const nW = fReqWaiting();
   const tabs = [["sum", "الملخص"], ...(FIN() ? [["adm", "القبول والتسجيل" + appBadge()]] : []), ["req", "طلبات الطلاب" + (nW ? ` (${nW})` : "")], ["acc", "حسابات الطلاب"], ["pay", "الدفعات"], ["rcpt", "الإيصالات"], ["late", "المتأخرين"], ["exp", "المصروفات"], ["sal", "رواتب المدربين"], ["part", "الشركاء والعمولات"], ["rep", "التقرير الشهري"], ["hrpay", "رواتب الموظفين"], ...(FIN() ? [["corr", "الصادر والوارد" + corrBadge()], ["meet", "الاجتماعات" + meetBadge()], ["tasks", "مهام الجهة الرقابية" + taskBadge()], ["sreq", "طلبات الإجازة" + srBadge()], ["sign", "طلبات التوقيع"], ["memo", "المراسلات" + memoBadge()], ["mail", "البريد" + mailBadge()]] : []), ...(RO() ? [] : [["set", "الإعدادات"]])];
   if (RO()) { const keep = ["sum", "acc", "pay", "rcpt", "late", "exp", "sal", "part", "rep", "hrpay"]; for (let i = tabs.length - 1; i >= 0; i--) if (!keep.includes(tabs[i][0])) tabs.splice(i, 1); if (!keep.includes(S.finTab || "sum")) S.finTab = "sum"; t = S.finTab || "sum"; }
-  el.innerHTML = `<div class="card" style="padding:10px 12px"><div class="tabs" style="border:0;padding:0">${tabs.map(([k, v]) => `<button class="tab ${t === k ? "on" : ""}" data-ft="${k}">${v}</button>`).join("")}</div></div><div id="fb"></div>`;
+  el.innerHTML = `${tabMenu(tabs, t, "ft", "أقسام المالية")}<div id="fb"></div>`;
   el.querySelectorAll("[data-ft]").forEach(b => b.onclick = () => { S.finTab = b.dataset.ft; render(); });
   if (!S.finSet) { $("#fb").innerHTML = `<div class="card"><p class="muted" style="margin:0">جاري التحميل…</p></div>`; return; }
   ({corr: corrTab, adm: admTab, sum: finSummary, req: finReqTab, acc: finAccounts, pay: finPayments, rcpt: finReceipts, late: finLate, exp: finExpenses, sal: finSalaries, part: finPartners, rep: finReport, sign: signRequests, memo: memosTab, meet: meetingsTab, mail: mailTab, set: finSettings, tasks: tasksTab, hrpay: finHrPay, sreq: staffReqsView})[S.finTab || "sum"]($("#fb"));
