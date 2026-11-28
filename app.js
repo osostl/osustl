@@ -4623,7 +4623,7 @@ function adminGroups(el){
 }
 
 function trainerOptions(sel){ return `<option value="">بدون مدرب</option>` + Object.values(S.trainers).sort((a,b)=>a.name.localeCompare(b.name,"ar")).map(t => `<option value="${esc(t.id)}" ${t.id===sel?"selected":""}>${esc(trainerTitle(t))}</option>`).join(""); }
-function closeModal(){ S._crsOpen = null; $("#modal").classList.remove("on"); S._modalGroup = null; render(); }
+function closeModal(){ S._crsOpen = null; S._finModal = null; $("#modal").classList.remove("on"); S._modalGroup = null; render(); }
 function openGroup(id){
   const g = id ? S.groups[id] : null;
   S._modalGroup = id || ("g-" + uid());
@@ -8403,6 +8403,7 @@ function refitFee(acc, fee, pays){
   return {...acc, fee: Number(fee) || 0, installments: out.sort((a, b) => String(a.due).localeCompare(String(b.due)))};
 }
 function feeSyncModal(){
+  S._finModal = null; S._modalGroup = null;   // an account window left open earlier would redraw over this one
   const orph = feeOrphans().sort((a, b) => a.num.localeCompare(b.num)), progs = (S.finSet && S.finSet.programs) || [];
   if (orph.length && !S._fsSkipOrph) return feeOrphModal(orph, progs);
   S._fsSkipOrph = false;
@@ -8438,6 +8439,7 @@ function feeSyncModal(){
 /* accounts whose program is missing (never set, or the program was deleted and added again): pick it per student or for many at once;
    the program is guessed from the student's current fee when exactly one program has that fee */
 function feeOrphModal(orph, progs){
+  S._finModal = null; S._modalGroup = null;   // an account window left open earlier would redraw over this one
   const guess = a => { const m = progs.filter(p => Math.abs((Number(p.fee) || 0) - (Number(a.fee) || 0)) < 0.01); return m.length === 1 ? m[0].id : ""; };
   const opts = sel => `<option value="">— اختر البرنامج —</option>${progs.map(p => `<option value="${esc(p.id)}" ${sel === p.id ? "selected" : ""}>${esc(p.name)} · ${SAR(p.fee)}</option>`).join("")}`;
   const nm = a => a.name || (S.students[a.num] || {}).name || "";
@@ -8475,6 +8477,7 @@ function feeOrphModal(orph, progs){
 }
 /* every account with its program, to check the linking and change it: filter by family or program, change one or many, save the changes */
 function progReviewModal(){
+  S._finModal = null; S._modalGroup = null;   // an account window left open earlier would redraw over this one
   const progs = (S.finSet && S.finSet.programs) || [];
   const accs = Object.values(S.finAcc || {}).sort((a, b) => a.num.localeCompare(b.num));
   const nm = a => a.name || (S.students[a.num] || {}).name || "";
