@@ -752,6 +752,7 @@ function watchStaffLock(){
 }
 function startData(){
   S.loaded = {trainers: false, groups: false};
+  S._secOK = S._fcOK = false;
   pubLive();
   if (S.role === "admin" && MAILONLY()) { S.loaded = {trainers: true, groups: true}; watchStaffLock(); S.mail = null; mailSubs(); watchMemos(); watchTickets(); watchMeetings(); if (S.adminRole === "admission") watchApps(); watchCorr();
     S.subs.push(onSnapshot(collection(db, "trainers"), snap => { S.trainers = {}; snap.docs.forEach(d => S.trainers[d.id] = {id: d.id, ...d.data()}); if (isChatTab() && $("#mmList")) memoPaint(); }, () => {}));
@@ -810,8 +811,8 @@ function startData(){
     watchMemos(); watchTickets(); watchMeetings(); if (S.adminRole === "admission") watchApps(); watchCorr();
     if (!FIN()) S.subs.push(onSnapshot(collection(db, "acReqs"), snap => { S.aReqs = snap.docs.map(d => ({id: d.id, ...d.data()})); afterData(); }, () => {}));
     if (!FIN()) S.subs.push(onSnapshot(collection(db, "waivers"), snap => { S.waivers = {}; snap.docs.forEach(d => S.waivers[d.id] = d.data()); afterData(); }, () => {}));
+    S._fcOK = !RO();   // fee status list: loaded on demand (ensureFC)
     if (S.adminRole === "finance") ensureFin();   // the general administration loads finance only when a finance screen opens (Firebase daily reads)
-    if (!RO()) S.subs.push(onSnapshot(collection(db, "finClear"), snap => { S.finClear = {}; snap.docs.forEach(d => S.finClear[d.id] = d.data()); S.finClearLoaded = true; afterData(); }, () => {}));
     if (FIN()) {
       S.subs.push(onSnapshot(collection(db, "students"), snap => { S.students = {}; snap.docs.forEach(d => S.students[d.id] = d.data()); afterData(); }, () => {}));
       return;
@@ -829,7 +830,7 @@ function startData(){
     S.subs.push(onSnapshot(collection(db, "warnings"), snap => { S.warnings = {}; snap.docs.forEach(d => S.warnings[d.id] = d.data()); afterData(); }, () => {}));
     S.subs.push(onSnapshot(collection(db, "secrets"), snap => { S.secrets = {}; S.trPhones = {}; snap.docs.forEach(d => { S.secrets[d.id] = d.data().code; if (d.data().phone) S.trPhones[d.id] = d.data().phone; }); afterData(); }, () => {}));
     S.subs.push(onSnapshot(collection(db, "students"), snap => { S.students = {}; snap.docs.forEach(d => S.students[d.id] = d.data()); afterData(); }, () => {}));
-    S.subs.push(onSnapshot(collection(db, "studentSecrets"), snap => { S.stSecrets = {}; S.stPhones = {}; S.stProf = {}; snap.docs.forEach(d => { const v = d.data(); S.stSecrets[d.id] = v.code; S.stProf[d.id] = v; if (v.phone) S.stPhones[d.id] = v.phone; }); afterData(); }, () => {}));
+    S._secOK = true;   // student codes, phones and files: loaded on demand (ensureSec), see below
   }
 }
 function fail(err){ console.error(err); $("#app").innerHTML = `<div class="notice err">تعذّر تحميل البيانات. ${err && err.code === "permission-denied" ? "حسابك ما عنده صلاحية، أو قواعد الحماية في Firebase تحتاج تحديث." : "تأكد من الاتصال وحدّث الصفحة."}</div>`; }
@@ -1866,7 +1867,7 @@ function appModal(id){ ensureFin();
     catch (x) { b.disabled = false; handleWriteErr(x); }
   });
 }
-async function appEnroll(a, gids){
+async function appEnroll(a, gids){ await ensureSec();
   if (!appCan("academic")) return;
   const same = Object.values(S.students || {}).find(s => norm(s.name) === norm(a.name) || (a.nid && ((S.stProf || {})[s.num] || {}).nid === a.nid));
   if (same && !confirm(`فيه متدرب مسجّل باسم أو هوية مشابهة (${same.name} · ${same.num}). تسجّله برقم جديد؟`)) { appModal(a.id); return; }
@@ -2141,7 +2142,7 @@ function corrTab(el){
   corrList($("#crL"), list, `ما فيه ${CORR_K[T][1]} مسجّلة.`);
 }
 function corrForm(el, kind){
-  const F = S._corrF = S._corrF && S._corrF.kind === kind ? S._corrF : {kind, date: today(), subject: "", body: CORR_BODY[kind] || "", to: kind === "circ" ? ["staff", "trainers"] : [], party: "", cc: "", theirNo: "", theirDate: "", action: CORR_ACT[0], signer: S.adminRole === "admin" ? "إدارة المعهد" : MEET_N[S.adminRole] || "", signerName: S.adminRole === "admin" ? "خالد الحسيني" : "", sign: S.adminRole === "admin" ? {director: okImg((S.sigs || {}).director), stamp: okImg(S.stamp)} : S.adminRole === "academic" && kind === "circ" ? {academic: okImg((S.sigs || {}).academic), stamp: okImg(S.stamp)} : {}, open: !!(S._corrF && S._corrF.openNow)};
+  const F = S._corrF = S._corrF && S._corrF.kind === kind ? S._corrF : {kind, date: today(), subject: "", body: CORR_BODY[kind] || "", to: kind === "circ" ? (S.adminRole === "academic" ? ["trainers", "students"] : ["staff", "trainers"]) : [], party: "", cc: "", theirNo: "", theirDate: "", action: CORR_ACT[0], signer: S.adminRole === "admin" ? "إدارة المعهد" : MEET_N[S.adminRole] || "", signerName: S.adminRole === "admin" ? "خالد الحسيني" : "", sign: S.adminRole === "admin" ? {director: okImg((S.sigs || {}).director), stamp: okImg(S.stamp)} : S.adminRole === "academic" && kind === "circ" ? {academic: okImg((S.sigs || {}).academic), stamp: okImg(S.stamp)} : {}, open: !!(S._corrF && S._corrF.openNow)};
   const year = corrYear(F.date), boss = S.adminRole === "admin";
   if (!F.open) { el.innerHTML = `<div class="card" style="padding:10px"><button class="btn pri" id="crOpen">+ ${kind === "in" ? "تسجيل وارد جديد" : kind === "out" ? "صادر جديد" : "تعميم جديد"}</button> <span class="muted">الرقم يتولّد تلقائياً</span></div>`; $("#crOpen").onclick = () => { F.open = true; render(); }; return; }
   const tos = kind === "circ" ? [["staff", "كل الإدارات"], ...MEET_DEPTS.filter(r => r !== "admin").map(r => [r, MEET_N[r]]), ["students", "المتدربين والمتدربات"]]
@@ -2151,6 +2152,8 @@ function corrForm(el, kind){
     ${kind === "in" ? `<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px"><label class="f grow">الجهة المرسلة *<input type="text" id="crP" maxlength="120" value="${esc(F.party)}"></label><label class="f" style="width:150px">رقم خطابهم<input type="text" id="crTN" maxlength="40" value="${esc(F.theirNo)}"></label><label class="f" style="width:160px">تاريخ خطابهم<input type="date" id="crTD" value="${esc(F.theirDate)}"></label></div>`
       : kind === "out" ? `<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px"><label class="f grow">إلى (الجهة) *<input type="text" id="crP" maxlength="160" value="${esc(F.party)}" placeholder="مثل: سعادة مدير فرع المؤسسة العامة للتدريب التقني والمهني بمنطقة حائل"></label><label class="f grow">نسخة إلى (اختياري)<input type="text" id="crCC" maxlength="160" value="${esc(F.cc)}"></label></div>` : ""}
     <label class="f" style="margin-top:6px">${kind === "in" ? "ملخص الخطاب" : "نص " + CORR_K[kind][0]} ${kind === "in" ? "" : "*"}<textarea id="crBody" rows="${kind === "in" ? 3 : 8}" maxlength="8000" placeholder="${kind === "circ" ? "السلام عليكم ورحمة الله وبركاته،\n\n…\n\nشاكرين لكم تعاونكم والتزامكم." : ""}">${esc(F.body)}</textarea></label>
+    ${kind === "circ" ? (() => { const has = k => F.to.includes(k), only = F.to.filter(x => !/^t-/.test(x)), cur = only.length === 2 && has("trainers") && has("students") ? "both" : only.length === 1 && has("trainers") ? "tr" : only.length === 1 && has("students") ? "st" : "";
+      return `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px"><span class="muted">اختيار سريع:</span>${[["both", "👥 المدربين والمتدربين معاً"], ["tr", "🧑‍🏫 المدربين فقط"], ["st", "🎓 المتدربين فقط"]].map(([k, v]) => `<button type="button" class="btn sm ${cur === k ? "pri" : "ghost"}" data-caud="${k}">${v}</button>`).join("")}</div>`; })() : ""}
     <div style="margin-top:8px"><b>${kind === "circ" ? "يوجَّه إلى" : kind === "in" ? "إحالة إلى (اختياري)" : "يوصل نسخة داخلية إلى (اختياري)"}:</b><div class="row" style="gap:12px;flex-wrap:wrap;margin-top:6px">${tos.map(([k, v]) => `<label class="row" style="gap:4px"><input type="checkbox" data-cto="${k}" ${F.to.includes(k) ? "checked" : ""}> ${esc(v)}</label>`).join("")}</div></div>
     ${kind === "circ" ? (() => { const trs = Object.values(S.trainers || {}).sort((x, y) => trainerTitle(x).localeCompare(trainerTitle(y), "ar")), pick = F.to.filter(x => /^t-/.test(x));
       return `<div style="margin-top:8px;padding:8px 10px;border:1px dashed var(--line);border-radius:10px"><b>المدربين:</b> <label class="row" style="gap:4px;display:inline-flex;margin-inline-start:8px"><input type="radio" name="crTr" value="all" ${F.to.includes("trainers") ? "checked" : ""}> الكل</label>
@@ -2166,6 +2169,7 @@ function corrForm(el, kind){
     const tr = (el.querySelector("[name=crTr]:checked") || {}).value;
     if (tr === "all") F.to.push("trainers"); else if (tr === "some") F.to.push(...[...el.querySelectorAll("[data-ctr]")].filter(x => x.checked).map(x => x.dataset.ctr)); };
   el.querySelectorAll("[name=crTr]").forEach(x => x.addEventListener("change", () => { read(); F.trSome = x.value === "some"; render(); }));
+  el.querySelectorAll("[data-caud]").forEach(b => b.onclick = () => { read(); const k = b.dataset.caud; F.to = k === "both" ? ["trainers", "students"] : k === "tr" ? ["trainers"] : ["students"]; F.trSome = false; render(); });
   el.querySelectorAll("input:not([type=file]),textarea,select").forEach(x => x.addEventListener("change", read));
   $("#crCancel").onclick = () => { S._corrF = null; render(); };
   $("#crSave").onclick = async e => {
@@ -4565,7 +4569,7 @@ function adminDash(el){
   ${absentToday.length ? `<div class="card"><h2>غياب اليوم (${absentToday.length})</h2>
     <p class="muted" style="margin-top:0">اضغط واتساب، وتفتح محادثة الطالب ورسالة الغياب جاهزة.</p>
     <div class="list">${absentToday.map(a => `<div class="item"><div class="grow"><div class="t">${esc(a.name)}</div><div class="muted">${esc(a.course)}${a.sid ? " · " + esc(a.sid) : ""}</div></div>
-      ${a.sid && (S.stPhones || {})[a.sid] ? "" : `<span class="pill">بدون جوال</span>`}
+      ${!S._secLoaded || (a.sid && (S.stPhones || {})[a.sid]) ? "" : `<span class="pill">بدون جوال</span>`}
       ${a.sid ? `<button class="btn sm gold" data-wabs="${esc(a.sid)}" data-course="${esc(a.course)}">واتساب</button>` : ""}</div>`).join("")}</div></div>` : ""}`;
   el.querySelectorAll("[data-twa]").forEach(b => b.onclick = () => openWhatsAppTrainer(b.dataset.twa));
   el.querySelectorAll("[data-wabs]").forEach(b => b.onclick = () => openWhatsApp(b.dataset.wabs, {type: "absence", course: b.dataset.course}));
@@ -4690,7 +4694,7 @@ function openGroup(id){
     else { b.dataset.sure = "1"; b.textContent = "متأكد؟ اضغط مرة ثانية للحذف"; }
   };
 }
-function renderModalStudents(){ ensureFin();
+function renderModalStudents(){ ensureFin(); ensureSec();
   const g = S.groups[S._modalGroup]; const st = (g && g.students) || []; const ss = (g && g.sessions) || [];
   const box = $("#mstu"); if (!box) return;
   $("#mcount").textContent = st.length;
@@ -4737,7 +4741,7 @@ const FILLS = {
 };
 const hrOkC = () => ["admin", "hr"].includes(S.adminRole);
 const fillEmpty = v => v === undefined || v === null || v === "" || (typeof v === "number" && !(v > 0));
-function fillMount(el, k){
+function fillMount(el, k){ if (k === "st" && needSec(() => render())) return;
   const C = FILLS[k]; if (!C || !C.can() || !el) return;
   el.insertAdjacentHTML("beforeend", `<div class="card" id="fill_${k}"><h2 style="margin-top:0">📋 نموذج تعبئة ${esc(C.title)} الناقصة</h2>
     <p class="muted" style="margin-top:0">1) نزّل النموذج: فيه كل ${esc(C.title)} الموجودة، والخانات الفاضية فاضية. 2) عبّ الناقص في Excel (لا تغيّر عمود «المعرّف»). 3) ارفعه: تطلع معاينة، وينحفظ <b>الفاضي بس</b>؛ أي بيانات موجودة ما تتغيّر.</p>
@@ -4801,7 +4805,7 @@ function nlScore(E, C){   // symmetric: the shorter name must fit inside the lon
   if (inOrder) return 60;
   return lastOk ? 50 : 0;
 }
-function nameLinkCard(el){ ensureFin();
+function nameLinkCard(el){ ensureFin(); ensureSec();
   if (!["admin", "finance"].includes(S.adminRole) || RO()) return;
   el.insertAdjacentHTML("beforeend", `<div class="card" id="nlCard"><h2 style="margin-top:0">🔗 ربط الجوال والإيميل بالأسماء</h2>
     <p class="muted" style="margin-top:0">لملف Excel ما فيه أرقام أكاديمية: عمود <b>الاسم</b>، ومعه <b>الجوال</b> و/أو <b>الإيميل</b>. البوابة تطابق الأسماء مع الحسابات المالية والمتدربين وتعرض لك النتيجة قبل الحفظ، وتعبّي الخانات الفاضية بس${S.adminRole === "admin" ? " (في الحساب المالي وملف المتدرب)" : " في الحساب المالي"}.</p>
@@ -4877,7 +4881,7 @@ function nameLinkCard(el){ ensureFin();
   };
 }
 function adminStudents(el){ adminStudents0(el); fillMount(el, "st"); }
-function adminStudents0(el){
+function adminStudents0(el){ ensureSec();
   const list = Object.values(S.students).sort((a,b) => a.num.localeCompare(b.num));
   const groupsOf = num => Object.values(S.groups).filter(g => (g.memberNums || []).includes(num));
   el.innerHTML = `
@@ -4991,7 +4995,7 @@ function xlDate(v){
   if (Number(y) < 1900) return "";   // a Hijri date: skip rather than guess
   return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
-async function runExcelImport(){
+async function runExcelImport(){ await ensureSec();
   const f = $("#xF").files[0]; if (!f) return toast("اختر ملف Excel");
   const lines = []; const log = m => { lines.push(m); const el = $("#xLog"); if (el) el.textContent = lines.slice(-8).join("\n"); };
   let rows;
@@ -5139,7 +5143,7 @@ function normPhone(p){
   return d;
 }
 const SIGN = "\n\nالشؤون الأكاديمية\nمعهد أسس التقنية والقانون";
-async function waText(num, type, opt){
+async function waText(num, type, opt){ await ensureSec();
   const st = S.students[num] || {}, hi = `${st.gender === "f" ? "المتدربة" : "المتدرب"}: ${st.name}\nالرقم الأكاديمي: ${num}\n\n`;
   const gs = Object.values(S.groups).filter(g => (g.memberNums || []).includes(num)).sort((a,b) => (a.course||"").localeCompare(b.course||"","ar"));
   if (type === "absence") return `${hi}نفيدكم بتسجيل غيابكم عن محاضرة (${opt.course}) اليوم ${fmtDate(today())}.\nللاستفسار تواصلوا مع الشؤون الأكاديمية.${SIGN}`;
@@ -5165,7 +5169,7 @@ async function waText(num, type, opt){
   }
   return hi + SIGN;
 }
-function openWhatsApp(num, preset){
+function openWhatsApp(num, preset){ if (needSec(() => openWhatsApp(num, preset))) return;
   const st = S.students[num]; if (!st) return;
   S._modalGroup = null;
   const phone = (S.stPhones || {})[num] || "";
@@ -5269,7 +5273,7 @@ function fillTrainerVars(tpl, tid){
   return tpl.replace(/\{الاسم\}/g, t.name ? trainerTitle(t) : "").replace(/\{الرقم\}/g, t.num || "—").replace(/\{الرمز\}/g, S.secrets[tid] || "—")
             .replace(/\{الرابط\}/g, location.href.split("#")[0].split("?")[0]);
 }
-function adminMessages(el){ ensureFin();
+function adminMessages(el){ ensureFin(); ensureSec();
   const q = S.msgQ;
   const gs = sortedGroups();
   if (q && q.items.length) {
@@ -6647,7 +6651,7 @@ function stuDocsBind(num){
     } catch (x) { console.error(x); if (pg) pg.textContent = ""; toast("تعذّر رفع الملف"); }
   };
 }
-function printStudentFile(num){ ensureFin();
+function printStudentFile(num){ ensureFin(); if (needSec(() => printStudentFile(num))) return;
   const st = S.students[num]; if (!st) return;
   const w = openPrint(); if (!w) return;
   const p = (S.stProf || {})[num] || {}, files = (S.stDocs || {})[num] || [];
@@ -6668,7 +6672,7 @@ function printStudentFile(num){ ensureFin();
     <div class="sig"><div>الشؤون الأكاديمية</div>${acc ? "<div>المالية</div>" : ""}<div>مدير المعهد</div></div>`;
   fillPrint(w, `ملف المتدرب ${st.name}`, [{html}], false, "الشؤون الأكاديمية");
 }
-function openProfile(num){
+function openProfile(num){ if (needSec(() => openProfile(num))) return;
   const st = S.students[num]; if (!st) return;
   const p = (S.stProf || {})[num] || {};
   S._modalGroup = null; S._finModal = null;
@@ -6709,7 +6713,7 @@ function openProfile(num){
     catch (e) { handleWriteErr(e); }
   };
 }
-function exportProfiles(){
+function exportProfiles(){ if (needSec(() => exportProfiles())) return;
   const rows = Object.values(S.students).sort((a, b) => a.num.localeCompare(b.num)).map(st => { const p = (S.stProf || {})[st.num] || {}; const gs = Object.values(S.groups).filter(g => (g.memberNums || []).includes(st.num)).map(g => g.course).join("، ");
     return [st.num, st.name, GENDER[st.gender] || "", p.nid || "", p.dob || "", p.nat || "", p.phone || "", p.gphone || "", p.email || "", p.edu || "", p.city || "", gs]; });
   excelDownload("بيانات المتدربين", [{title: "المتدربين", rows: [[INST_AR], ["بيانات المتدربين"], [], ["الرقم الأكاديمي", "الاسم", "الجنس", "رقم الهوية", "تاريخ الميلاد", "الجنسية", "الجوال", "جوال ولي الأمر", "البريد", "المؤهل", "المدينة", "المقررات"], ...rows], widths: [13, 28, 8, 13, 12, 11, 14, 14, 24, 12, 14, 40]}]);
@@ -7043,7 +7047,7 @@ function adminCourses(el){
   el.querySelectorAll("[data-cro]").forEach(b => b.onclick = () => openCourse(b.dataset.cro));
 }
 const certMsg = (p, c, code) => `مبروك ${p.name}\n${p.gender === "f" ? "أتممتِ" : "أتممت"} دورة «${c.title}» في ${INST_AR}.\n\nشهادتك جاهزة، تقدر تعرضها وتطبعها من الرابط:\n${verifyUrl(code)}\n\nرمز التحقق: ${code}`;
-function openCourse(id){
+function openCourse(id){ ensureSec();
   const c = id ? clone(S.courses[id]) : {title: "", hours: "", from: today(), to: today(), trainer: "", place: "", participants: []};
   S._crsOpen = id; S._modalGroup = null; S._finModal = null;
   const save = async (msg, quiet) => {
@@ -7717,8 +7721,26 @@ const PLANS = {full: "كامل المبلغ", half: "50% / 50%", monthly: "أق�
 const METHODS = ["تحويل بنكي", "نقد", "مدى / شبكة", "قسيمة بلس", "دفع إلكتروني"];
 const SAR = n => (Math.round((Number(n) || 0) * 100) / 100).toLocaleString("en-US", {maximumFractionDigits: 2}) + " ر.س";
 const addMonths = (d, k) => { const [y, m, dd] = d.split("-").map(Number); const t = new Date(Date.UTC(y, m - 1 + k, 1)); const last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate(); return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}-${String(Math.min(dd, last)).padStart(2, "0")}`; };
+/* Data that only some screens use is loaded the first time one of them opens, not at sign-in (Firebase daily reads).
+   ensureFC: fee status per student (certificates report, fee sync). ensureSec: student codes, phones and files. */
+function ensureFC(){
+  if (S._fcP || !S._fcOK) return S._fcP || Promise.resolve();
+  let done; S._fcP = new Promise(r => done = r);
+  S.subs.push(onSnapshot(collection(db, "finClear"), snap => { S.finClear = {}; snap.docs.forEach(d => S.finClear[d.id] = d.data()); S.finClearLoaded = true; done(); afterData(); }, () => done()));
+  S.subs.push(() => { S._fcP = null; S.finClearLoaded = false; });
+  return S._fcP;
+}
+function ensureSec(){
+  if (S._secP || !S._secOK) return S._secP || Promise.resolve();
+  let done; S._secP = new Promise(r => done = r);
+  S.subs.push(onSnapshot(collection(db, "studentSecrets"), snap => { S.stSecrets = {}; S.stPhones = {}; S.stProf = {}; snap.docs.forEach(d => { const v = d.data(); S.stSecrets[d.id] = v.code; S.stProf[d.id] = v; if (v.phone) S.stPhones[d.id] = v.phone; }); S._secLoaded = true; done(); afterData(); }, () => done()));
+  S.subs.push(() => { S._secP = null; S._secLoaded = false; });
+  return S._secP;
+}
+// for actions that need the codes at once: wait for them the first time, then run
+function needSec(fn){ if (S._secLoaded || !S._secOK) return false; toast("لحظة، جاري تحميل بيانات الطلاب…"); ensureSec().then(fn); return true; }
 /* finance data: always for the finance office; for the general administration only once a screen that shows money opens */
-function ensureFin(){ if (S._finOn || !SEES_FIN()) return; S._finOn = true; startFinance(); S.subs.push(() => { S._finOn = false; }); }
+function ensureFin(){ if (S._finOn || !SEES_FIN()) return; S._finOn = true; startFinance(); ensureFC(); S.subs.push(() => { S._finOn = false; }); }
 function startFinance(){
   S.subs.push(onSnapshot(ref("fin/settings"), snap => { S.finSet = snap.exists() ? snap.data() : {programs: []}; afterData(); }, () => {}));
   S.subs.push(onSnapshot(collection(db, "finAccounts"), snap => { S.finAcc = {}; snap.docs.forEach(d => S.finAcc[d.id] = d.data()); afterData(); }, () => {}));
@@ -7776,7 +7798,7 @@ function finImportPlan(x){ ensureFin();
   const newAcc = x.acc && x.total > 0 && !hasAcc, addPays = !hasPays && (newAcc || hasAcc) ? x.pays : [];
   return {pf, newAcc, addPays, hasAcc, hasPays};
 }
-function finImportDraw(){
+function finImportDraw(){ ensureSec();
   const out = $("#fiOut"); if (!out) return; const list = S._fi || [];
   const opts = sel => `<option value="">— تخطي —</option>` + Object.entries(S.students).sort((a, b) => a[1].name.localeCompare(b[1].name, "ar")).map(([n, s]) => `<option value="${n}" ${n === sel ? "selected" : ""}>${esc(s.name)} · ${n}</option>`).join("");
   let nAcc = 0, nPay = 0, sPay = 0, nProf = 0, nSkip = 0;
@@ -7796,7 +7818,7 @@ function finImportDraw(){
   out.querySelectorAll("[data-fich]").forEach(b => b.onclick = () => { list[Number(b.dataset.fich)].num = ""; finImportDraw(); });
   $("#fiGo").onclick = finImportRun;
 }
-async function finImportRun(){ ensureFin();
+async function finImportRun(){ ensureFin(); await ensureSec();
   const list = (S._fi || []).filter(x => x.num), btn = $("#fiGo"), log = t => { const l = $("#fiLog"); if (l) l.textContent = t; };
   const dup = {}; list.forEach(x => dup[x.num] = (dup[x.num] || 0) + 1);
   const twice = Object.keys(dup).filter(n => dup[n] > 1); if (twice.length) return toast(`نفس الطالب مربوط بأكثر من صف: ${twice.map(n => S.students[n].name).join("، ")}`);
@@ -8286,7 +8308,7 @@ function finPayments(el){ ensureFin();
   $("#payXM").onclick = () => { if (!byM.length) return toast("ما فيه دفعات بهذي الفترة");
     excelDownload(`الدفعات حسب الطريقة ${fileP}`, [{title: "الملخص", rows: [[INST_AR], [`ملخص الدفعات حسب الطريقة · ${perL}`], [], ["الطريقة", "عدد الدفعات", "المجموع"], ...byM.map(([mt, x]) => [mt, live(x).length, sum(x)]), [], ["الإجمالي", live(inP).length, sum(inP)]], widths: [18, 12, 14]}, ...byM.map(([mt, x]) => sheet(mt, x))]); };
 }
-function finLate(el){ ensureFin();
+function finLate(el){ ensureFin(); ensureSec();
   const all = finRows(), in3 = new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 10);
   const rows = all.filter(r => r.st.status === "late").sort((a, b) => b.st.overdue - a.st.overdue);
   const soon = all.filter(r => r.st.status === "ok" && r.st.next && r.st.next.due <= in3).sort((a, b) => a.st.next.due.localeCompare(b.st.next.due));
@@ -8829,7 +8851,7 @@ function adminGrades(el){
 }
 
 /* report tab */
-function adminReport(el){
+function adminReport(el){ ensureFC();
   const gs = sortedGroups();
   if (!S.aReportGroup || !S.groups[S.aReportGroup]) S.aReportGroup = gs[0] && gs[0].id;
   el.innerHTML = `<div class="card"><h2>تقرير الحضور</h2>
