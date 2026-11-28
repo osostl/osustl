@@ -8377,6 +8377,7 @@ function feeDiffs(){
   const progs = (S.finSet && S.finSet.programs) || [];
   return Object.values(S.finAcc || {}).map(acc => { const pr = progs.find(p => p.id === acc.program); return pr && Math.abs((Number(acc.fee) || 0) - (Number(pr.fee) || 0)) > 0.001 ? {acc, pr} : null; }).filter(Boolean);
 }
+const feeOrphans = () => { const progs = (S.finSet && S.finSet.programs) || []; return Object.values(S.finAcc || {}).filter(a => !progs.some(p => p.id === a.program)); };
 function refitFee(acc, fee, pays){
   const net = Math.max(0, Math.round(((Number(fee) || 0) - (Number(acc.discount) || 0)) * 100) / 100);
   const sched = accStatus(acc, pays || []).sched.filter(i => i.xi === undefined);
@@ -8390,6 +8391,9 @@ function refitFee(acc, fee, pays){
   return {...acc, fee: Number(fee) || 0, installments: out.sort((a, b) => String(a.due).localeCompare(String(b.due)))};
 }
 function feeSyncModal(){
+  const orph = feeOrphans().sort((a, b) => a.num.localeCompare(b.num)), progs = (S.finSet && S.finSet.programs) || [];
+  if (orph.length && !S._fsSkipOrph) return feeOrphModal(orph, progs);
+  S._fsSkipOrph = false;
   const rows = feeDiffs().sort((a, b) => a.acc.num.localeCompare(b.acc.num));
   const net = a => Math.max(0, (Number(a.fee) || 0) - (Number(a.discount) || 0));
   $("#modalBox").innerHTML = `<div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">🔗 ربط الحسابات برسوم البرامج</h2><button class="btn sm" id="fsX">إغلاق</button></div>
@@ -8419,6 +8423,44 @@ function feeSyncModal(){
     } catch (x) { handleWriteErr(x); e.target.disabled = false; if (done) toast(`انحفظ ${done} قبل الخطأ`); }
   };
 }
+/* accounts whose program is missing (never set, or the program was deleted and added again): pick it per student or for many at once;
+   the program is guessed from the student's current fee when exactly one program has that fee */
+function feeOrphModal(orph, progs){
+  const guess = a => { const m = progs.filter(p => Math.abs((Number(p.fee) || 0) - (Number(a.fee) || 0)) < 0.01); return m.length === 1 ? m[0].id : ""; };
+  const opts = sel => `<option value="">— اختر البرنامج —</option>${progs.map(p => `<option value="${esc(p.id)}" ${sel === p.id ? "selected" : ""}>${esc(p.name)} · ${SAR(p.fee)}</option>`).join("")}`;
+  const nm = a => a.name || (S.students[a.num] || {}).name || "";
+  $("#modalBox").innerHTML = `<div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">حسابات بدون برنامج (${orph.length})</h2><button class="btn sm" id="foX">إغلاق</button></div>
+    <p class="muted">اختر برنامج كل طالب. اللي رسومه تطابق برنامج واحد بالضبط، اخترناه له مبدئياً (راجعه). وللسرعة: حدد مجموعة واختر لهم برنامج واحد من فوق.</p>
+    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0"><label class="row" style="gap:4px"><input type="checkbox" id="foAll"> تحديد الكل</label>
+      <select id="foBulk" style="width:auto">${opts("")}</select><button class="btn sm" id="foApply">تطبيق على المحددين</button>
+      <label class="row" style="gap:4px;margin-inline-start:auto"><input type="checkbox" id="foFee" checked> وحدّث رسومهم لرسوم البرنامج</label></div>
+    <div class="tbl" style="max-height:52vh;overflow:auto"><table><thead><tr><th></th><th class="nm">الطالب</th><th>رسومه الحالية</th><th class="nm">البرنامج</th></tr></thead><tbody>
+    ${orph.map((a, i) => `<tr><td><input type="checkbox" data-fo="${i}"></td><td class="nm">${esc(nm(a))} <span class="muted">${esc(a.num)}</span></td><td>${SAR(a.fee)}</td><td class="nm"><select data-fop="${i}" style="min-width:220px">${opts(guess(a))}</select></td></tr>`).join("")}
+    </tbody></table></div>
+    <div class="row" style="gap:8px;margin-top:10px;align-items:center"><button class="btn pri" id="foSave">حفظ البرامج</button><span class="muted" id="foN"></span><button class="btn sm" id="foSkip" style="margin-inline-start:auto">تخطّي ← مراجعة الرسوم المختلفة</button></div>`;
+  $("#modal").classList.add("on");
+  const cnt = () => { const k = [...document.querySelectorAll("[data-fop]")].filter(x => x.value).length; $("#foN").textContent = `${k} من ${orph.length} اختير لهم برنامج`; };
+  document.querySelectorAll("[data-fop]").forEach(x => x.onchange = cnt); cnt();
+  $("#foX").onclick = () => closeModal();
+  $("#foSkip").onclick = () => { S._fsSkipOrph = true; feeSyncModal(); };
+  $("#foAll").onchange = e => document.querySelectorAll("[data-fo]").forEach(x => x.checked = e.target.checked);
+  $("#foApply").onclick = () => { const v = $("#foBulk").value; if (!v) return toast("اختر البرنامج"); let k = 0; document.querySelectorAll("[data-fo]").forEach(x => { if (x.checked) { document.querySelector(`[data-fop="${x.dataset.fo}"]`).value = v; x.checked = false; k++; } }); $("#foAll").checked = false; cnt(); toast(k ? `انطبق على ${k}` : "حدد طلاب أول"); };
+  $("#foSave").onclick = async e => {
+    const withFee = $("#foFee").checked;
+    const list = [...document.querySelectorAll("[data-fop]")].filter(x => x.value).map(x => ({a: orph[Number(x.dataset.fop)], pr: progs.find(p => p.id === x.value)})).filter(r => r.pr);
+    if (!list.length) return toast("اختر برنامج لطالب واحد على الأقل");
+    e.target.disabled = true; let done = 0;
+    try {
+      for (let i = 0; i < list.length; i += 400) {
+        const b = writeBatch(db), part = list.slice(i, i + 400).map(r => { const nw = withFee ? refitFee({...r.a, program: r.pr.id}, r.pr.fee, paysOf(r.a.num)) : {...r.a, program: r.pr.id}; return {num: r.a.num, d: withFee ? {program: r.pr.id, fee: nw.fee, installments: nw.installments} : {program: r.pr.id}}; });
+        part.forEach(x => b.set(ref("finAccounts/" + x.num), x.d, {merge: true}));
+        await b.commit(); part.forEach(x => { S.finAcc[x.num] = {...S.finAcc[x.num], ...x.d}; }); done += part.length;
+      }
+      logAction("ربط الحسابات بالبرامج", `${done} حساب${withFee ? " مع الرسوم" : ""}`); toast(`انربط ${done} حساب ببرنامجه`);
+      const left = feeOrphans().sort((a, b) => a.num.localeCompare(b.num)); if (left.length) feeOrphModal(left, progs); else { S._fsSkipOrph = true; feeSyncModal(); }
+    } catch (x) { handleWriteErr(x); e.target.disabled = false; if (done) toast(`انحفظ ${done} قبل الخطأ`); }
+  };
+}
 function finSettings0(el){ ensureFin();
   const progs = S.finSet.programs || [], canPay = ["admin", "academic"].includes(S.adminRole);
   el.innerHTML = `<div class="card"><h2>👁️ المالية عند الطلاب</h2>
@@ -8433,7 +8475,7 @@ function finSettings0(el){ ensureFin();
   <div class="card"><h2>البرامج والرسوم</h2>
     <div class="list">${progs.map((p, i) => `<div class="item"><span class="grow"><b>${esc(p.name)}</b></span><input type="number" data-pfee="${i}" value="${p.fee}" style="width:130px"><span class="muted">ر.س</span><button class="btn sm danger" data-pdel="${i}">حذف</button></div>`).join("") || `<span class="muted">ما فيه برامج</span>`}</div>
     <div class="row" style="margin-top:10px"><input type="text" id="prN" class="grow" placeholder="اسم البرنامج، مثل: دبلوم القانون"><input type="number" id="prF" min="0" placeholder="الرسوم" style="width:130px"><button class="btn gold sm" id="prAdd">+ إضافة</button><button class="btn pri sm" id="prSave">حفظ الرسوم</button></div>
-    ${(n => `<div class="row" style="gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap"><button class="btn ${n ? "gold" : ""}" id="feeSync" ${RO() ? "disabled" : ""}>🔗 ربط حسابات الطلاب برسوم البرامج</button><span class="muted">${n ? `<b>${n}</b> حساب رسومه تختلف عن رسوم برنامجه` : "كل الحسابات مطابقة لرسوم برامجها ✓"}</span></div>`)(feeDiffs().length)}
+    ${((n, o) => `<div class="row" style="gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap"><button class="btn ${n || o ? "gold" : ""}" id="feeSync" ${RO() ? "disabled" : ""}>🔗 ربط حسابات الطلاب برسوم البرامج</button><span class="muted">${n ? `<b>${n}</b> حساب رسومه تختلف عن رسوم برنامجه` : ""}${n && o ? " · " : ""}${o ? `<b>${o}</b> حساب بدون برنامج` : ""}${!n && !o ? "كل الحسابات مربوطة بمطابقة لرسوم برامجها ✓" : ""}</span></div>`)(feeDiffs().length, feeOrphans().length)}
     <p class="muted">تعديل رسوم برنامج هنا ما يغيّر الحسابات لحاله. احفظ الرسوم، ثم اضغط «ربط حسابات الطلاب»: تشوف كل طالب قبل وبعد، وتطبّق.</p></div>
   <div class="card"><h2>أنواع الرسوم الإضافية</h2>
     <div class="list">${(S.finSet.extraTypes || []).map((t, i) => `<div class="item"><span class="grow"><b>${esc(t.name)}</b></span><span>${SAR(t.fee)}</span><button class="btn sm danger" data-etdel="${i}">حذف</button></div>`).join("") || `<span class="muted">ما فيه أنواع. مثل: الشهادة، الحقيبة التدريبية، إعادة اختبار.</span>`}</div>
